@@ -1,0 +1,50 @@
+from datetime import datetime
+from decimal import Decimal
+from typing import TYPE_CHECKING
+
+from sqlalchemy import DateTime, Enum, ForeignKey, Numeric, String, Text
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.core.database import Base
+from app.models.base import TimestampMixin, UUIDPrimaryKeyMixin
+from app.models.enums import CampaignStatus
+
+if TYPE_CHECKING:
+    from app.models.affiliate import AffiliateCampaign
+    from app.models.conversion import Conversion
+    from app.auth.models import User
+
+
+class Campaign(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    __tablename__ = "campaigns"
+
+    name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    advertiser_id: Mapped[UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    status: Mapped[CampaignStatus] = mapped_column(
+        Enum(CampaignStatus, name="campaign_status", native_enum=False),
+        default=CampaignStatus.DRAFT,
+        nullable=False,
+    )
+    payout_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="USD", nullable=False)
+    landing_url: Mapped[str] = mapped_column(String(512), nullable=False)
+    starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    advertiser: Mapped["User | None"] = relationship("User")
+    affiliate_links: Mapped[list["AffiliateCampaign"]] = relationship(
+        "AffiliateCampaign",
+        back_populates="campaign",
+        cascade="all, delete-orphan",
+    )
+    conversions: Mapped[list["Conversion"]] = relationship(
+        "Conversion",
+        back_populates="campaign",
+    )
