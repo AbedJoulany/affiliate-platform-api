@@ -28,3 +28,19 @@ class ForbiddenError(ServiceError):
 class ValidationError(ServiceError):
     def __init__(self, message: str) -> None:
         super().__init__(message, status_code=422)
+
+
+class AIProviderError(ServiceError):
+    def __init__(self, message: str) -> None:
+        super().__init__(message, status_code=502)
+
+
+class TelegramPublishError(ServiceError):
+    def __init__(self, message: str) -> None:
+        super().__init__(message, status_code=502)
+
+
+class AliExpressAPIError(ServiceError):
+    def __init__(self, message: str, *, code: str | int | None = None) -> None:
+        super().__init__(message, status_code=502)
+        self.code = code

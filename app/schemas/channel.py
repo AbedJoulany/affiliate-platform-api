@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.models.enums import BotPermissionStatus
+from app.core.enums import BotPermissionStatus
 from app.schemas.common import PaginatedResponse, TimestampSchema
 from app.telegram.validators import normalize_telegram_channel_id
 

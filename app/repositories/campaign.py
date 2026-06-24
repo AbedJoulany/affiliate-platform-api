@@ -2,7 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.campaign import Campaign
-from app.models.enums import CampaignStatus
+from app.core.enums import CampaignStatus
 from app.repositories.base import BaseRepository
 
 

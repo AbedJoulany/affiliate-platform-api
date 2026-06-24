@@ -4,7 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, HttpUrl
 
-from app.models.enums import CampaignStatus
+from app.core.enums import CampaignStatus
 from app.schemas.common import TimestampSchema
 
 

@@ -1,7 +1,7 @@
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.enums import ProductStatus
+from app.core.enums import ProductStatus
 from app.models.product import Product
 from app.repositories.base import BaseRepository
 
@@ -46,3 +46,9 @@ class ProductRepository(BaseRepository[Product]):
 
         result = await self.session.execute(items_query)
         return list(result.scalars().all()), total
+
+    async def get_by_product_url(self, product_url: str) -> Product | None:
+        result = await self.session.execute(
+            select(Product).where(Product.product_url == product_url)
+        )
+        return result.scalar_one_or_none()

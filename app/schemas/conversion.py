@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from app.models.enums import ConversionStatus
+from app.core.enums import ConversionStatus
 from app.schemas.common import TimestampSchema
 
 

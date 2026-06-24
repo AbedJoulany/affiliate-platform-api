@@ -3,7 +3,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.affiliate import Affiliate, AffiliateCampaign
-from app.models.enums import CampaignStatus, UserRole
+from app.core.enums import CampaignStatus, UserRole
 from app.models.user import User
 from app.repositories.affiliate import AffiliateCampaignRepository, AffiliateRepository
 from app.repositories.campaign import CampaignRepository

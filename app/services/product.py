@@ -2,7 +2,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.enums import ProductStatus, UserRole
+from app.core.enums import ProductStatus, UserRole
 from app.models.product import Product
 from app.models.user import User
 from app.repositories.product import ProductRepository

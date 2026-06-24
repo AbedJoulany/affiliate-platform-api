@@ -107,12 +107,74 @@ async def example(current_user: CurrentUser):
 | GET | `/api/v1/channels` | List channels with pagination |
 | PUT | `/api/v1/channels/{id}` | Update channel |
 | DELETE | `/api/v1/channels/{id}` | Delete channel |
+| POST | `/api/v1/ai-content/generate` | Generate Arabic marketing content by `product_id` or `url` |
+| POST | `/api/v1/queues` | Create queue item |
+| GET | `/api/v1/queues` | List queue items (filter by status, paginated) |
+| GET | `/api/v1/queues/{id}` | Get queue item |
+| PATCH | `/api/v1/queues/{id}` | Update queue item |
+| POST | `/api/v1/queues/{id}/publish` | Publish queue item to Telegram |
+| DELETE | `/api/v1/queues/{id}` | Delete queue item |
+| POST | `/api/v1/aliexpress/import` | Import product from AliExpress Affiliate API |
 
 ## Environment Variables
 
 See `.env.example` for all configuration options. Change `JWT_SECRET_KEY` before deploying to production.
 
 Set `TELEGRAM_BOT_TOKEN` to enable live bot permission checks against the Telegram Bot API. Without it, channels are stored with `bot_permission_status: unknown`.
+
+Configure `OPENAI_API_KEY` or `GEMINI_API_KEY` and set `AI_DEFAULT_PROVIDER` (`openai` or `gemini`) for AI content generation.
+
+Set `ALIEXPRESS_APP_KEY`, `ALIEXPRESS_APP_SECRET`, and optionally `ALIEXPRESS_TRACKING_ID` to import products via the official AliExpress Affiliate API (`aliexpress.affiliate.productdetail.get`).
+
+## Celery & Scheduled Publishing
+
+Background workers use **Redis** as the Celery broker and automatically publish queue items:
+
+| Task | Schedule | Action |
+|------|----------|--------|
+| `process_publish_queue` | Every 60s (configurable) | Publishes due **scheduled** posts and ready **queued** posts |
+
+### Docker (recommended)
+
+```bash
+docker compose up --build
+```
+
+This starts:
+- `redis` — Celery broker
+- `celery-worker` — executes publish tasks
+- `celery-beat` — schedules periodic publishing
+
+### Local development
+
+```bash
+# Terminal 1 — Redis
+docker run -d -p 6379:6379 redis:7-alpine
+
+# Terminal 2 — Worker
+celery -A app.worker.celery_app worker --loglevel=info
+
+# Terminal 3 — Beat scheduler
+celery -A app.worker.celery_app beat --loglevel=info
+```
+
+### Environment
+
+```env
+CELERY_BROKER_URL=redis://localhost:6379/0
+CELERY_RESULT_BACKEND=redis://localhost:6379/0
+CELERY_PUBLISH_INTERVAL_SECONDS=60
+CELERY_PUBLISH_BATCH_SIZE=50
+```
+
+### Manual task trigger
+
+```python
+from app.worker.tasks.publishing import process_publish_queue, publish_queue_item_task
+
+process_publish_queue.delay()
+publish_queue_item_task.delay("queue-item-uuid")
+```
 
 ## Migrations
 

@@ -3,6 +3,8 @@ from functools import lru_cache
 from pydantic import Field, PostgresDsn, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.core.enums import AIProviderType
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -38,6 +40,42 @@ class Settings(BaseSettings):
 
     telegram_bot_token: str | None = None
     telegram_api_base_url: str = "https://api.telegram.org"
+
+    ai_default_provider: AIProviderType = AIProviderType.OPENAI
+    openai_api_key: str | None = None
+    openai_model: str = "gpt-4o-mini"
+    openai_api_base_url: str = "https://api.openai.com/v1"
+    gemini_api_key: str | None = None
+    gemini_model: str = "gemini-2.0-flash"
+    gemini_api_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
+
+    redis_host: str = "localhost"
+    redis_port: int = 6379
+    redis_db: int = 0
+    celery_broker_url: str | None = None
+    celery_result_backend: str | None = None
+    celery_publish_interval_seconds: int = 60
+    celery_publish_batch_size: int = 50
+
+    aliexpress_app_key: str | None = None
+    aliexpress_app_secret: str | None = None
+    aliexpress_tracking_id: str | None = None
+    aliexpress_api_url: str = "https://gw.api.taobao.com/router/rest"
+    aliexpress_target_currency: str = "USD"
+    aliexpress_target_language: str = "EN"
+    aliexpress_country: str = "US"
+
+    @property
+    def broker_url(self) -> str:
+        if self.celery_broker_url:
+            return self.celery_broker_url
+        return f"redis://{self.redis_host}:{self.redis_port}/{self.redis_db}"
+
+    @property
+    def result_backend_url(self) -> str:
+        if self.celery_result_backend:
+            return self.celery_result_backend
+        return self.broker_url
 
     @field_validator("database_url", mode="before")
     @classmethod

@@ -16,6 +16,7 @@ from app.models import (  # noqa: F401
     Conversion,
     Product,
     TelegramChannel,
+    QueueItem,
 )
 
 config = context.config

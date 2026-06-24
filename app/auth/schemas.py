@@ -2,7 +2,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field
 
-from app.models.enums import UserRole
+from app.core.enums import UserRole
 from app.schemas.common import TimestampSchema
 
 

@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, HttpUrl
 
-from app.models.enums import ProductStatus
+from app.core.enums import ProductStatus
 from app.schemas.common import PaginatedResponse, TimestampSchema
 
 

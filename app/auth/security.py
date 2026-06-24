@@ -5,10 +5,6 @@ from uuid import UUID
 import bcrypt
 from jose import JWTError, jwt
 
-from app.core.config import get_settings
-
-settings = get_settings()
-
 
 def hash_password(password: str) -> str:
     """Hashes a plain text password using native bcrypt."""
@@ -31,6 +27,10 @@ def create_access_token(
     *,
     expires_delta: timedelta | None = None,
 ) -> str:
+    # 🚀 Inline import to break circular initialization chain
+    from app.core.config import get_settings
+    settings = get_settings()
+
     expire = datetime.now(UTC) + (
         expires_delta or timedelta(minutes=settings.access_token_expire_minutes)
     )
@@ -45,6 +45,10 @@ def create_access_token(
 
 
 def decode_access_token(token: str) -> dict[str, Any]:
+    # 🚀 Inline import to break circular initialization chain
+    from app.core.config import get_settings
+    settings = get_settings()
+
     try:
         payload = jwt.decode(
             token,

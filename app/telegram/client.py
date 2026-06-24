@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 import httpx
 
 from app.core.config import get_settings
-from app.models.enums import BotPermissionStatus
+from app.core.enums import BotPermissionStatus
 from app.telegram.validators import normalize_telegram_channel_id
 
 settings = get_settings()

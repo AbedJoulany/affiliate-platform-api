@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_roles
 from app.core.database import get_db
-from app.models.enums import ProductStatus, UserRole
+from app.core.enums import ProductStatus, UserRole
 from app.models.user import User
 from app.schemas.common import MessageResponse
 from app.schemas.product import ProductCreate, ProductListResponse, ProductRead, ProductUpdate

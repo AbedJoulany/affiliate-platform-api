@@ -9,12 +9,18 @@ from app.auth.models import User
 from app.auth.repository import UserRepository
 from app.auth.security import decode_access_token
 from app.auth.service import AuthService
-from app.core.config import get_settings
 from app.core.database import get_db
-from app.models.enums import UserRole
+from app.core.enums import UserRole
 
-settings = get_settings()
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.api_v1_prefix}/auth/login")
+# 🚀 Lazy loader function to pull OAuth dynamically without top-level locks
+def get_oauth2_scheme() -> OAuth2PasswordBearer:
+    from app.core.config import get_settings
+    settings = get_settings()
+    return OAuth2PasswordBearer(tokenUrl=f"{settings.api_v1_prefix}/auth/login")
+
+
+# Eagerly create a reusable OAuth2 scheme instance for re-exports and Depends usage
+oauth2_scheme = get_oauth2_scheme()
 
 
 async def get_auth_service(
@@ -25,7 +31,7 @@ async def get_auth_service(
 
 async def get_current_user(
     db: Annotated[AsyncSession, Depends(get_db)],
-    token: Annotated[str, Depends(oauth2_scheme)],
+    token: Annotated[str, Depends(get_oauth2_scheme())],
 ) -> User:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -50,7 +56,6 @@ AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 
 def require_roles(*roles: UserRole):
     async def role_checker(current_user: CurrentUser) -> User:
-
         if current_user.role not in roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

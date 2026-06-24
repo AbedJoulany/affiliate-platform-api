@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, HttpUrl
 
-from app.models.enums import AffiliateStatus
+from app.core.enums import AffiliateStatus
 from app.schemas.common import TimestampSchema
 
 

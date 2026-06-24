@@ -1,17 +1,13 @@
 from decimal import Decimal
-from typing import TYPE_CHECKING
-
 from sqlalchemy import Enum, ForeignKey, Numeric, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
-from app.models.base import TimestampMixin, UUIDPrimaryKeyMixin
-from app.models.enums import ConversionStatus
+from app.core.model_mixins import TimestampMixin, UUIDPrimaryKeyMixin
+from app.core.enums import ConversionStatus
 
-if TYPE_CHECKING:
-    from app.models.affiliate import Affiliate
-    from app.models.campaign import Campaign
+# Type-only imports removed; string annotations used for forward refs
 
 
 class Conversion(Base, UUIDPrimaryKeyMixin, TimestampMixin):
