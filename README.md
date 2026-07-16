@@ -124,7 +124,9 @@ Set `TELEGRAM_BOT_TOKEN` to enable live bot permission checks against the Telegr
 
 Configure `OPENAI_API_KEY` or `GEMINI_API_KEY` and set `AI_DEFAULT_PROVIDER` (`openai` or `gemini`) for AI content generation.
 
-Set `ALIEXPRESS_APP_KEY`, `ALIEXPRESS_APP_SECRET`, and optionally `ALIEXPRESS_TRACKING_ID` to import products via the official AliExpress Affiliate API (`aliexpress.affiliate.productdetail.get`).
+Set `ALIEXPRESS_APP_KEY`, `ALIEXPRESS_APP_SECRET`, and optionally `ALIEXPRESS_TRACKING_ID` to import products via the official AliExpress Affiliate API.
+
+AliExpress requests use the **official IOP SDK** (`iop.IopClient`, `iop.IopRequest`) against `https://api-sg.aliexpress.com/sync`. The SDK owns signing, timestamps, and HTTP transport — the application does not use `httpx` or manual MD5 signing for AliExpress calls.
 
 ## Celery & Scheduled Publishing
 
@@ -133,6 +135,9 @@ Background workers use **Redis** as the Celery broker and automatically publish 
 | Task | Schedule | Action |
 |------|----------|--------|
 | `process_publish_queue` | Every 60s (configurable) | Publishes due **scheduled** posts and ready **queued** posts |
+| `refresh_hot_products` | Every 6 hours | Syncs hot AliExpress products into the catalog |
+| `refresh_trending_products` | Every 6 hours | Syncs trending AliExpress products into the catalog |
+| `refresh_categories` | Every 24 hours | Refreshes cached AliExpress category tree |
 
 ### Docker (recommended)
 
@@ -189,3 +194,32 @@ alembic upgrade head
 pip install -e ".[dev]"
 pytest
 ```
+
+## AliExpress Product Discovery
+
+Official AliExpress Affiliate/Open Platform APIs only (no scraping). Discovery routes are mounted under `/api/v1/products` **before** the `/{product_id}` CRUD route.
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/products/discover` | Public | General discovery with filters/sort |
+| GET | `/products/discover/hot` | Public | Hot selling products |
+| GET | `/products/discover/deals` | Public | Featured promo / best deals |
+| GET | `/products/discover/trending` | Public | Smart-match trending products |
+| GET | `/products/discover/category/{category_id}` | Public | Products by category |
+| GET | `/products/search` | Public | Keyword search |
+| POST | `/products/search/image` | Public | Image search (DS API; disabled by default) |
+| POST | `/products/import-url` | Admin | Import product from AliExpress URL |
+| POST | `/products/import` | Admin | Import by URL or product ID |
+| POST | `/products/import/batch` | Admin | Batch import by product IDs |
+
+Use `persist=true` on discovery/search endpoints to upsert results into PostgreSQL. Product score uses **40% rating · 30% orders · 20% discount · 10% reviews**.
+
+Configure AliExpress credentials and optional discovery tuning in `.env` (see `.env.example`).
+
+### IOP SDK layout
+
+| Path | Purpose |
+|------|---------|
+| `iop/` | Official AliExpress Open Platform IOP SDK (vendored) |
+| `app/aliexpress/api_client.py` | Async adapter: builds `IopRequest`, executes via SDK, retries/rate-limits |
+| `app/aliexpress/client.py` | Affiliate-specific API methods (import, discovery) |

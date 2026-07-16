@@ -60,10 +60,21 @@ class Settings(BaseSettings):
     aliexpress_app_key: str | None = None
     aliexpress_app_secret: str | None = None
     aliexpress_tracking_id: str | None = None
-    aliexpress_api_url: str = "https://gw.api.taobao.com/router/rest"
+    aliexpress_api_url: str = "https://api-sg.aliexpress.com/sync"
     aliexpress_target_currency: str = "USD"
     aliexpress_target_language: str = "EN"
-    aliexpress_country: str = "US"
+    aliexpress_country: str = "IL"
+    aliexpress_request_timeout: float = 30.0
+    aliexpress_max_retries: int = 3
+    aliexpress_retry_backoff_seconds: float = 0.5
+    aliexpress_rate_limit_interval_seconds: float = 0.2
+    aliexpress_smartmatch_device_id: str = "affiliate-platform-discovery"
+    aliexpress_enable_ds_image_search: bool = False
+    aliexpress_discovery_refresh_batch_size: int = 50
+    aliexpress_discovery_refresh_max_pages: int = 2
+    celery_discovery_hot_interval_seconds: int = 21600
+    celery_discovery_trending_interval_seconds: int = 21600
+    celery_discovery_categories_interval_seconds: int = 86400
 
     @property
     def broker_url(self) -> str:

@@ -10,5 +10,6 @@ bcrypt>=5.0.0
 python-multipart>=0.0.17
 greenlet>=3.1.0
 httpx>=0.28.0
+requests>=2.32.0
 celery[redis]>=5.4.0
 redis>=5.2.0

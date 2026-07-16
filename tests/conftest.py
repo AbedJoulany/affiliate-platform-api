@@ -1,4 +1,6 @@
 import asyncio
+from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -6,7 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base, get_db
+from app.core.enums import BotPermissionStatus, AIProviderType
 from app.main import app as fastapi_app
+from app.schemas.queue import PublishQueueResponse
+from app.telegram.client import BotPermissionsResult
 
 import app.auth.models
 import app.models
@@ -23,7 +28,12 @@ SessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_co
 
 async def override_get_db() -> AsyncSession:
     async with SessionLocal() as session:
-        yield session
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
 
 
 def init_app_dependency_overrides() -> None:
@@ -44,3 +54,82 @@ async def client():
     transport = ASGITransport(app=fastapi_app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
+
+
+@pytest.fixture
+async def session():
+    async with SessionLocal() as db_session:
+        yield db_session
+        await db_session.rollback()
+
+
+# External integration mock fixtures
+@pytest.fixture
+def mock_telegram_permissions(monkeypatch):
+    """Mock TelegramBotClient.check_channel_permissions to return granted permissions."""
+    async def fake_check_permissions(self, channel_id: str) -> BotPermissionsResult:
+        return BotPermissionsResult(
+            status=BotPermissionStatus.GRANTED,
+            title="Test Channel",
+            username="testchannel",
+            can_post_messages=True,
+            can_edit_messages=True,
+            can_delete_messages=True,
+            checked_at=datetime.now(timezone.utc),
+            detail="Bot has permissions",
+        )
+
+    monkeypatch.setattr(
+        "app.services.channel.TelegramBotClient.check_channel_permissions",
+        fake_check_permissions,
+    )
+    return fake_check_permissions
+
+
+@pytest.fixture
+def mock_ai_provider(monkeypatch):
+    """Mock AI provider factory and URL fetcher for content generation tests."""
+    async def fake_fetch(self, url: str) -> SimpleNamespace:
+        return SimpleNamespace(
+            url=url,
+            title="Example Title",
+            description="Example description",
+            image_url="https://example.com/image.jpg",
+        )
+
+    class DummyAIProvider:
+        name = "openai"
+
+        @property
+        def is_configured(self) -> bool:
+            return True
+
+        async def generate_content(self, prompt: str) -> str:
+            return "هذا نص تسويقي باللغة العربية"
+
+    monkeypatch.setattr(
+        "app.services.ai_content.get_ai_provider",
+        lambda provider=None: DummyAIProvider(),
+    )
+    monkeypatch.setattr(
+        "app.services.ai_content.ProductURLFetcher.fetch",
+        fake_fetch,
+    )
+    return DummyAIProvider(), fake_fetch
+
+
+@pytest.fixture
+def mock_queue_publish(monkeypatch):
+    """Mock QueueService.publish to simulate successful Telegram publishing."""
+    async def fake_publish(self, queue_id):
+        from uuid import UUID
+        return PublishQueueResponse(
+            queue_id=queue_id,
+            telegram_message_id=987654321,
+            chat_id="@testchat",
+            message_type="text",
+            published_at=datetime.now(timezone.utc),
+        )
+
+    monkeypatch.setattr("app.services.queue.QueueService.publish", fake_publish)
+    return fake_publish

@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 import re
 
@@ -16,6 +17,13 @@ class AliExpressProductMapper:
         product_id: str,
         payload: dict,
     ) -> AliExpressProductData:
+        # --- NEW SAFEGUARD FOR NESTED LOOKUPS (Product Details) ---
+        if "product_info" in payload:
+            payload = payload["product_info"]
+        elif "aeop_ae_product_info" in payload:
+            payload = payload["aeop_ae_product_info"]
+        # -----------------------------------------------------------
+
         title = str(payload.get("product_title") or payload.get("title") or "").strip()
         if not title:
             raise ValueError("AliExpress product title is missing from API response")
@@ -38,6 +46,21 @@ class AliExpressProductMapper:
             or self.url_parser.build_product_url(product_id)
         )
 
+        category_name = payload.get("second_level_category_name") or payload.get(
+            "first_level_category_name"
+        )
+        category_id = payload.get("second_level_category_id") or payload.get(
+            "first_level_category_id"
+        )
+
+        commission_rate = self._to_decimal_optional(
+            payload.get("hot_product_commission_rate")
+            or payload.get("commission_rate")
+            or payload.get("relevant_market_commission_rate")
+        )
+
+        shipping_info = self._build_shipping_info(payload)
+
         return AliExpressProductData(
             aliexpress_product_id=product_id,
             title=title[:255],
@@ -56,6 +79,15 @@ class AliExpressProductMapper:
                 or payload.get("sale_price_currency")
                 or "USD"
             ),
+            description=str(payload.get("product_description") or payload.get("description") or "").strip()
+            or None,
+            category=str(category_name).strip() if category_name else None,
+            category_id=str(category_id) if category_id not in (None, "") else None,
+            store_name=self._extract_store_name(payload),
+            commission_rate=commission_rate,
+            shipping_info=shipping_info,
+            platform_product_type=str(payload.get("platform_product_type") or "") or None,
+            last_synced_at=datetime.now(timezone.utc),
         )
 
     def _extract_main_image(self, payload: dict) -> str:
@@ -85,6 +117,27 @@ class AliExpressProductMapper:
             images.insert(0, fallback)
         return images
 
+    def _extract_store_name(self, payload: dict) -> str | None:
+        for key in ("shop_name", "store_name", "seller_name"):
+            value = payload.get(key)
+            if value:
+                return str(value)[:255]
+        shop_url = payload.get("shop_url")
+        if shop_url:
+            return str(shop_url)[:255]
+        return None
+
+    def _build_shipping_info(self, payload: dict) -> dict | None:
+        shipping: dict[str, str | int | bool] = {}
+        ship_to_days = payload.get("ship_to_days")
+        if ship_to_days not in (None, ""):
+            shipping["ship_to_days"] = str(ship_to_days)
+        if payload.get("free_shipping") in ("Y", "y", True):
+            shipping["free_shipping"] = True
+        if payload.get("ship_to_country"):
+            shipping["ship_to_country"] = str(payload.get("ship_to_country"))
+        return shipping or None
+
     def _resolve_discount(
         self,
         payload: dict,
@@ -107,7 +160,6 @@ class AliExpressProductMapper:
         parsed = self._parse_percent(evaluate_rate)
         if parsed is None:
             return Decimal("0.00")
-        # evaluate_rate is a positive feedback percentage (0-100) -> 0-5 scale
         return (parsed / Decimal("20")).quantize(Decimal("0.01"))
 
     def _parse_percent(self, value: object) -> Decimal | None:

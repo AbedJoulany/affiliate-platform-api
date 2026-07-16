@@ -1,154 +1,253 @@
-from datetime import datetime
-from zoneinfo import ZoneInfo
-
-import httpx
-
+from app.aliexpress.api_client import AliExpressAPIClient
+from app.aliexpress.exceptions import AliExpressAPIError  # noqa: F401
+from app.aliexpress.constants import (
+    METHOD_CATEGORY_GET,
+    METHOD_DS_IMAGE_SEARCH,
+    METHOD_FEATURED_PROMO,
+    METHOD_FEATURED_PROMO_PRODUCTS,
+    METHOD_HOT_PRODUCT_QUERY,
+    METHOD_LINK_GENERATE,
+    METHOD_PRODUCT_DETAIL,
+    METHOD_PRODUCT_QUERY,
+    METHOD_SMART_MATCH,
+)
+from app.aliexpress.exceptions import (
+    AliExpressAPIError,
+    AliExpressImageSearchNotSupportedError,
+)
 from app.aliexpress.mapper import AliExpressProductMapper
+from app.aliexpress.response_parser import (
+    AliExpressPageMeta,
+    extract_products_and_meta,
+    extract_response_root,
+    extract_result_payload,
+    normalize_product_list,
+)
 from app.aliexpress.schemas import AliExpressProductData
-from app.aliexpress.signer import sign_request
+from app.aliexpress.types import AliExpressAPISort, AliExpressPromoSort, PlatformProductType
 from app.aliexpress.url_parser import AliExpressURLParser
-from app.core.config import Settings, get_settings
-from app.services.exceptions import ValidationError
-
-ALIEXPRESS_METHOD = "aliexpress.affiliate.productdetail.get"
-SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 
 
-class AliExpressAPIError(Exception):
-    def __init__(self, message: str, *, code: str | int | None = None) -> None:
-        self.message = message
-        self.code = code
-        super().__init__(message)
+class AliExpressAffiliateClient(AliExpressAPIClient):
+    """Affiliate API facade built on the shared AliExpress API client."""
 
-
-class AliExpressAffiliateClient:
     def __init__(
         self,
-        settings: Settings | None = None,
+        settings=None,
         *,
         mapper: AliExpressProductMapper | None = None,
         url_parser: AliExpressURLParser | None = None,
     ) -> None:
-        self.settings = settings or get_settings()
+        super().__init__(settings)
         self.mapper = mapper or AliExpressProductMapper()
         self.url_parser = url_parser or AliExpressURLParser()
 
-    @property
-    def is_configured(self) -> bool:
-        return bool(self.settings.aliexpress_app_key and self.settings.aliexpress_app_secret)
-
-    def _ensure_configured(self) -> None:
-        if not self.is_configured:
-            raise ValidationError("AliExpress App Key and App Secret are not configured")
-
     async def get_product_details(self, product_id: str) -> AliExpressProductData:
-        self._ensure_configured()
-        response = await self._call_api(product_ids=product_id)
-        product_payload = self._extract_product_payload(response, product_id)
+        response = await self.call_method(METHOD_PRODUCT_DETAIL, product_ids=product_id)
+        product_payload = self._extract_single_product_payload(response, product_id)
         return self.mapper.map_product(product_id, product_payload)
 
     async def get_product_details_by_url(self, url: str) -> AliExpressProductData:
         product_id = self.url_parser.extract_product_id(url)
         return await self.get_product_details(product_id)
 
-    async def _call_api(self, **business_params: str) -> dict:
-        params = self._build_params(**business_params)
-        params["sign"] = sign_request(params, self.settings.aliexpress_app_secret)
-
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            try:
-                response = await client.post(
-                    self.settings.aliexpress_api_url,
-                    data=params,
-                    headers={
-                        "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
-                    },
-                )
-                response.raise_for_status()
-                payload = response.json()
-            except httpx.HTTPError as exc:
-                raise AliExpressAPIError(f"AliExpress API request failed: {exc}") from exc
-            except ValueError as exc:
-                raise AliExpressAPIError("AliExpress API returned invalid JSON") from exc
-
-        self._raise_for_api_errors(payload)
-        return payload
-
-    def _build_params(self, **business_params: str) -> dict[str, str]:
-        timestamp = datetime.now(SHANGHAI_TZ).strftime("%Y-%m-%d %H:%M:%S")
-        params: dict[str, str] = {
-            "method": ALIEXPRESS_METHOD,
-            "app_key": self.settings.aliexpress_app_key,
-            "sign_method": "md5",
-            "timestamp": timestamp,
-            "format": "json",
-            "v": "2.0",
-            "target_currency": self.settings.aliexpress_target_currency,
-            "target_language": self.settings.aliexpress_target_language,
-            "country": self.settings.aliexpress_country,
-            "fields": (
-                "commission_rate,discount,evaluate_rate,lastest_volume,product_title,"
-                "product_main_image_url,product_small_image_urls,promotion_link,"
-                "product_detail_url,target_sale_price,target_original_price,"
-                "target_sale_price_currency,sale_price,original_price"
+    async def query_products(
+        self,
+        *,
+        page_no: int = 1,
+        page_size: int = 20,
+        category_ids: str | None = None,
+        keywords: str | None = None,
+        min_sale_price: str | None = None,
+        max_sale_price: str | None = None,
+        sort: AliExpressAPISort | str | None = None,
+        platform_product_type: PlatformProductType | str | None = None,
+        ship_to_country: str | None = None,
+        delivery_days: str | None = None,
+    ) -> tuple[list[AliExpressProductData], AliExpressPageMeta]:
+        raw_products, meta = await self.fetch_products_page(
+            METHOD_PRODUCT_QUERY,
+            page_no=page_no,
+            page_size=page_size,
+            category_ids=category_ids,
+            keywords=keywords,
+            min_sale_price=min_sale_price,
+            max_sale_price=max_sale_price,
+            sort=sort.value if isinstance(sort, AliExpressAPISort) else sort,
+            platform_product_type=(
+                platform_product_type.value
+                if isinstance(platform_product_type, PlatformProductType)
+                else platform_product_type
             ),
-        }
-        if self.settings.aliexpress_tracking_id:
-            params["tracking_id"] = self.settings.aliexpress_tracking_id
-        params.update({key: str(value) for key, value in business_params.items() if value})
-        return params
+            ship_to_country=ship_to_country or self.settings.aliexpress_country,
+            delivery_days=delivery_days,
+        )
+        return self._map_products(raw_products), meta
 
-    def _extract_product_payload(self, response: dict, product_id: str) -> dict:
-        root = response.get("aliexpress_affiliate_productdetail_get_response", response)
-        result_container = root.get("resp_result") or root.get("result") or root
+    async def get_hot_products(
+        self,
+        *,
+        page_no: int = 1,
+        page_size: int = 20,
+        category_ids: str | None = None,
+        keywords: str | None = None,
+        sort: AliExpressAPISort | str | None = AliExpressAPISort.LAST_VOLUME_DESC,
+        ship_to_country: str | None = None,
+    ) -> tuple[list[AliExpressProductData], AliExpressPageMeta]:
+        raw_products, meta = await self.fetch_products_page(
+            METHOD_HOT_PRODUCT_QUERY,
+            page_no=page_no,
+            page_size=page_size,
+            category_ids=category_ids,
+            keywords=keywords,
+            sort=sort.value if isinstance(sort, AliExpressAPISort) else sort,
+            ship_to_country=ship_to_country or self.settings.aliexpress_country,
+        )
+        return self._map_products(raw_products), meta
 
-        if isinstance(result_container, dict) and result_container.get("resp_code") not in (
-            None,
-            200,
-            "200",
-        ):
-            raise AliExpressAPIError(
-                str(result_container.get("resp_msg") or "AliExpress API call failed"),
-                code=result_container.get("resp_code"),
+    async def get_trending_products(
+        self,
+        *,
+        page_no: int = 1,
+        page_size: int = 20,
+        keywords: str | None = None,
+        product_id: str | None = None,
+        device_id: str | None = None,
+        ship_to_country: str | None = None,
+    ) -> tuple[list[AliExpressProductData], AliExpressPageMeta]:
+        raw_products, meta = await self.fetch_products_page(
+            METHOD_SMART_MATCH,
+            page_no=page_no,
+            page_size=page_size,
+            keywords=keywords,
+            product_id=product_id,
+            device_id=device_id or self.settings.aliexpress_smartmatch_device_id,
+            ship_to_country=ship_to_country or self.settings.aliexpress_country,
+        )
+        return self._map_products(raw_products), meta
+
+    async def get_featured_promo_products(
+        self,
+        *,
+        page_no: int = 1,
+        page_size: int = 20,
+        category_id: str | None = None,
+        promotion_name: str | None = None,
+        sort: AliExpressPromoSort | str | None = None,
+        country: str | None = None,
+    ) -> tuple[list[AliExpressProductData], AliExpressPageMeta]:
+        raw_products, meta = await self.fetch_products_page(
+            METHOD_FEATURED_PROMO_PRODUCTS,
+            page_no=page_no,
+            page_size=page_size,
+            category_id=category_id,
+            promotion_name=promotion_name,
+            sort=sort.value if isinstance(sort, AliExpressPromoSort) else sort,
+            country=country or self.settings.aliexpress_country,
+        )
+        return self._map_products(raw_products), meta
+
+    async def get_featured_promotions(self) -> list[dict]:
+        return await self.fetch_promotions(METHOD_FEATURED_PROMO)
+
+    async def get_categories(self) -> list[dict]:
+        return await self.fetch_categories(METHOD_CATEGORY_GET)
+
+    async def search_products_by_image(
+        self,
+        *,
+        image_url: str | None = None,
+        image_base64: str | None = None,
+    ) -> tuple[list[AliExpressProductData], AliExpressPageMeta]:
+        if not self.settings.aliexpress_enable_ds_image_search:
+            raise AliExpressImageSearchNotSupportedError(
+                "Image search requires AliExpress DS API access. "
+                "Set ALIEXPRESS_ENABLE_DS_IMAGE_SEARCH=true after enabling aliexpress.ds.image.search."
             )
+        if not image_url and not image_base64:
+            raise AliExpressAPIError("Provide image_url or image_base64 for image search")
 
-        result = result_container.get("result") if isinstance(result_container, dict) else None
-        if not isinstance(result, dict):
-            result = result_container if isinstance(result_container, dict) else {}
+        params: dict[str, str | None] = {}
+        if image_url:
+            params["image_url"] = image_url
+        if image_base64:
+            params["image_base64"] = image_base64
 
-        products = result.get("products") or {}
-        product_list = products.get("product") if isinstance(products, dict) else products
-        if product_list is None:
-            product_list = result.get("product")
+        payload = await self.call_method(METHOD_DS_IMAGE_SEARCH, **params)
+        raw_products, meta = extract_products_and_meta(payload, METHOD_DS_IMAGE_SEARCH)
+        return self._map_products(raw_products), meta
 
-        if isinstance(product_list, dict):
-            product_list = [product_list]
-        if not isinstance(product_list, list) or not product_list:
+    def _map_products(self, raw_products: list[dict]) -> list[AliExpressProductData]:
+        mapped: list[AliExpressProductData] = []
+        for payload in raw_products:
+            # --- NESTING SAFEGUARD ---
+            # If the list element contains a wrapped inner info block, unpack it before looking for the ID
+            if "product_info" in payload:
+                payload = payload["product_info"]
+            elif "aeop_ae_product_info" in payload:
+                payload = payload["aeop_ae_product_info"]
+            # --------------------------
+
+            product_id = str(payload.get("product_id") or payload.get("aliexpress_product_id") or "").strip()
+            if not product_id:
+                continue
+            try:
+                mapped.append(self.mapper.map_product(product_id, payload))
+            except ValueError:
+                continue
+        return mapped
+
+    def _extract_single_product_payload(self, response: dict, product_id: str) -> dict:
+        root = extract_response_root(response, METHOD_PRODUCT_DETAIL)
+        result = extract_result_payload(root)
+        
+        product_list = normalize_product_list(result.get("products"))
+        if not product_list:
+            product_list = normalize_product_list(result.get("product"))
+
+        if not product_list:
             raise AliExpressAPIError(f"AliExpress product {product_id} was not found")
 
+        # Find the targeted item out of the detail array safely
         for item in product_list:
-            if not isinstance(item, dict):
-                continue
-            current_id = str(item.get("product_id") or product_id)
+            # Flatten context checks here too
+            inner_item = item.get("product_info") or item.get("aeop_ae_product_info") or item
+            current_id = str(inner_item.get("product_id") or inner_item.get("aliexpress_product_id") or product_id)
             if current_id == str(product_id):
                 return item
 
-        first = product_list[0]
-        if isinstance(first, dict):
-            return first
-        raise AliExpressAPIError(f"AliExpress product {product_id} was not found")
-
-    def _raise_for_api_errors(self, response: dict) -> None:
-        if "error_response" in response:
-            error = response["error_response"]
-            raise AliExpressAPIError(
-                str(error.get("msg") or error.get("sub_msg") or "AliExpress API error"),
-                code=error.get("code") or error.get("sub_code"),
-            )
-
-        root = response.get("aliexpress_affiliate_productdetail_get_response", {})
-        if isinstance(root, dict) and root.get("error_code"):
-            raise AliExpressAPIError(
-                str(root.get("error_msg") or "AliExpress API error"),
-                code=root.get("error_code"),
-            )
+        return product_list[0]
+    
+    async def generate_short_link(self, long_url: str, tracking_id: str = "default") -> str:
+            """
+            Converts a long affiliate promotion link into a clean short link.
+            """
+            params = {
+                "source_values": long_url,
+                "promotion_link_type": "0",  # 0 indicates standardized short link format
+                "tracking_id": tracking_id
+            }
+            
+            try:
+                # Assumes METHOD_LINK_GENERATE evaluates to "aliexpress.affiliate.link.generate"
+                payload = await self.call_method(METHOD_LINK_GENERATE, **params)
+                
+                from app.aliexpress.response_parser import extract_response_root, extract_result_payload
+                root = extract_response_root(payload, METHOD_LINK_GENERATE)
+                result = extract_result_payload(root)
+                
+                # Match the dictionary matching your verified payload layout:
+                # result -> {"promotion_links": {"promotion_link": [...]}}
+                promo_links_container = result.get("promotion_links") or {}
+                links = promo_links_container.get("promotion_link", [])
+                
+                if links and isinstance(links, list):
+                    # Pull the link string directly from 'promotion_link'
+                    short_url = links[0].get("promotion_link")
+                    if short_url:
+                        return str(short_url)
+                    
+                return long_url
+            except Exception:
+                # Fallback gracefully to the long URL if the shortening request fails
+                return long_url

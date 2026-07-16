@@ -1,3 +1,4 @@
+from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -35,16 +36,27 @@ class ProductUpdate(BaseModel):
 
 class ProductRead(TimestampSchema):
     id: UUID
+    aliexpress_product_id: str | None = None
     title: str
+    description: str | None = None
     price: Decimal
+    original_price: Decimal | None = None
     discount: Decimal
     rating: Decimal
     sales: int
     reviews: int
     image_url: str
+    gallery_images: list[str] | None = None
     product_url: str
+    affiliate_url: str | None = None
+    category: str | None = None
+    store_name: str | None = None
+    currency: str = "USD"
+    commission_rate: Decimal | None = None
+    shipping_info: dict | None = None
     score: Decimal
     status: ProductStatus
+    last_synced_at: datetime | None = None
 
 
 class ProductListResponse(PaginatedResponse):

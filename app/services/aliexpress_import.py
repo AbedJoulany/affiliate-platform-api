@@ -1,16 +1,19 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.aliexpress.client import AliExpressAffiliateClient
-from app.aliexpress.schemas import AliExpressProductData
-from app.aliexpress.scoring import calculate_initial_product_score
+from app.aliexpress.exceptions import AliExpressAPIError
 from app.aliexpress.url_parser import AliExpressURLParser
-from app.core.enums import ProductStatus
-from app.models.product import Product
-from app.repositories.product import ProductRepository
 from app.schemas.aliexpress import AliExpressImportResponse
+from app.schemas.discovery import (
+    ProductImportBatchRequest,
+    ProductImportBatchResponse,
+    ProductImportRequest,
+    ProductImportResponse,
+    ProductImportUrlRequest,
+)
 from app.services.exceptions import AliExpressAPIError as ServiceAliExpressAPIError
 from app.services.exceptions import ValidationError
-from app.aliexpress.client import AliExpressAPIError
+from app.services.product_importer import ProductImporter
 
 
 class AliExpressImportService:
@@ -23,7 +26,7 @@ class AliExpressImportService:
         self.session = session
         self.client = client
         self.url_parser = url_parser or AliExpressURLParser()
-        self.product_repo = ProductRepository(session)
+        self.importer = ProductImporter(session, self.url_parser)
 
     async def import_product(
         self,
@@ -32,29 +35,66 @@ class AliExpressImportService:
         product_id: str | None = None,
     ) -> AliExpressImportResponse:
         aliexpress_id = self._resolve_product_id(url=url, product_id=product_id)
+        product_data = await self._fetch_product(aliexpress_id)
+        # 2. Extract the long affiliate link from the raw API mapped schema object
+        short_url = await self.client.generate_short_link(product_data.promotion_url)
+        print(f"Generated short link for product {aliexpress_id}: {short_url}")
+        product_data.promotion_url = short_url
 
-        try:
-            product_data = await self.client.get_product_details(aliexpress_id)
-        except AliExpressAPIError as exc:
-            raise ServiceAliExpressAPIError(exc.message, code=exc.code) from exc
-
-        canonical_url = self.url_parser.build_product_url(aliexpress_id)
-        existing = await self.product_repo.get_by_product_url(canonical_url)
-        if existing is None and product_data.promotion_url:
-            existing = await self.product_repo.get_by_product_url(product_data.promotion_url)
-
-        if existing:
-            product = await self._update_product(existing, product_data, canonical_url)
-            imported = False
-        else:
-            product = await self._create_product(product_data, canonical_url)
-            imported = True
-
+        # 4. Proceed to upsert into the DB safely
+        result = await self.importer.upsert_product(product_data)
         return AliExpressImportResponse(
-            product=product,
+            product=result.product,
             aliexpress_product_id=aliexpress_id,
-            imported=imported,
+            imported=result.imported,
             image_count=len(product_data.images),
+        )
+
+    async def import_from_url(self, payload: ProductImportUrlRequest) -> ProductImportResponse:
+        result = await self.import_product(url=str(payload.url))
+        return ProductImportResponse(
+            product=result.product,
+            aliexpress_product_id=result.aliexpress_product_id,
+            imported=result.imported,
+            image_count=result.image_count,
+        )
+
+    async def import_from_request(self, payload: ProductImportRequest) -> ProductImportResponse:
+        result = await self.import_product(
+            url=str(payload.url) if payload.url else None,
+            product_id=payload.product_id,
+        )
+        return ProductImportResponse(
+            product=result.product,
+            aliexpress_product_id=result.aliexpress_product_id,
+            imported=result.imported,
+            image_count=result.image_count,
+        )
+
+    async def import_batch(self, payload: ProductImportBatchRequest) -> ProductImportBatchResponse:
+        imported = 0
+        updated = 0
+        failed = 0
+        products = []
+
+        for product_id in payload.product_ids:
+            try:
+                result = await self.import_product(product_id=product_id.strip())
+            except (ServiceAliExpressAPIError, ValidationError):
+                failed += 1
+                continue
+
+            if result.imported:
+                imported += 1
+            else:
+                updated += 1
+            products.append(result.product)
+
+        return ProductImportBatchResponse(
+            imported=imported,
+            updated=updated,
+            failed=failed,
+            products=products,
         )
 
     def _resolve_product_id(
@@ -73,48 +113,8 @@ class AliExpressImportService:
         except ValueError as exc:
             raise ValidationError(str(exc)) from exc
 
-    async def _create_product(
-        self,
-        data: AliExpressProductData,
-        canonical_url: str,
-    ) -> Product:
-        product = Product(
-            title=data.title,
-            price=data.price,
-            discount=data.discount,
-            rating=data.rating,
-            sales=data.sales,
-            reviews=data.reviews,
-            image_url=data.image_url,
-            product_url=data.promotion_url or canonical_url,
-            score=calculate_initial_product_score(
-                rating=data.rating,
-                sales=data.sales,
-                discount=data.discount,
-                reviews=data.reviews,
-            ),
-            status=ProductStatus.DRAFT,
-        )
-        return await self.product_repo.create(product)
-
-    async def _update_product(
-        self,
-        product: Product,
-        data: AliExpressProductData,
-        canonical_url: str,
-    ) -> Product:
-        product.title = data.title
-        product.price = data.price
-        product.discount = data.discount
-        product.rating = data.rating
-        product.sales = data.sales
-        product.reviews = data.reviews
-        product.image_url = data.image_url
-        product.product_url = data.promotion_url or canonical_url
-        product.score = calculate_initial_product_score(
-            rating=data.rating,
-            sales=data.sales,
-            discount=data.discount,
-            reviews=data.reviews,
-        )
-        return await self.product_repo.update(product)
+    async def _fetch_product(self, aliexpress_id: str):
+        try:
+            return await self.client.get_product_details(aliexpress_id)
+        except AliExpressAPIError as exc:
+            raise ServiceAliExpressAPIError(exc.message, code=exc.code) from exc

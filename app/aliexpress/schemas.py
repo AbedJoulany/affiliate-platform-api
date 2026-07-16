@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from datetime import datetime
 from decimal import Decimal
 
 
@@ -17,3 +18,11 @@ class AliExpressProductData:
     product_url: str = ""
     promotion_url: str | None = None
     currency: str = "USD"
+    description: str | None = None
+    category: str | None = None
+    category_id: str | None = None
+    store_name: str | None = None
+    commission_rate: Decimal | None = None
+    shipping_info: dict | None = None
+    platform_product_type: str | None = None
+    last_synced_at: datetime | None = None
