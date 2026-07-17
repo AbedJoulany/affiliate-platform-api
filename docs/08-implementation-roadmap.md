@@ -3,7 +3,7 @@
 ## AI Affiliate Automation Platform
 
 **Document Version:** 1.0
-**Last Updated:** 2026-07-16
+**Last Updated:** 2026-07-17
 
 ---
 
@@ -84,8 +84,20 @@ Publishing Queue
 
 Telegram Channels
 
-Basic Settings
+Read-only Settings Status
 ```
+
+## Current implementation status — 2026-07-17
+
+The frontend foundation, application shell, login/session protection, dashboard, products,
+discovery, AI generation, queue, channels, profile, settings route set, and shared
+loading/empty/error states are implemented at MVP depth.
+
+Still partial or future: a shared `DataTable` and richer UI primitives, registration UI,
+admin provisioning tooling, full discovery controls, AI prompt profiles/history, queue
+scheduling/editing, explicit channel connection testing/deletion, editable settings APIs,
+broader tests/accessibility polish, and analytics. Settings currently display read-only
+capability/status information; they do not configure the system.
 
 ---
 
@@ -148,6 +160,10 @@ Includes:
 
 # 5. Phase 0 — Project Foundation
 
+**Status: Done for the MVP foundation; tooling partial.** The app, environment pattern,
+aliases, theme provider, RTL root, and feature structure exist. Prettier script/CI
+integration remains future.
+
 ## Goal
 
 Create a clean and scalable Next.js project foundation.
@@ -165,12 +181,17 @@ TypeScript
 
 TailwindCSS
 
-shadcn/ui
+Local Tailwind UI primitives (shadcn/ui is a future option)
 
 ESLint
 
-Prettier
+Prettier dependency (script/CI integration future)
 ```
+
+Current result: Next.js 15.5.x, React 19, Tailwind 3.4, TypeScript, ESLint, TanStack Query 5,
+Axios, React Hook Form/Zod, Lucide, and next-themes are installed. The UI uses local
+Tailwind primitives; shadcn/ui is not installed. Prettier is installed but has no npm
+format script or CI step.
 
 ---
 
@@ -197,14 +218,10 @@ features/
 
 services/
 
-hooks/
-
 lib/
-
-types/
-
-utils/
 ```
+
+Current hooks and API types live inside feature folders; utilities live in `lib/utils.ts`.
 
 ---
 
@@ -219,6 +236,10 @@ Completed:
 ---
 
 # 6. Phase 1 — Design System Foundation
+
+**Status: Partial.** Button, Input, Select, Textarea, Card, Badge, Skeleton, and shared
+loading/empty/error states exist. Dialog, dropdown, toast, shared DataTable/SearchBar/
+FilterPanel, and richer accessible primitives remain planned.
 
 ## Goal
 
@@ -271,7 +292,7 @@ PageHeader
 ## Common Components
 
 ```text
-DataTable
+DataTable (planned extraction)
 
 SearchBar
 
@@ -298,6 +319,9 @@ A reusable component library matching:
 ---
 
 # 7. Phase 2 — Application Shell
+
+**Status: Done at MVP depth.** `AppShell.tsx` combines the sidebar, header, responsive
+drawer, navigation, theme toggle, user menu, and content frame.
 
 ## Goal
 
@@ -343,6 +367,11 @@ A complete application frame where all pages can be displayed.
 
 # 8. Phase 3 — Authentication
 
+**Status: Done at MVP depth.** Login, logout, middleware redirect, access-JWT
+`sessionStorage`, presence-only cookie, `/auth/me` validation, and `401` clearing are
+implemented. There is no auth provider/context and no refresh token. Registration UI and
+operational admin-provisioning tooling remain future.
+
 ## Goal
 
 Connect frontend authentication with backend.
@@ -355,8 +384,6 @@ Implement:
 
 ```text
 Login Page
-
-Authentication Provider
 
 Protected Routes
 
@@ -386,6 +413,9 @@ Users can:
 ---
 
 # 9. Phase 4 — Dashboard
+
+**Status: Done at MVP depth.** The real `GET /dashboard` contract powers product/queue/
+published/active-channel counts, recent product/queue activity, and database status.
 
 ## Goal
 
@@ -418,8 +448,6 @@ Queue Status
 
 Publishing Status
 
-AI Usage
-
 Recent Activity
 
 Quick Actions
@@ -434,6 +462,10 @@ A functional dashboard connected to backend data.
 ---
 
 # 10. Phase 5 — Products Module
+
+**Status: Done at MVP depth.** List, title/status filters, pagination, and details are
+implemented using a feature-local table. A shared DataTable and frontend admin CRUD
+controls remain future.
 
 ## Goal
 
@@ -456,7 +488,7 @@ Build the main product management workspace.
 Implement:
 
 ```text
-ProductTable backed by the common DataTable
+Feature-local product table (shared DataTable is future)
 
 Search
 
@@ -466,10 +498,11 @@ Pagination
 
 Product Details
 
-Import Product
-
-Product Actions
+Open product in AI Studio
 ```
+
+Admin-only import is implemented in the Discovery phase. Frontend product CRUD actions
+remain future work.
 
 ---
 
@@ -495,11 +528,15 @@ Users can:
 * Search.
 * Filter.
 * Open product details.
-* Perform actions.
+* Open a product in AI Studio.
 
 ---
 
 # 11. Phase 6 — Discovery Module
+
+**Status: Partial.** General/hot/deals/trending/category modes, selected filters,
+categories, results, and admin import are implemented. The complete backend filter set,
+image search, persistence/paging controls, and automation monitoring remain future.
 
 ## Goal
 
@@ -541,6 +578,10 @@ Users can discover and import products.
 
 # 12. Phase 7 — AI Studio
 
+**Status: Partial.** Provider selection, generation by product ID or URL, local editing,
+copy, and draft creation are implemented. Prompt profiles, saved history, persistence, and
+dedicated regenerate/save workflows remain future.
+
 ## Goal
 
 Create AI content generation workspace.
@@ -572,7 +613,7 @@ Queue
 ```text
 AIContentEditor
 
-PromptProfileSelector
+PromptProfileSelector (future)
 
 GenerationStatus
 ```
@@ -590,6 +631,10 @@ Users can:
 ---
 
 # 13. Phase 8 — Publishing Queue
+
+**Status: Partial.** List, status filter, and publish-now are implemented. AI Studio can
+create drafts. Editing, deleting, retry orchestration, and scheduling controls remain
+future even though the API accepts scheduled records.
 
 ## Goal
 
@@ -618,12 +663,12 @@ scheduled
 
 published
 
-Retry
-
 Publish Now
 ```
 
-The lowercase status values must match the backend `QueueStatus` enum exactly. Publishing failures are operation errors that can offer Retry; they are not a `failed` queue status.
+The lowercase status values must match the backend `QueueStatus` enum exactly. Publishing
+failures are operation errors, not a `failed` queue status. Dedicated retry controls and
+retry orchestration remain future work.
 
 ---
 
@@ -634,6 +679,9 @@ Users can manage publishing workflow.
 ---
 
 # 14. Phase 9 — Channels Management
+
+**Status: Partial.** List, add, permission display, and active-state toggle are implemented.
+Delete, a richer connection-test action, and additional platforms remain future.
 
 ## Goal
 
@@ -650,9 +698,9 @@ Channel List
 
 Add Channel
 
-Connection Test
+Connection Test (future)
 
-Channel Settings
+Channel Settings (future)
 ```
 
 ---
@@ -676,6 +724,9 @@ WhatsApp
 ---
 
 # 15. Phase 10 — Settings
+
+**Status: Partial/read-only.** All routes exist and render capability/status screens.
+There are no editable settings APIs, forms, or persistence.
 
 ## Goal
 
@@ -705,11 +756,14 @@ Provide application configuration.
 
 ## Deliverables
 
-Users can configure system behavior.
+Users can inspect documented capability details and database/Redis readiness. Editable
+configuration is a future deliverable.
 
 ---
 
 # 16. Phase 11 — Polish & Optimization
+
+**Status: Ongoing.**
 
 ## Goal
 
@@ -792,7 +846,8 @@ Good:
 Create ProductTable component inside
 features/products/components.
 
-Use DataTable from common components.
+Inspect the current feature-local table first. Extract or extend a shared DataTable only
+when the task explicitly includes that planned refactor.
 Follow Design System.
 Support loading and empty states.
 Use TypeScript.

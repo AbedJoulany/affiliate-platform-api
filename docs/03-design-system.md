@@ -3,7 +3,7 @@
 ## AI Affiliate Automation Platform
 
 **Document Version:** 1.0
-**Last Updated:** 2026-07-16
+**Last Updated:** 2026-07-17
 
 ---
 
@@ -281,21 +281,14 @@ Used for:
 
 Typography should provide clear hierarchy and readability.
 
-Recommended font:
+Current font stack:
 
-Primary:
-
-```
-Inter
+```css
+Arial, "Noto Sans Arabic", sans-serif
 ```
 
-Arabic support:
-
-```
-IBM Plex Sans Arabic
-or
-Noto Sans Arabic
-```
+Inter and IBM Plex Sans Arabic remain possible future brand typography; they are not
+currently loaded by the application.
 
 ---
 
@@ -670,7 +663,11 @@ Used for:
 
 Tables are a core component of the platform.
 
-All tables should support:
+Current implementation: product and queue views render feature-local responsive HTML
+tables. They support the controls needed by those screens, but there is no shared
+`DataTable` component.
+
+Target shared table behavior:
 
 * Search.
 * Filtering.
@@ -692,11 +689,10 @@ Examples:
 Product:
 
 ```
-Imported
-Reviewed
-Queued
-Published
-Failed
+draft
+active
+inactive
+archived
 ```
 
 Queue:
@@ -709,6 +705,7 @@ published
 ```
 
 Queue badges must use these exact values from the backend `QueueStatus` enum. A publishing failure is shown as operation feedback, not as a queue status.
+Product badges must use the exact backend `ProductStatus` values above.
 
 ---
 
@@ -742,6 +739,9 @@ Examples:
 "Product imported successfully"
 
 ---
+
+Current implementation uses inline `role="alert"` / `role="status"` messages for mutation
+feedback. A reusable toast system is future work.
 
 ## Dialog
 

@@ -3,7 +3,7 @@
 ## AI Affiliate Automation Platform
 
 **Document Version:** 1.0
-**Last Updated:** 2026-07-16
+**Last Updated:** 2026-07-17
 
 ---
 
@@ -223,8 +223,10 @@ Features:
 * Product list.
 * Search.
 * Filtering.
-* Import.
-* Product actions.
+* Pagination.
+
+Import is performed from `/discovery` and is visible only to provisioned admin users.
+Frontend product CRUD actions remain future work.
 
 ---
 
@@ -244,9 +246,11 @@ Contains:
 
 * Product information.
 * Affiliate data.
-* AI content.
-* Publishing actions.
-* History.
+* Description and product metadata.
+* Affiliate link.
+* Link to open AI Studio with the product selected.
+
+Persisted AI content, direct publishing actions, and product history are future additions.
 
 Example:
 
@@ -271,9 +275,13 @@ Manage product discovery workflows.
 Contains:
 
 * Discovery sources.
-* Filters.
+* Keyword, minimum-rating, minimum-discount, and category controls.
 * Discovery results.
-* Import actions.
+* Admin-only import actions.
+
+The current UI exposes general, hot, deals, trending, and category modes. The backend
+contract supports additional filters and modes documented in `06-api-integration.md`; they
+are not all exposed in this first UI.
 
 Future:
 
@@ -297,9 +305,12 @@ AI content generation workspace.
 Contains:
 
 * Content generation.
-* Prompt profiles.
 * Editing.
-* Generation history.
+* Copying.
+* Add generated content to the queue as a draft.
+
+Prompt profiles, saved generation history, and server-side content persistence are future
+work.
 
 ---
 
@@ -321,9 +332,10 @@ Contains:
 * `queued` items.
 * `scheduled` items.
 * `published` items.
-* Retry actions.
 
-These four lowercase values are the canonical backend `QueueStatus` enum. Publishing failures are operation errors that may expose retry actions; they are not a `failed` queue status.
+These four lowercase values are the canonical backend `QueueStatus` enum. Publishing failures are operation errors; they are not a `failed` queue status. The current UI shows the error and allows the user to invoke Publish Now again, but it has no dedicated retry control or retry orchestration.
+The current UI lists and filters items and can publish immediately. It does not yet create
+scheduled items, edit queue records, or provide a schedule picker.
 
 ---
 
@@ -344,6 +356,9 @@ Current:
 ```
 Telegram
 ```
+
+The current UI lists channels, adds a Telegram channel, displays bot permission state, and
+toggles active state. Delete and a separate connection-test action are not exposed.
 
 Future:
 
@@ -390,7 +405,7 @@ Route:
 
 Purpose:
 
-Manage application configuration.
+Display application capabilities and operational status.
 
 Sections:
 
@@ -409,6 +424,9 @@ Sections:
 ```
 
 `/settings` is the parent route and should redirect to or render `/settings/general` as its default section. All settings sections use nested routes consistently.
+All current settings sections are read-only `CapabilityView` screens. There are no editable
+settings APIs or forms. Capability badges use `/ready`, which checks PostgreSQL and Redis
+only; they do not validate provider credentials or Celery worker health.
 
 ---
 
@@ -422,15 +440,12 @@ Route:
 
 Purpose:
 
-Manage user settings.
+Display current account and session information.
 
 Profile is opened from the header user menu and is not a sidebar item.
 
-Contains:
-
-* Account information.
-* Preferences.
-* Security settings.
+The current profile is read-only. Preferences, profile editing, and security settings are
+future because the required APIs are not implemented.
 
 ---
 
@@ -558,6 +573,9 @@ Uses:
 
 # 12. Breadcrumb Navigation
 
+**Future:** breadcrumbs are not currently implemented. Product detail provides a simple
+back link to products.
+
 Complex pages should display breadcrumbs.
 
 Example:
@@ -581,9 +599,11 @@ Used for:
 
 Protected routes use:
 
-* Authentication provider.
-* Middleware checks.
-* Session validation.
+* Middleware checking a presence-only session cookie.
+* `AuthGuard` validating the access JWT through `GET /auth/me`.
+* The Axios interceptor clearing session state on `401`.
+
+There is no authentication provider/context in the current frontend.
 
 Unauthenticated users:
 
@@ -690,21 +710,15 @@ The application should provide:
 
 ## Global Error
 
-```
-/error
-```
-
-Handles unexpected errors.
+`src/app/global-error.tsx` handles unexpected errors. It is a Next.js framework boundary,
+not an `/error` route.
 
 ---
 
 ## Not Found
 
-```
-/not-found
-```
-
-Handles invalid routes.
+`src/app/not-found.tsx` handles invalid routes. It is a Next.js framework boundary, not a
+`/not-found` route.
 
 ---
 
@@ -714,6 +728,9 @@ Handles:
 
 * Missing permissions.
 * Restricted pages.
+
+**Future:** there is no dedicated unauthorized page/route today. Current `401` handling
+returns users to login; backend `403` responses are shown through feature error handling.
 
 ---
 

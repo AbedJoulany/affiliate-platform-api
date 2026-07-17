@@ -3,7 +3,7 @@
 ## AI Affiliate Automation Platform
 
 **Document Version:** 1.0
-**Last Updated:** 2026-07-16
+**Last Updated:** 2026-07-17
 
 ---
 
@@ -29,6 +29,15 @@ docs/03-design-system.md
 ---
 
 # 2. Component Architecture
+
+## Status labels
+
+* **Implemented MVP** — exists in the repository and is used by current screens.
+* **Planned extraction** — behavior exists inside a feature or combined component but has
+  not been extracted into the documented shared component.
+* **Future** — target capability with no current implementation.
+
+The current UI is a local Tailwind primitive module, not installed shadcn/ui.
 
 The application separates components into three categories:
 
@@ -140,6 +149,12 @@ These components are application-independent.
 
 They should not contain business logic.
 
+**Implemented MVP:** `Button`, `Input`, `Select`, `Textarea`, `Card`, `Badge`, and `Skeleton`
+are exported together from `components/ui/primitives.tsx`.
+
+**Future:** Checkbox, Switch, Avatar, Dialog, Drawer, Dropdown Menu, Tooltip, and Toast are
+design targets below; they do not currently exist as shared components.
+
 ---
 
 # 4.1 Button
@@ -160,16 +175,16 @@ Outline
 Ghost
 
 Danger
-
-Link
 ```
 
 ## Supports
 
 * Loading state.
 * Disabled state.
-* Icon.
 * Size variations.
+
+Icons are composed as children. There is no dedicated link variant; use Next.js `Link`
+with an appropriate button/action style.
 
 Example:
 
@@ -276,14 +291,17 @@ Display small status indicators.
 Examples:
 
 ```
-Published
-
 Draft
 
-Failed
+Active
+
+Scheduled
 
 Connected
 ```
+
+Use exact backend product/queue enum values for status badges. `Failed` may describe an
+operation alert, but it is not a queue status.
 
 Variants:
 
@@ -432,6 +450,8 @@ components/layout
 
 # 5.1 AppShell
 
+**Implemented MVP (combined component).**
+
 ## Purpose
 
 Main application container.
@@ -453,6 +473,7 @@ Responsibilities:
 * Global layout.
 * Responsive behavior.
 * Theme integration.
+* Current sidebar, header, mobile drawer, navigation, theme toggle, and user menu.
 
 Does not:
 
@@ -462,6 +483,8 @@ Does not:
 ---
 
 # 5.2 Sidebar
+
+**Planned extraction:** currently implemented inside `AppShell.tsx`.
 
 ## Purpose
 
@@ -503,16 +526,22 @@ Supports:
 
 # 5.3 Header
 
-Contains:
+**Planned extraction:** currently implemented inside `AppShell.tsx`.
 
-* Search.
-* Notifications.
+Current header contains:
+
+* Mobile navigation trigger.
+* Page context.
 * Theme toggle.
 * User menu.
+
+Global search and notifications are future header capabilities.
 
 ---
 
 # 5.4 PageContainer
+
+**Implemented MVP** in `components/layout/page.tsx`.
 
 Standard page wrapper.
 
@@ -525,6 +554,8 @@ Responsible for:
 ---
 
 # 5.5 PageHeader
+
+**Implemented MVP** in `components/layout/page.tsx`.
 
 Used on every page.
 
@@ -545,8 +576,11 @@ Products
 
 Manage discovered affiliate products
 
-[Import Product]
+[Status Filter]
 ```
+
+The current Products page uses the action slot for filtering. Product import is an
+admin-only action on the Discovery page.
 
 ---
 
@@ -563,6 +597,8 @@ These are reusable application patterns.
 ---
 
 # 6.1 DataTable
+
+**Planned extraction / future shared component.**
 
 One of the most important components.
 
@@ -584,7 +620,9 @@ Supports:
 * Loading.
 * Empty state.
 
-Feature tables should compose `DataTable` rather than duplicate its behavior. For example, `ProductTable` is the products-specific wrapper around `DataTable`.
+Current product and queue screens use feature-local HTML tables. A future extraction should
+consolidate repeated table behavior into `DataTable`; do not claim that current feature
+tables already compose it.
 
 Example `ProductTable` columns:
 
@@ -640,6 +678,8 @@ Score
 
 # 6.4 EmptyState
 
+**Implemented MVP** in `components/common/states.tsx`.
+
 Every list page requires an empty state.
 
 Contains:
@@ -661,6 +701,8 @@ Start discovery
 
 # 6.5 LoadingState
 
+**Implemented MVP** in `components/common/states.tsx` using `Skeleton`.
+
 Reusable loading patterns:
 
 ```
@@ -676,6 +718,8 @@ Progress Indicator
 ---
 
 # 6.6 ErrorState
+
+**Implemented MVP** in `components/common/states.tsx`.
 
 Used when:
 
@@ -712,6 +756,10 @@ Location:
 features/dashboard/components
 ```
 
+**Implemented MVP:** `DashboardView` contains the current stat cards, quick-action cards,
+recent activity, and database status. The named components below describe useful future
+extractions rather than separate files.
+
 ---
 
 # 7.1 StatCard
@@ -725,10 +773,14 @@ Products Found
 
 Queue Size
 
-Published Today
+Published Queue Items
 
 AI Usage
 ```
+
+The first three examples map to current concepts; AI Usage is a future analytics card. The
+current dashboard shows products total, queue total, published count, and active channels.
+AI usage is not returned by the dashboard API.
 
 Contains:
 
@@ -748,7 +800,7 @@ Examples:
 ```
 Product imported
 
-AI content generated
+Queue draft created
 
 Post published
 ```
@@ -762,24 +814,26 @@ Used for common actions.
 Examples:
 
 ```
-Import Product
-
-Run Discovery
+Explore Products
 
 Generate Content
+
+Review Queue
 ```
 
 ---
 
 # 7.4 SystemStatus
 
-Summarizes the health and availability of backend services used by the dashboard.
+Summarizes the status data currently exposed to the dashboard.
 
-Shows:
+Current behavior:
 
-* API availability.
-* Worker availability.
-* External service connection status where exposed by the backend.
+* `/dashboard` reports a database-up snapshot.
+* `/ready` reports database and Redis readiness and is used by read-only settings views.
+
+Celery worker health and external-provider status are not exposed by the current dashboard
+contract; they remain operational monitoring targets.
 
 ---
 
@@ -790,6 +844,9 @@ Location:
 ```
 features/products/components
 ```
+
+**Implemented MVP:** `ProductsView` and `ProductDetailView`. `ProductCard`,
+`ProductFilters`, and `ProductPreview` below are possible future extractions.
 
 ---
 
@@ -849,19 +906,26 @@ features/ai/components
 
 # 9.1 AIContentEditor
 
+**Implemented MVP within `AIStudioView`**, not as a separate component.
+
 Main AI workspace.
 
 Contains:
 
 * Generated content.
 * Editing.
-* Regenerate.
 * Copy.
-* Save.
+* Add as a queue draft.
+
+A user can submit the generation form again, but there is no dedicated Regenerate action.
+Server-side Save and generation history are future workflows.
 
 ---
 
 # 9.2 PromptProfileSelector
+
+**Future.** Prompt profiles and generation history are not implemented by the current API
+or frontend.
 
 Selects AI writing style.
 
@@ -884,6 +948,8 @@ Long
 ---
 
 # 9.3 GenerationStatus
+
+**Planned extraction.** Current pending/error feedback is rendered inside `AIStudioView`.
 
 Shows:
 
@@ -909,6 +975,8 @@ features/queue/components
 
 # 10.1 QueueTable
 
+**Implemented MVP within `QueueView`**, not as a shared component.
+
 Displays queue items using the canonical backend statuses:
 
 ```text
@@ -918,25 +986,29 @@ scheduled
 published
 ```
 
-Publishing failures are displayed as operation feedback and retry actions, not as a `failed` queue status.
+Publishing failures are displayed as operation feedback, not as a `failed` queue status.
+Users may invoke Publish Now again; a dedicated retry action and retry orchestration are future.
 
-Columns:
+Current feature-local table columns:
 
 ```
-Product
-
-Channel
+Content
 
 Schedule
 
 Status
 
-Actions
+Action
 ```
+
+Product and channel columns are planned for the extracted `QueueTable`.
 
 ---
 
 # 10.2 SchedulePicker
+
+**Future.** The API accepts `scheduled_at`, but the current queue UI does not create or edit
+scheduled items.
 
 Used for:
 
@@ -958,6 +1030,8 @@ features/channels/components
 
 # 11.1 ChannelCard
 
+**Implemented MVP within `ChannelsView`**, not as a separate component.
+
 Displays:
 
 * Channel name.
@@ -968,6 +1042,9 @@ Displays:
 ---
 
 # 11.2 ConnectionStatus
+
+**Implemented MVP as channel permission badges.** A richer explicit connection-test action
+is future work.
 
 Shows:
 
@@ -982,6 +1059,13 @@ Error
 ---
 
 # 12. Component Development Checklist
+
+## Current settings component
+
+`features/settings/components/CapabilityView.tsx` is **Implemented MVP**. It presents
+read-only configuration/capability details and the `/ready` database/Redis result. It does
+not edit settings and must not imply that provider credentials or Celery worker health were
+checked.
 
 Before creating a component:
 

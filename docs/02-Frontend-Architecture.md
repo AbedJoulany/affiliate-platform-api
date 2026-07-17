@@ -3,7 +3,7 @@
 ## AI Affiliate Automation Platform
 
 **Document Version:** 1.0
-**Last Updated:** 2026-07-16
+**Last Updated:** 2026-07-17
 
 ---
 
@@ -11,7 +11,8 @@
 
 The frontend of the AI Affiliate Automation Platform is designed to provide a modern, scalable, and productive workspace for managing affiliate marketing automation workflows.
 
-The application is not intended to be a traditional administration dashboard. Instead, it should provide a SaaS-like experience where users can:
+The application is not intended to be a traditional administration dashboard. The target
+SaaS-like experience allows users to:
 
 * Discover affiliate products.
 * Review and manage imported products.
@@ -19,6 +20,9 @@ The application is not intended to be a traditional administration dashboard. In
 * Manage publishing workflows.
 * Schedule and monitor content distribution.
 * Configure automation settings.
+
+Current settings routes are read-only capability/status screens; editable automation
+configuration remains future work.
 
 The frontend acts as a client application responsible for user interaction, presentation, and communication with backend services.
 
@@ -41,6 +45,18 @@ The frontend architecture should achieve the following goals:
 ---
 
 # 3. Architecture Principles
+
+## Current implementation snapshot
+
+The frontend uses thin App Router `page.tsx` files and client feature views under
+`src/features`. Implemented feature folders are `ai`, `auth`, `categories`, `channels`,
+`dashboard`, `discovery`, `products`, `queue`, and `settings`; each owns its API module,
+TanStack Query hook, and API types where applicable.
+
+Shared transport and session code lives in `src/services`; `src/lib/utils.ts` provides class
+merging and formatting helpers. `components/layout/AppShell.tsx` currently combines sidebar,
+mobile navigation, header, theme toggle, user menu, and content shell. `components/layout/page.tsx`
+contains `PageContainer` and `PageHeader`.
 
 ## 3.1 API First
 
@@ -186,7 +202,7 @@ Responsible for:
 ## Framework
 
 ```
-Next.js 15
+Next.js 15.5.x with React 19
 ```
 
 Using:
@@ -214,7 +230,7 @@ Reasons:
 ## Styling
 
 ```
-TailwindCSS
+Tailwind CSS 3.4
 ```
 
 Used for:
@@ -225,24 +241,19 @@ Used for:
 
 ---
 
-## UI Library
+## UI Layer
 
-```
-shadcn/ui
-```
-
-Used for:
-
-* Base components.
-* Accessible primitives.
-* Consistent design system.
+The implemented UI layer is the Tailwind-based local set in
+`src/components/ui/primitives.tsx`: `Button`, `Input`, `Select`, `Textarea`, `Card`, `Badge`,
+and `Skeleton`. shadcn/ui is not installed. A richer accessible library, including
+shadcn/ui, remains a future option.
 
 ---
 
 ## Data Fetching
 
 ```
-TanStack Query
+TanStack Query 5
 ```
 
 Responsible for:
@@ -308,7 +319,7 @@ Supports:
 
 # 5. Project Structure
 
-Recommended structure:
+Current structure:
 
 ```
 src/
@@ -343,17 +354,18 @@ features/
 
     settings/
 
+    categories/
 
 services/
-
-hooks/
+    api-client.ts
+    session.ts
 
 lib/
-
-types/
-
-utils/
+    utils.ts
 ```
+
+Hooks and API types are feature-local; there are no current top-level `hooks`, `types`, or
+`utils` directories.
 
 ---
 
@@ -470,9 +482,15 @@ Authentication will support future SaaS requirements.
 
 Current version:
 
-* JWT authentication.
-* Protected routes.
-* User session handling.
+* The access JWT is stored in browser `sessionStorage`.
+* A presence-only cookie (value `1`, never the JWT) lets middleware redirect requests
+  without a session marker.
+* `AuthGuard` validates the session through `GET /auth/me`; there is no React auth
+  provider/context.
+* The shared Axios interceptor attaches the bearer token and clears session state on `401`.
+* There is no refresh token or refresh endpoint; logout clears local session state.
+* Public registration creates an `affiliate`. Trusted operational provisioning is required
+  for admins, and imports require an admin.
 
 Future support:
 
@@ -514,6 +532,10 @@ The interface should prioritize:
 ---
 
 # 11. Error Handling
+
+Route-level fallbacks are implemented by `src/app/global-error.tsx` and
+`src/app/not-found.tsx`; they are framework files, not `/error` or `/not-found` routes.
+Feature views use shared loading, empty, and error states plus inline mutation alerts.
 
 Every page must support:
 
@@ -646,17 +668,15 @@ Components should:
 
 ## Types
 
-Shared types:
-
-```
-types/
-```
-
-Feature-specific types:
+Current feature-specific API types:
 
 ```
 features/[feature]/types
 ```
+
+The current codebase has no top-level `types/` directory. Add shared types there only when
+multiple features genuinely require the same frontend model; otherwise keep types colocated
+with their feature.
 
 ---
 
@@ -700,7 +720,7 @@ Future support:
 The project follows:
 
 ```
-Next.js 15
+Next.js 15.5.x / React 19
 +
 TypeScript
 +
@@ -708,7 +728,7 @@ Feature-Based Architecture
 +
 TanStack Query
 +
-shadcn/ui
+Tailwind 3.4 local UI primitives
 +
 TailwindCSS
 +
@@ -718,3 +738,6 @@ SaaS Ready Structure
 ```
 
 The goal is to build a maintainable, scalable, AI-assisted frontend that can evolve from a personal automation tool into a commercial SaaS platform.
+
+TanStack Query 5, Axios, React Hook Form with Zod, Lucide React, and next-themes support the
+implemented data, forms, icons, and theme layers. CI uses Node 22.

@@ -3,7 +3,7 @@
 ## AI Affiliate Automation Platform
 
 **Document Version:** 1.0
-**Last Updated:** 2026-07-16
+**Last Updated:** 2026-07-17
 
 ---
 
@@ -34,11 +34,14 @@ The architecture decisions are already defined in:
 Before generating code, Cursor should:
 
 1. Read relevant documentation.
-2. Understand existing folder structure.
-3. Reuse existing components.
+2. Inspect the existing implementation and extend it rather than scaffolding a parallel one.
+3. Reuse local primitives from `components/ui/primitives.tsx`, shared states, feature hooks,
+   and current feature-local API/types.
 4. Avoid unnecessary dependencies.
 5. Avoid changing architecture without approval.
 6. Generate small incremental changes.
+7. Treat `docs/06-api-integration.md` as the API contract.
+8. Preserve thin App Router pages and client feature views.
 
 ---
 
@@ -51,6 +54,7 @@ You are working on the AI Affiliate Automation Platform frontend.
 
 Before writing code:
 - Read the frontend documentation in /docs.
+- Inspect existing code in the target feature before proposing files.
 - Follow the architecture defined in:
   - 02-Frontend-Architecture.md
   - 03-design-system.md
@@ -65,6 +69,7 @@ Requirements:
 - Use TypeScript.
 - Follow feature-based architecture.
 - Use existing UI components when possible.
+- Use the local Tailwind primitives; do not assume shadcn/ui is installed.
 - Do not create duplicate components.
 - Support loading, error, and empty states.
 - Support dark mode.
@@ -85,7 +90,8 @@ Then implement the feature.
 
 # 4. Project Initialization Prompt
 
-Use when creating the Next.js project.
+Historical foundation prompt. The project already exists; use it only to evaluate or extend
+the current foundation, never to reinitialize it.
 
 ```
 Create the frontend foundation for the
@@ -96,7 +102,7 @@ Technology requirements:
 - Next.js 15
 - TypeScript
 - TailwindCSS
-- shadcn/ui
+- Existing local Tailwind primitives
 - TanStack Query
 - Axios
 - React Hook Form
@@ -114,16 +120,20 @@ components/
     common/
 
 features/
+    ai/
+    auth/
+    categories/
+    channels/
+    dashboard/
+    discovery/
+    products/
+    queue/
+    settings/
 
 services/
 
-hooks/
-
 lib/
-
-types/
-
-utils/
+    utils.ts
 
 Requirements:
 
@@ -133,10 +143,10 @@ Requirements:
 - Add path aliases.
 - Add theme support.
 - Prepare RTL support.
-- Create clean production-ready structure.
+- Preserve the current feature folders, including `features/categories`, feature-local
+  hooks/types, `services`, and `lib/utils.ts`.
 
-Do not create business features yet.
-Only create the foundation.
+Do not duplicate existing business features. Extend the foundation only as requested.
 ```
 
 ---
@@ -144,11 +154,11 @@ Only create the foundation.
 # 5. Design System Implementation Prompt
 
 ```
-Implement the Design System defined in:
+Extend the implemented Design System defined in:
 
 /docs/03-design-system.md
 
-Create reusable UI foundations.
+Inspect `components/ui/primitives.tsx` and `components/common/states.tsx` first.
 
 Implement:
 
@@ -158,13 +168,12 @@ UI Components:
 - Select
 - Card
 - Badge
-- Dialog
-- Dropdown
-- Toast
+- Add richer primitives only when required by the task.
 
 Requirements:
 
-- Use shadcn/ui where appropriate.
+- Use and extend local Tailwind primitives.
+- Do not add shadcn/ui or another dependency without approval.
 - Follow existing design tokens.
 - Support dark mode.
 - Support RTL.
@@ -187,15 +196,8 @@ Follow:
 /docs/04-component-library.md
 /docs/05-routing-and-navigation.md
 
-Create:
-
-components/layout/
-
-- AppShell
-- Sidebar
-- Header
-- PageContainer
-- PageHeader
+Inspect and extend the combined `components/layout/AppShell.tsx` plus
+`components/layout/page.tsx`. Extract subcomponents only when the task justifies it.
 
 
 Requirements:
@@ -251,10 +253,13 @@ components/
 Implement:
 
 - Login page.
-- Authentication provider.
 - Protected routes.
 - Logout.
 - JWT handling.
+- Store the access JWT in `sessionStorage`.
+- Maintain only a presence marker in the middleware cookie.
+- Validate protected sessions with `GET /auth/me`.
+- Clear session and redirect on `401`; do not invent refresh-token behavior.
 
 Use:
 
@@ -408,11 +413,13 @@ Display:
 - Products count.
 - Queue status.
 - Published posts.
-- AI usage.
+- Active channels.
 - Recent activity.
+- Database status.
 
 
-Use mock data first if API is unavailable.
+Use the real `GET /dashboard` API and its `activity_limit`/response contract from
+`docs/06-api-integration.md`. Do not add an AI-usage metric that the API does not return.
 
 Keep components reusable.
 ```
@@ -460,7 +467,7 @@ Features:
 
 Use:
 
-- DataTable component.
+- The existing feature-local table unless the task explicitly includes shared DataTable extraction.
 - TanStack Query.
 - TypeScript.
 
@@ -487,7 +494,6 @@ features/ai/
 Components:
 
 - AIContentEditor
-- PromptProfileSelector
 - GenerationStatus
 
 
@@ -502,6 +508,9 @@ Features:
 - Edit content.
 - Regenerate.
 - Save.
+
+Prompt profiles, persisted history, and dedicated save behavior are future work. Do not
+invent endpoints for them.
 
 
 Requirements:
@@ -527,7 +536,7 @@ features/queue/
 Components:
 
 - QueueTable
-- SchedulePicker
+- SchedulePicker (future; include only when explicitly requested)
 
 
 Page:
@@ -541,13 +550,16 @@ Features:
 - `queued` items.
 - `scheduled` items.
 - `published` items.
-- Retry publishing failures.
 - Publish now.
 
 
-Use existing DataTable component.
+Extend the existing feature-local queue table; there is no shared DataTable yet.
 Use the canonical backend QueueStatus values exactly.
 Do not add a `failed` queue status; failures are operation errors.
+The current UI displays publish failures and lets the user invoke Publish Now again. Add a
+dedicated retry control or retry orchestration only when explicitly requested.
+Do not add scheduling UI unless the task explicitly implements it against the documented
+`scheduled_at` contract.
 ```
 
 ---
@@ -577,13 +589,15 @@ Features:
 
 - List channels.
 - Add channel.
-- Test connection.
 - Display status.
 
 
 Initial platform:
 
 Telegram
+
+The current UI lists, creates, toggles active state, and displays permission status. Treat a
+richer explicit connection-test action and delete UI as future unless requested.
 ```
 
 ---
@@ -618,9 +632,12 @@ Sections:
 Requirements:
 
 - Treat /settings as the parent route and use /settings/general as the default section.
-- Use reusable form components.
-- Use React Hook Form.
-- Use Zod validation.
+- Inspect and extend `CapabilityView`.
+- Keep settings read-only unless backend settings APIs are added first.
+- `/ready` reports database and Redis only; do not claim it tests Celery workers or provider
+  credentials.
+- Reuse the categories feature for `/aliexpress/categories` and readiness access rather
+  than creating duplicate infrastructure.
 ```
 
 ---

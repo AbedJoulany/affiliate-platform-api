@@ -3,7 +3,7 @@
 ## AI Affiliate Automation Platform
 
 **Document Version:** 1.0
-**Last Updated:** 2026-07-14
+**Last Updated:** 2026-07-17
 
 ---
 
@@ -172,21 +172,12 @@ interface Product {
 
 ---
 
-## 4.3 Separate API Types and UI Types
+## 4.3 Current Type Organization
 
-API responses:
-
-```
-features/products/types/api.ts
-```
-
-UI models:
-
-```
-features/products/types/models.ts
-```
-
-This allows frontend needs to evolve independently.
+Feature API contracts currently live in `features/[feature]/types/api.ts`. Views use those
+contracts directly, with small local form/view types where needed. Introduce a separate
+`models.ts` only when a real UI-domain mapping is required; do not create parallel types
+preemptively.
 
 ---
 
@@ -369,6 +360,10 @@ axios.get()
 ```
 
 inside components.
+
+This is a current invariant: components call feature hooks, hooks call feature API modules,
+and API modules use `services/api-client.ts`. The categories feature follows the same
+pattern for both categories and platform readiness.
 
 ---
 
@@ -716,7 +711,10 @@ Before considering a feature complete:
 
 # 18. Testing Guidelines
 
-Testing strategy will evolve gradually.
+Current automated coverage includes backend pytest contract/endpoint tests and frontend
+Vitest tests for local UI primitives. The Playwright smoke test exists for local/manual
+execution but is not part of CI. Expand hook, feature-view, and critical-flow coverage as
+the implementation matures.
 
 Priority:
 
@@ -756,6 +754,9 @@ Generate Content
 Publish Product
 ```
 
+Run with `npm run test:e2e` in a prepared environment. Do not describe Playwright as a CI
+gate until the workflow actually runs it.
+
 ---
 
 # 19. Documentation Rules
@@ -772,6 +773,14 @@ Documentation location:
 ```
 /docs
 ```
+
+Use `docs/06-api-integration.md` as the frontend/backend contract and
+`docs/10-production-readiness.md` as the release and operational gate. Update both when a
+contract or deployment assumption changes.
+
+Prettier is installed as a development dependency, but there is currently no
+`format`/`prettier` npm script. Do not document formatting as an automated gate until a
+script and workflow step exist.
 
 ---
 

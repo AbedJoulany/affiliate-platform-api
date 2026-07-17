@@ -3,7 +3,7 @@
 ## AI Affiliate Automation Platform
 
 **Document Version:** 1.0
-**Last Updated:** 2026-07-16
+**Last Updated:** 2026-07-17
 
 ---
 
@@ -187,6 +187,19 @@ Performance Analytics
 
 ---
 
+## Current implementation boundary (2026-07-17)
+
+The repository currently contains a FastAPI backend and an Arabic-first Next.js frontend.
+The frontend implements login, dashboard, products, product detail, discovery, AI generation,
+queue, Telegram channels, profile, and read-only settings/status routes. Pages are thin App
+Router entries that render client-side feature views. Advanced analytics, editable settings,
+AI prompt profiles/history, queue scheduling controls, and multi-workspace behavior remain
+target capabilities.
+
+Product imports require an `admin` account. Public registration intentionally creates only
+`affiliate` users, so operational admin provisioning is required before imports can be used.
+
+
 # 7.1 Product Discovery
 
 The platform automatically discovers products from AliExpress.
@@ -338,6 +351,8 @@ Planned metrics:
 * Published posts.
 * AI usage.
 
+AI usage is a future analytics metric; it is not part of the current dashboard API or UI.
+
 Future:
 
 * Click tracking.
@@ -457,22 +472,29 @@ External Services
 ## Frontend
 
 ```text
-Next.js 15
+Next.js 15.5.x and React 19
 
 TypeScript
 
-TailwindCSS
+Tailwind CSS 3.4 with local primitives
 
-shadcn/ui
-
-TanStack Query
+TanStack Query 5
 
 Axios
 
 React Hook Form
 
 Zod
+
+Lucide React
+
+next-themes
 ```
+
+The current UI layer is the Tailwind-based local component set in
+`frontend/src/components/ui/primitives.tsx`; shadcn/ui is not installed. Adopting shadcn/ui
+or a richer accessible component library is a future option, not a description of the
+current implementation. CI uses Node 22.
 
 ---
 
@@ -562,6 +584,7 @@ The first production-ready version includes:
 
 * Login.
 * Protected routes.
+* Access-JWT session validation.
 
 ---
 
@@ -592,7 +615,10 @@ The first production-ready version includes:
 ## Queue
 
 * Manage posts.
-* Schedule publishing.
+* Filter and publish existing queue items.
+
+Creating scheduled items is supported by the API, but a scheduling editor is not currently
+implemented in the UI.
 
 ---
 
@@ -604,7 +630,9 @@ The first production-ready version includes:
 
 ## Settings
 
-* Basic configuration.
+* Read-only capability and readiness/status screens.
+
+There are no editable settings APIs or settings forms in the current implementation.
 
 ---
 
@@ -664,16 +692,17 @@ Focus:
 
 # 15. Success Criteria
 
-The project is successful when a user can:
+Current frontend productization is successful when a provisioned user can:
 
-1. Discover products automatically.
-2. Select high-quality products.
-3. Generate marketing content.
-4. Schedule publishing.
-5. Publish automatically.
-6. Monitor performance.
+1. Discover and review products.
+2. Import products with an admin account.
+3. Generate and edit marketing content.
+4. Add generated content to the publishing queue.
+5. Publish queue content to a configured Telegram channel.
 
-with minimal manual effort.
+The complete product vision additionally includes scheduling controls and performance
+monitoring with minimal manual effort. Those capabilities remain roadmap targets rather
+than claims about the current frontend.
 
 ---
 

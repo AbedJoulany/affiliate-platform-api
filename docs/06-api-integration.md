@@ -1,5 +1,7 @@
 # API Integration Guide v1.0
 
+**Last Updated:** 2026-07-17
+
 **Backend contract source:** current FastAPI routers and Pydantic schemas  
 **Default development origin:** `http://localhost:8000`  
 **API base URL:** `http://localhost:8000/api/v1`
@@ -16,6 +18,21 @@ Interactive contract references are available at:
 - Health check (outside the versioned API): `GET /health` → `{"status":"ok"}`
 - Readiness check (outside the versioned API): `GET /ready` verifies PostgreSQL and Redis,
   returns `200` when both are up and `503` otherwise
+
+Readiness response (the body shape is the same for `200` and `503`):
+
+```json
+{
+  "status": "not_ready",
+  "checks": {
+    "database": {"status": "up"},
+    "redis": {"status": "down"}
+  }
+}
+```
+
+This reports API dependency readiness, not Celery worker health or external-provider
+credential validity.
 
 ## 1. Authentication
 
@@ -171,9 +188,21 @@ also exposes AliExpress enrichment fields: `aliexpress_product_id`, `description
 | --- | --- | --- | --- |
 | GET | `/dashboard` | Bearer | Product, queue, and channel counts; recent product/queue activity; DB status |
 
-Counts include `total` plus `by_status` maps using the canonical product and queue enums.
-Channel counts include `total`, `active`, and `inactive`. Recent activity items identify
-the resource type/ID, title, status, and occurrence time.
+Optional query `activity_limit` defaults to 10 and accepts 1–50. The exact response summary
+is:
+
+```json
+{
+  "products": {"total": 0, "by_status": {"draft": 0, "active": 0, "inactive": 0, "archived": 0}},
+  "queue": {"total": 0, "by_status": {"draft": 0, "queued": 0, "scheduled": 0, "published": 0}},
+  "channels": {"total": 0, "active": 0, "inactive": 0},
+  "recent_activity": [],
+  "system_status": {"status": "operational", "database": "up", "generated_at": "<ISO-8601 datetime>"}
+}
+```
+
+Recent activity contains products and queue records only, with `resource_type`,
+`resource_id`, `title`, `status`, and `occurred_at`. There is no AI-usage metric.
 
 ### Product discovery and import
 
@@ -203,6 +232,11 @@ browsing. Import responses contain `product`, `aliexpress_product_id`, `imported
 Category items contain numeric `category_id`, `category_name`, `parent_category_id`, and
 `synced_at`.
 
+The current discovery UI exposes general, hot, deals, trending, and category modes with
+keywords, minimum rating, minimum discount, and category controls. Other contract filters,
+image search, persistence toggles, and paging controls are backend capabilities not yet
+surfaced by the UI. Imports are disabled in the UI unless `/auth/me` reports `admin`.
+
 ### AI content
 
 | Method | Path | Access | Contract |
@@ -228,6 +262,9 @@ Queue input supports `title`, required `content`, `status`, `scheduled_at`, `cha
 `scheduled_at`. Button text and URL must be supplied together. A publish receipt contains
 `queue_id`, `telegram_message_id`, `chat_id`, `message_type`, and `published_at`.
 
+The current queue UI lists, filters, and publishes items. AI Studio can create a `draft`;
+editing, deleting, and schedule creation/picking are not currently exposed.
+
 ### Telegram channels
 
 | Method | Path | Access | Contract |
@@ -240,6 +277,9 @@ Queue input supports `title`, required `content`, `status`, `scheduled_at`, `cha
 Channel responses include normalized Telegram ID, title/username, permission status,
 post/edit/delete permission flags, permission check time/detail, and active state.
 
+The current channel UI lists, creates, and toggles active state. Delete and an explicit
+connection-test action are not exposed.
+
 ## 5. Supporting backend endpoints
 
 These routes exist in the current backend even though campaigns and conversions are beyond
@@ -249,7 +289,7 @@ the frontend MVP described in the roadmap.
 
 | Method | Path | Access | Contract |
 | --- | --- | --- | --- |
-| POST | `/affiliates` | Affiliate bearer | Create own profile; `201` |
+| POST | `/affiliates` | Bearer; service requires `affiliate` role | Create own profile; `201` |
 | GET | `/affiliates/me` | Bearer | Return own affiliate profile |
 | PATCH | `/affiliates/{affiliate_id}` | Owner or admin | Partial profile update |
 | POST | `/affiliates/join-campaign` | Bearer | JSON `campaign_id`; `201` tracking link |
@@ -300,6 +340,20 @@ positive `amount`; `currency` defaults to USD and `click_id` is optional.
   `newest`, `commission_desc`
 
 ## 7. Frontend integration pattern
+
+### Current UI coverage matrix
+
+| Area | Current frontend coverage | Contract-only / future UI |
+| --- | --- | --- |
+| Auth | Login, `/auth/me`, logout/session clearing | Registration page, refresh tokens |
+| Dashboard | Counts, recent product/queue activity, DB status | AI usage and analytics |
+| Products | List/search/status filter, details | Admin CRUD controls |
+| Discovery | Five modes, selected filters, categories, admin import | Full filter set, image search, paging/persist controls |
+| AI | Generate by product ID or URL, edit/copy locally, create draft | Prompt profiles, history, saved AI records |
+| Queue | List/filter/publish; create draft from AI Studio | Edit/delete and scheduling UI |
+| Channels | List/create/toggle active, permission display | Delete and explicit connection test |
+| Settings | Read-only capability/readiness views | Editable settings APIs/forms |
+| Affiliates/campaigns/conversions | No MVP screens | Supporting backend contracts only |
 
 Keep transport concerns in the shared Axios client and feature contracts in feature-owned
 API modules, matching the documented feature-based frontend architecture.
