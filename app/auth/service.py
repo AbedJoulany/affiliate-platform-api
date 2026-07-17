@@ -6,6 +6,7 @@ from app.auth.models import User
 from app.auth.repository import UserRepository
 from app.auth.schemas import TokenResponse, UserLogin, UserRegister
 from app.auth.security import create_access_token, hash_password, verify_password
+from app.core.enums import UserRole
 from app.services.exceptions import ConflictError, UnauthorizedError
 
 
@@ -15,10 +16,6 @@ class AuthService:
         self.users = UserRepository(session)
 
     async def register(self, payload: UserRegister) -> User:
-
-        print("PASSWORD LENGTH:", len(payload.password.encode("utf-8")))
-        print("PASSWORD VALUE:", payload.password)
-
         if await self.users.get_by_email(payload.email):
             raise ConflictError("Email already registered")
 
@@ -26,7 +23,7 @@ class AuthService:
             email=payload.email,
             hashed_password=hash_password(payload.password),
             full_name=payload.full_name,
-            role=payload.role,
+            role=UserRole.AFFILIATE,
         )
         return await self.users.create(user)
 

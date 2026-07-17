@@ -4,8 +4,8 @@ from sqlalchemy import Boolean, DateTime, Enum, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
-from app.core.model_mixins import TimestampMixin, UUIDPrimaryKeyMixin
 from app.core.enums import BotPermissionStatus
+from app.core.model_mixins import TimestampMixin, UUIDPrimaryKeyMixin
 
 
 class TelegramChannel(Base, UUIDPrimaryKeyMixin, TimestampMixin):

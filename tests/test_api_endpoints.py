@@ -1,10 +1,10 @@
-import pytest
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+import pytest
+
 from app.schemas.aliexpress import AliExpressImportResponse
-from app.schemas.queue import PublishQueueResponse
-from app.core.enums import AIProviderType
+from tests.conftest import provision_test_user
 
 API_PREFIX = "/api/v1"
 PASSWORD = "StrongP@ssw0rd"
@@ -14,16 +14,41 @@ def auth_headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+@pytest.mark.asyncio
+async def test_public_registration_always_creates_affiliate_and_rejects_role(client):
+    email = f"public-{uuid4().hex[:8]}@example.com"
+    response = await client.post(
+        f"{API_PREFIX}/auth/register",
+        json={
+            "email": email,
+            "password": PASSWORD,
+            "full_name": "Public User",
+        },
+    )
+    assert response.status_code == 201
+    assert response.json()["role"] == "affiliate"
+
+    for role in ("admin", "advertiser"):
+        privileged_response = await client.post(
+            f"{API_PREFIX}/auth/register",
+            json={
+                "email": f"{role}-attempt-{uuid4().hex[:8]}@example.com",
+                "password": PASSWORD,
+                "full_name": f"{role.title()} Attempt",
+                "role": role,
+            },
+        )
+        assert privileged_response.status_code == 422
+
+
 async def register_and_login(client, role: str = "affiliate") -> tuple[str, str]:
     email = f"test-{role}-{uuid4().hex[:6]}@example.com"
-    payload = {
-        "email": email,
-        "password": PASSWORD,
-        "full_name": f"Test {role.title()}",
-        "role": role,
-    }
-    response = await client.post(f"{API_PREFIX}/auth/register", json=payload)
-    assert response.status_code == 201
+    await provision_test_user(
+        email=email,
+        password=PASSWORD,
+        full_name=f"Test {role.title()}",
+        role=role,
+    )
     login_resp = await client.post(
         f"{API_PREFIX}/auth/login",
         data={"username": email, "password": PASSWORD},
@@ -61,8 +86,8 @@ async def create_campaign(client, token: str) -> dict:
         "payout_amount": 25.0,
         "currency": "USD",
         "landing_url": "https://example.com/landing",
-        "starts_at": datetime.now(timezone.utc).isoformat(),
-        "ends_at": (datetime.now(timezone.utc) + timedelta(days=30)).isoformat(),
+        "starts_at": datetime.now(UTC).isoformat(),
+        "ends_at": (datetime.now(UTC) + timedelta(days=30)).isoformat(),
     }
     response = await client.post(
         f"{API_PREFIX}/campaigns",
@@ -115,7 +140,6 @@ async def test_auth_register_login_and_profile_endpoints(client):
             "email": body["email"],
             "password": PASSWORD,
             "full_name": "Duplicate User",
-            "role": "affiliate",
         },
     )
     assert response.status_code == 409
@@ -157,6 +181,26 @@ async def test_affiliate_profile_crud_and_admin_listing(client):
     )
     assert update_resp.status_code == 200
     assert update_resp.json()["company_name"] == "Affiliate Updated"
+
+    for privileged_update in (
+        {"status": "active"},
+        {"commission_rate": 25},
+    ):
+        forbidden_update = await client.patch(
+            f"{API_PREFIX}/affiliates/{affiliate_profile['id']}",
+            headers=auth_headers(affiliate_token),
+            json=privileged_update,
+        )
+        assert forbidden_update.status_code == 403
+
+    admin_update = await client.patch(
+        f"{API_PREFIX}/affiliates/{affiliate_profile['id']}",
+        headers=auth_headers(admin_token),
+        json={"status": "active", "commission_rate": 17.5},
+    )
+    assert admin_update.status_code == 200
+    assert admin_update.json()["status"] == "active"
+    assert float(admin_update.json()["commission_rate"]) == 17.5
 
     list_resp = await client.get(
         f"{API_PREFIX}/affiliates",
@@ -519,8 +563,8 @@ async def test_aliexpress_import_endpoint_admin_only_and_validation(client, monk
                 "product_url": "https://example.com/aliexpress",
                 "score": 5.5,
                 "status": "draft",
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": datetime.now(UTC).isoformat(),
+                "updated_at": datetime.now(UTC).isoformat(),
             },
             aliexpress_product_id="1234567890",
             imported=True,

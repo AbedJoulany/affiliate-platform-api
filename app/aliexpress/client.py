@@ -1,5 +1,4 @@
 from app.aliexpress.api_client import AliExpressAPIClient
-from app.aliexpress.exceptions import AliExpressAPIError  # noqa: F401
 from app.aliexpress.constants import (
     METHOD_CATEGORY_GET,
     METHOD_DS_IMAGE_SEARCH,
@@ -12,7 +11,7 @@ from app.aliexpress.constants import (
     METHOD_SMART_MATCH,
 )
 from app.aliexpress.exceptions import (
-    AliExpressAPIError,
+    AliExpressAPIError,  # noqa: F401
     AliExpressImageSearchNotSupportedError,
 )
 from app.aliexpress.mapper import AliExpressProductMapper
@@ -162,7 +161,8 @@ class AliExpressAffiliateClient(AliExpressAPIClient):
         if not self.settings.aliexpress_enable_ds_image_search:
             raise AliExpressImageSearchNotSupportedError(
                 "Image search requires AliExpress DS API access. "
-                "Set ALIEXPRESS_ENABLE_DS_IMAGE_SEARCH=true after enabling aliexpress.ds.image.search."
+                "Set ALIEXPRESS_ENABLE_DS_IMAGE_SEARCH=true after enabling "
+                "aliexpress.ds.image.search."
             )
         if not image_url and not image_base64:
             raise AliExpressAPIError("Provide image_url or image_base64 for image search")
@@ -181,14 +181,16 @@ class AliExpressAffiliateClient(AliExpressAPIClient):
         mapped: list[AliExpressProductData] = []
         for payload in raw_products:
             # --- NESTING SAFEGUARD ---
-            # If the list element contains a wrapped inner info block, unpack it before looking for the ID
+            # Unpack wrapped inner info blocks before looking for the product ID.
             if "product_info" in payload:
                 payload = payload["product_info"]
             elif "aeop_ae_product_info" in payload:
                 payload = payload["aeop_ae_product_info"]
             # --------------------------
 
-            product_id = str(payload.get("product_id") or payload.get("aliexpress_product_id") or "").strip()
+            product_id = str(
+                payload.get("product_id") or payload.get("aliexpress_product_id") or ""
+            ).strip()
             if not product_id:
                 continue
             try:
@@ -212,7 +214,11 @@ class AliExpressAffiliateClient(AliExpressAPIClient):
         for item in product_list:
             # Flatten context checks here too
             inner_item = item.get("product_info") or item.get("aeop_ae_product_info") or item
-            current_id = str(inner_item.get("product_id") or inner_item.get("aliexpress_product_id") or product_id)
+            current_id = str(
+                inner_item.get("product_id")
+                or inner_item.get("aliexpress_product_id")
+                or product_id
+            )
             if current_id == str(product_id):
                 return item
 
@@ -232,7 +238,10 @@ class AliExpressAffiliateClient(AliExpressAPIClient):
                 # Assumes METHOD_LINK_GENERATE evaluates to "aliexpress.affiliate.link.generate"
                 payload = await self.call_method(METHOD_LINK_GENERATE, **params)
                 
-                from app.aliexpress.response_parser import extract_response_root, extract_result_payload
+                from app.aliexpress.response_parser import (
+                    extract_response_root,
+                    extract_result_payload,
+                )
                 root = extract_response_root(payload, METHOD_LINK_GENERATE)
                 result = extract_result_payload(root)
                 

@@ -3,8 +3,8 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.conversion import Conversion
 from app.core.enums import ConversionStatus, UserRole
+from app.models.conversion import Conversion
 from app.models.user import User
 from app.repositories.affiliate import AffiliateCampaignRepository, AffiliateRepository
 from app.repositories.campaign import CampaignRepository

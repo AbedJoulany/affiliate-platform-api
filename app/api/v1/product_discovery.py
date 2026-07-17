@@ -24,7 +24,6 @@ from app.schemas.discovery import (
     ProductSearchQuery,
 )
 from app.services.aliexpress_import import AliExpressImportService
-from app.services.exceptions import AliExpressAPIError as ServiceAliExpressAPIError
 from app.services.exceptions import ServiceError
 from app.services.product_discovery import ProductDiscoveryService
 
@@ -194,7 +193,9 @@ async def search_products(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=50),
     persist: bool = Query(default=False),
-    discovery_service: Annotated[ProductDiscoveryService, Depends(get_product_discovery_service)] = None,
+    discovery_service: Annotated[
+        ProductDiscoveryService, Depends(get_product_discovery_service)
+    ] = None,
 ) -> ProductDiscoveryResponse:
     search_query = ProductSearchQuery(
         q=q,

@@ -1,6 +1,6 @@
 # Affiliate Platform API
 
-Production-ready FastAPI backend for an affiliate marketing platform.
+AI affiliate automation platform with a FastAPI backend and Next.js frontend.
 
 ## Stack
 
@@ -9,9 +9,10 @@ Production-ready FastAPI backend for an affiliate marketing platform.
 - PostgreSQL 16
 - SQLAlchemy 2.0 (async)
 - Alembic
-- JWT authentication (access + refresh tokens)
+- JWT authentication (short-lived access tokens)
 - Pydantic v2
 - Docker & Docker Compose
+- Next.js 15, TypeScript, TanStack Query, and TailwindCSS
 
 ## Architecture
 
@@ -46,7 +47,8 @@ docker compose up --build
 ```
 
 API: http://localhost:8000  
-Docs: http://localhost:8000/docs
+Docs: http://localhost:8000/docs  
+Frontend: http://localhost:3000
 
 ## Local Development
 
@@ -84,6 +86,9 @@ from app.auth.dependencies import CurrentUser
 async def example(current_user: CurrentUser):
     return current_user.email
 ```
+
+The backend does not currently issue refresh tokens. Frontend sessions end when the
+access token expires and require the user to authenticate again.
 
 ## API Endpoints
 
@@ -193,6 +198,14 @@ alembic upgrade head
 ```bash
 pip install -e ".[dev]"
 pytest
+
+cd frontend
+npm ci
+npm run typecheck
+npm run lint
+npm test
+npm run build
+npm run test:e2e
 ```
 
 ## AliExpress Product Discovery

@@ -3,8 +3,8 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.channel import TelegramChannel
 from app.core.enums import BotPermissionStatus, QueueStatus
+from app.models.channel import TelegramChannel
 from app.models.queue import QueueItem
 from app.repositories.channel import ChannelRepository
 from app.repositories.product import ProductRepository

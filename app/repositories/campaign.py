@@ -1,8 +1,8 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.campaign import Campaign
 from app.core.enums import CampaignStatus
+from app.models.campaign import Campaign
 from app.repositories.base import BaseRepository
 
 

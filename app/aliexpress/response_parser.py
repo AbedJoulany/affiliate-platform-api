@@ -1,5 +1,7 @@
 from dataclasses import dataclass
+
 from app.aliexpress.exceptions import AliExpressAPIError
+
 
 @dataclass(frozen=True)
 class AliExpressPageMeta:
@@ -68,7 +70,10 @@ def normalize_product_list(raw_products: object) -> list[dict]:
 
     return []
 
-def extract_products_and_meta(payload: dict, method: str | None = None) -> tuple[list[dict], AliExpressPageMeta]:
+def extract_products_and_meta(
+    payload: dict,
+    method: str | None = None,
+) -> tuple[list[dict], AliExpressPageMeta]:
     root = extract_response_root(payload, method)
     result = extract_result_payload(root)
 

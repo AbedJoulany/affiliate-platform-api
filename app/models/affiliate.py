@@ -1,13 +1,18 @@
 from decimal import Decimal
+from typing import TYPE_CHECKING
+
 from sqlalchemy import Enum, ForeignKey, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
-from app.core.model_mixins import TimestampMixin, UUIDPrimaryKeyMixin
 from app.core.enums import AffiliateStatus
+from app.core.model_mixins import TimestampMixin, UUIDPrimaryKeyMixin
 
-# Type-only imports removed; string annotations used for forward refs
+if TYPE_CHECKING:
+    from app.auth.models import User
+    from app.models.campaign import Campaign
+    from app.models.conversion import Conversion
 
 
 class Affiliate(Base, UUIDPrimaryKeyMixin, TimestampMixin):
@@ -48,7 +53,9 @@ class Affiliate(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
 class AffiliateCampaign(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "affiliate_campaigns"
-    __table_args__ = (UniqueConstraint("affiliate_id", "campaign_id", name="uq_affiliate_campaign"),)
+    __table_args__ = (
+        UniqueConstraint("affiliate_id", "campaign_id", name="uq_affiliate_campaign"),
+    )
 
     affiliate_id: Mapped[UUID] = mapped_column(
         UUID(as_uuid=True),

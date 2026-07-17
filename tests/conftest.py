@@ -1,5 +1,4 @@
-import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -7,14 +6,13 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
+from app.auth.models import User
+from app.auth.security import hash_password
 from app.core.database import Base, get_db
-from app.core.enums import BotPermissionStatus, AIProviderType
+from app.core.enums import BotPermissionStatus, UserRole
 from app.main import app as fastapi_app
 from app.schemas.queue import PublishQueueResponse
 from app.telegram.client import BotPermissionsResult
-
-import app.auth.models
-import app.models
 
 DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 engine = create_async_engine(
@@ -24,6 +22,27 @@ engine = create_async_engine(
     echo=False,
 )
 SessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
+
+
+async def provision_test_user(
+    *,
+    email: str,
+    password: str,
+    full_name: str,
+    role: UserRole | str,
+) -> User:
+    """Create a role-specific user directly in the test database."""
+    async with SessionLocal() as session:
+        user = User(
+            email=email,
+            hashed_password=hash_password(password),
+            full_name=full_name,
+            role=UserRole(role),
+        )
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+        return user
 
 
 async def override_get_db() -> AsyncSession:
@@ -75,7 +94,7 @@ def mock_telegram_permissions(monkeypatch):
             can_post_messages=True,
             can_edit_messages=True,
             can_delete_messages=True,
-            checked_at=datetime.now(timezone.utc),
+            checked_at=datetime.now(UTC),
             detail="Bot has permissions",
         )
 
@@ -122,13 +141,12 @@ def mock_ai_provider(monkeypatch):
 def mock_queue_publish(monkeypatch):
     """Mock QueueService.publish to simulate successful Telegram publishing."""
     async def fake_publish(self, queue_id):
-        from uuid import UUID
         return PublishQueueResponse(
             queue_id=queue_id,
             telegram_message_id=987654321,
             chat_id="@testchat",
             message_type="text",
-            published_at=datetime.now(timezone.utc),
+            published_at=datetime.now(UTC),
         )
 
     monkeypatch.setattr("app.services.queue.QueueService.publish", fake_publish)

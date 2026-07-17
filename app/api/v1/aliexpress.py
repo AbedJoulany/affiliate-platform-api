@@ -1,15 +1,31 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_roles
 from app.api.deps_aliexpress import AliExpressImportServiceDep
+from app.auth.dependencies import CurrentUser
+from app.core.database import get_db
 from app.core.enums import UserRole
 from app.models.user import User
-from app.schemas.aliexpress import AliExpressImportRequest, AliExpressImportResponse
+from app.schemas.aliexpress import (
+    AliExpressCategoryListResponse,
+    AliExpressImportRequest,
+    AliExpressImportResponse,
+)
+from app.services.aliexpress_categories import AliExpressCategoryService
 from app.services.exceptions import ServiceError
 
 router = APIRouter()
+
+
+@router.get("/categories", response_model=AliExpressCategoryListResponse)
+async def list_cached_categories(
+    _: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> AliExpressCategoryListResponse:
+    return await AliExpressCategoryService(db).list_cached()
 
 
 @router.post("/import", response_model=AliExpressImportResponse)

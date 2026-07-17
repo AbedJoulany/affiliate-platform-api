@@ -2,8 +2,8 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.affiliate import Affiliate, AffiliateCampaign
 from app.core.enums import CampaignStatus, UserRole
+from app.models.affiliate import Affiliate, AffiliateCampaign
 from app.models.user import User
 from app.repositories.affiliate import AffiliateCampaignRepository, AffiliateRepository
 from app.repositories.campaign import CampaignRepository
@@ -51,6 +51,11 @@ class AffiliateService:
         self._ensure_can_modify(user, affiliate)
 
         update_data = payload.model_dump(exclude_unset=True)
+        privileged_fields = {"status", "commission_rate"}
+        if user.role != UserRole.ADMIN and privileged_fields.intersection(update_data):
+            raise ForbiddenError(
+                "Only administrators can update affiliate status or commission rate"
+            )
         if "website" in update_data and update_data["website"] is not None:
             update_data["website"] = str(update_data["website"])
 

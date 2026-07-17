@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -84,7 +84,7 @@ class AliExpressCategoryRepository(BaseRepository[AliExpressCategory]):
 
     async def replace_all(self, categories: list[AliExpressCategory]) -> int:
         await self.session.execute(delete(AliExpressCategory))
-        synced_at = datetime.now(timezone.utc)
+        synced_at = datetime.now(UTC)
         for category in categories:
             category.synced_at = synced_at
             self.session.add(category)

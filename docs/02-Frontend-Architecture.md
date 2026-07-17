@@ -3,7 +3,7 @@
 ## AI Affiliate Automation Platform
 
 **Document Version:** 1.0
-**Last Updated:** 2026-07-14
+**Last Updated:** 2026-07-16
 
 ---
 
@@ -380,10 +380,22 @@ Application routes:
 
 /settings
 
-/profile
+/settings/general
+
+/settings/aliexpress
+
+/settings/ai
+
+/settings/telegram
+
+/settings/discovery
+
+/settings/scheduling
 ```
 
 Routes should represent business features.
+
+`/settings` is the parent settings route and should redirect to or render the default nested section. Profile remains available at `/profile`, accessed from the header user menu rather than the sidebar. Analytics is deferred; its planned post-MVP route is `/analytics`.
 
 ---
 

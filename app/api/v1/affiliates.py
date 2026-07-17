@@ -57,7 +57,11 @@ async def update_affiliate_profile(
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
 
-@router.post("/join-campaign", response_model=AffiliateCampaignRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/join-campaign",
+    response_model=AffiliateCampaignRead,
+    status_code=status.HTTP_201_CREATED,
+)
 async def join_campaign(
     payload: AffiliateCampaignJoin,
     current_user: Annotated[User, Depends(get_current_user)],

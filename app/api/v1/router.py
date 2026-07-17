@@ -1,6 +1,17 @@
 from fastapi import APIRouter
 
-from app.api.v1 import affiliates, ai_content, aliexpress, campaigns, channels, conversions, product_discovery, products, queues
+from app.api.v1 import (
+    affiliates,
+    ai_content,
+    aliexpress,
+    campaigns,
+    channels,
+    conversions,
+    dashboard,
+    product_discovery,
+    products,
+    queues,
+)
 from app.auth.router import router as auth_router
 
 api_router = APIRouter()
@@ -15,3 +26,4 @@ api_router.include_router(channels.router, prefix="/channels", tags=["Telegram C
 api_router.include_router(ai_content.router, prefix="/ai-content", tags=["AI Content"])
 api_router.include_router(queues.router, prefix="/queues", tags=["Queue"])
 api_router.include_router(aliexpress.router, prefix="/aliexpress", tags=["AliExpress"])
+api_router.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboard"])

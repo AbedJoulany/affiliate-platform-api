@@ -43,7 +43,8 @@ def build_arabic_marketing_prompt(context: ProductContext) -> str:
 
     if context.price is None and context.rating is None:
         lines.append(
-            "- ملاحظة: بعض تفاصيل المنتج غير متوفرة، استخدم العنوان والوصف والرابط لكتابة محتوى مقنع."
+            "- ملاحظة: بعض تفاصيل المنتج غير متوفرة، استخدم العنوان والوصف والرابط "
+            "لكتابة محتوى مقنع."
         )
 
     lines.extend(

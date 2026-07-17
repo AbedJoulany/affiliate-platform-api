@@ -37,7 +37,8 @@ class GeminiProvider(AIProvider):
                         {
                             "text": (
                                 "You are an expert Arabic affiliate marketing copywriter. "
-                                "Write persuasive, natural Arabic content suitable for Telegram channels.\n\n"
+                                "Write persuasive, natural Arabic content suitable for "
+                                "Telegram channels.\n\n"
                                 f"{prompt}"
                             )
                         }

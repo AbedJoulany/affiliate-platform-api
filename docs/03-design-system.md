@@ -3,7 +3,7 @@
 ## AI Affiliate Automation Platform
 
 **Document Version:** 1.0
-**Last Updated:** 2026-07-14
+**Last Updated:** 2026-07-16
 
 ---
 
@@ -702,12 +702,13 @@ Failed
 Queue:
 
 ```
-Draft
-Scheduled
-Publishing
-Published
-Failed
+draft
+queued
+scheduled
+published
 ```
+
+Queue badges must use these exact values from the backend `QueueStatus` enum. A publishing failure is shown as operation feedback, not as a queue status.
 
 ---
 

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -44,7 +44,7 @@ class ProductDiscoveryPersistenceService:
                 category_id=int(item["category_id"]),
                 category_name=str(item["category_name"]),
                 parent_category_id=int(item.get("parent_category_id") or 0),
-                synced_at=datetime.now(timezone.utc),
+                synced_at=datetime.now(UTC),
             )
             for item in categories
             if item.get("category_id") is not None and item.get("category_name")

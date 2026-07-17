@@ -1,41 +1,41 @@
-import enum
+from enum import StrEnum
 
 
-class UserRole(str, enum.Enum):
+class UserRole(StrEnum):
     ADMIN = "admin"
     AFFILIATE = "affiliate"
     ADVERTISER = "advertiser"
 
 
-class AffiliateStatus(str, enum.Enum):
+class AffiliateStatus(StrEnum):
     PENDING = "pending"
     ACTIVE = "active"
     SUSPENDED = "suspended"
     REJECTED = "rejected"
 
 
-class CampaignStatus(str, enum.Enum):
+class CampaignStatus(StrEnum):
     DRAFT = "draft"
     ACTIVE = "active"
     PAUSED = "paused"
     COMPLETED = "completed"
 
 
-class ConversionStatus(str, enum.Enum):
+class ConversionStatus(StrEnum):
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
     PAID = "paid"
 
 
-class ProductStatus(str, enum.Enum):
+class ProductStatus(StrEnum):
     DRAFT = "draft"
     ACTIVE = "active"
     INACTIVE = "inactive"
     ARCHIVED = "archived"
 
 
-class BotPermissionStatus(str, enum.Enum):
+class BotPermissionStatus(StrEnum):
     UNKNOWN = "unknown"
     PENDING = "pending"
     GRANTED = "granted"
@@ -43,12 +43,12 @@ class BotPermissionStatus(str, enum.Enum):
     DENIED = "denied"
 
 
-class AIProviderType(str, enum.Enum):
+class AIProviderType(StrEnum):
     OPENAI = "openai"
     GEMINI = "gemini"
 
 
-class QueueStatus(str, enum.Enum):
+class QueueStatus(StrEnum):
     DRAFT = "draft"
     QUEUED = "queued"
     SCHEDULED = "scheduled"

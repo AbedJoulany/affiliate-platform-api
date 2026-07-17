@@ -3,7 +3,7 @@
 ## AI Affiliate Automation Platform
 
 **Document Version:** 1.0
-**Last Updated:** 2026-07-14
+**Last Updated:** 2026-07-16
 
 ---
 
@@ -472,8 +472,6 @@ Contains:
 * Logo.
 * Navigation items.
 * Collapse button.
-* Workspace selector.
-* User section.
 
 Navigation:
 
@@ -490,10 +488,10 @@ Queue
 
 Channels
 
-Analytics
-
 Settings
 ```
+
+Analytics is deferred and is not shown in the MVP sidebar. Profile is accessed from the header user menu rather than the sidebar. The workspace selector remains hidden until multi-workspace support is implemented.
 
 Supports:
 
@@ -586,7 +584,9 @@ Supports:
 * Loading.
 * Empty state.
 
-Example:
+Feature tables should compose `DataTable` rather than duplicate its behavior. For example, `ProductTable` is the products-specific wrapper around `DataTable`.
+
+Example `ProductTable` columns:
 
 ```
 Product Table
@@ -771,6 +771,18 @@ Generate Content
 
 ---
 
+# 7.4 SystemStatus
+
+Summarizes the health and availability of backend services used by the dashboard.
+
+Shows:
+
+* API availability.
+* Worker availability.
+* External service connection status where exposed by the backend.
+
+---
+
 # 8. Product Components
 
 Location:
@@ -897,7 +909,16 @@ features/queue/components
 
 # 10.1 QueueTable
 
-Displays scheduled posts.
+Displays queue items using the canonical backend statuses:
+
+```text
+draft
+queued
+scheduled
+published
+```
+
+Publishing failures are displayed as operation feedback and retry actions, not as a `failed` queue status.
 
 Columns:
 
@@ -997,6 +1018,8 @@ AIChatAssistant
 
 CompetitorCard
 ```
+
+`WorkspaceSwitcher` must remain unrendered until multi-workspace support is available.
 
 ---
 

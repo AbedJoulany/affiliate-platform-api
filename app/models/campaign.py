@@ -1,14 +1,19 @@
 from datetime import datetime
 from decimal import Decimal
+from typing import TYPE_CHECKING
+
 from sqlalchemy import DateTime, Enum, ForeignKey, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
-from app.core.model_mixins import TimestampMixin, UUIDPrimaryKeyMixin
 from app.core.enums import CampaignStatus
+from app.core.model_mixins import TimestampMixin, UUIDPrimaryKeyMixin
 
-# Type-only imports removed; string annotations used for forward refs
+if TYPE_CHECKING:
+    from app.auth.models import User
+    from app.models.affiliate import AffiliateCampaign
+    from app.models.conversion import Conversion
 
 
 class Campaign(Base, UUIDPrimaryKeyMixin, TimestampMixin):

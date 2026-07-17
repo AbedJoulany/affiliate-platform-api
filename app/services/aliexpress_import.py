@@ -38,7 +38,6 @@ class AliExpressImportService:
         product_data = await self._fetch_product(aliexpress_id)
         # 2. Extract the long affiliate link from the raw API mapped schema object
         short_url = await self.client.generate_short_link(product_data.promotion_url)
-        print(f"Generated short link for product {aliexpress_id}: {short_url}")
         product_data.promotion_url = short_url
 
         # 4. Proceed to upsert into the DB safely

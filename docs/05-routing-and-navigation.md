@@ -3,7 +3,7 @@
 ## AI Affiliate Automation Platform
 
 **Document Version:** 1.0
-**Last Updated:** 2026-07-14
+**Last Updated:** 2026-07-16
 
 ---
 
@@ -317,11 +317,13 @@ Manage publishing lifecycle.
 
 Contains:
 
-* Drafts.
-* Scheduled posts.
-* Published content.
-* Failed posts.
+* `draft` items.
+* `queued` items.
+* `scheduled` items.
+* `published` items.
 * Retry actions.
+
+These four lowercase values are the canonical backend `QueueStatus` enum. Publishing failures are operation errors that may expose retry actions; they are not a `failed` queue status.
 
 ---
 
@@ -355,7 +357,7 @@ WhatsApp
 
 ---
 
-## Analytics
+## Future Analytics
 
 Route:
 
@@ -366,6 +368,8 @@ Route:
 Purpose:
 
 Monitor performance.
+
+Analytics is deferred until after the MVP. The route is reserved for future implementation and is not included in the MVP route map or sidebar.
 
 Future features:
 
@@ -404,6 +408,8 @@ Sections:
 /settings/scheduling
 ```
 
+`/settings` is the parent route and should redirect to or render `/settings/general` as its default section. All settings sections use nested routes consistently.
+
 ---
 
 ## Profile
@@ -417,6 +423,8 @@ Route:
 Purpose:
 
 Manage user settings.
+
+Profile is opened from the header user menu and is not a sidebar item.
 
 Contains:
 
@@ -448,9 +456,13 @@ Current MVP:
 │
 ├── channels
 │
-├── analytics
-│
 ├── settings
+│   ├── general
+│   ├── aliexpress
+│   ├── ai
+│   ├── telegram
+│   ├── discovery
+│   └── scheduling
 │
 └── profile
 ```
@@ -478,10 +490,10 @@ Workspace
 │
 ├── Channels
 │
-├── Analytics
-│
 └── Settings
 ```
+
+Profile is available through the header user menu. Analytics is deferred and omitted from the MVP sidebar. A workspace selector must remain hidden until multi-workspace support is implemented.
 
 ---
 
@@ -708,6 +720,14 @@ Handles:
 # 19. Future Routing Expansion
 
 Potential future routes:
+
+## Analytics
+
+```
+/analytics
+```
+
+---
 
 ## Workspaces
 

@@ -8,22 +8,24 @@ from __future__ import annotations
 
 import inspect
 from dataclasses import dataclass, field
+from unittest.mock import MagicMock
 from uuid import uuid4
 
-import iop
 import pytest
-from unittest.mock import MagicMock
 
+import iop
 from app.aliexpress import api_client as aliexpress_api_client_module
 from app.aliexpress.constants import (
     METHOD_DS_IMAGE_SEARCH,
     METHOD_FEATURED_PROMO_PRODUCTS,
     METHOD_HOT_PRODUCT_QUERY,
+    METHOD_LINK_GENERATE,
     METHOD_PRODUCT_DETAIL,
     METHOD_PRODUCT_QUERY,
     METHOD_SMART_MATCH,
 )
 from app.core.config import get_settings
+from tests.conftest import provision_test_user
 
 API_PREFIX = "/api/v1"
 PASSWORD = "StrongP@ssw0rd"
@@ -50,16 +52,12 @@ def auth_headers(token: str) -> dict[str, str]:
 
 async def register_admin(client) -> str:
     email = f"admin-{uuid4().hex[:8]}@example.com"
-    response = await client.post(
-        f"{API_PREFIX}/auth/register",
-        json={
-            "email": email,
-            "password": PASSWORD,
-            "full_name": "Admin User",
-            "role": "admin",
-        },
+    await provision_test_user(
+        email=email,
+        password=PASSWORD,
+        full_name="Admin User",
+        role="admin",
     )
-    assert response.status_code == 201
     login_resp = await client.post(
         f"{API_PREFIX}/auth/login",
         data={"username": email, "password": PASSWORD},
@@ -227,8 +225,9 @@ async def test_products_import_batch_uses_iop_sdk(client, mock_iop_sdk):
     )
 
     assert response.status_code == 200
-    assert mock_client.execute.call_count == 2
+    assert mock_client.execute.call_count == 4
     assert tracker.methods.count(METHOD_PRODUCT_DETAIL) == 2
+    assert tracker.methods.count(METHOD_LINK_GENERATE) == 2
 
 
 @pytest.mark.asyncio
@@ -297,7 +296,11 @@ async def test_iop_requests_are_built_with_add_api_param(client, mock_iop_sdk):
     )
 
     assert tracker.requests
-    request = tracker.requests[-1]
+    request = next(
+        request
+        for request in tracker.requests
+        if request._api_pame == METHOD_PRODUCT_DETAIL
+    )
     assert isinstance(request, iop.IopRequest)
     assert request._api_pame == METHOD_PRODUCT_DETAIL
     assert request._api_params["product_ids"] == "1234567890"

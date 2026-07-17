@@ -3,7 +3,7 @@
 ## AI Affiliate Automation Platform
 
 **Document Version:** 1.0
-**Last Updated:** 2026-07-14
+**Last Updated:** 2026-07-16
 
 ---
 
@@ -52,10 +52,10 @@ You are working on the AI Affiliate Automation Platform frontend.
 Before writing code:
 - Read the frontend documentation in /docs.
 - Follow the architecture defined in:
-  - frontend-architecture.md
-  - design-system.md
-  - component-library.md
-  - development-guidelines.md
+  - 02-Frontend-Architecture.md
+  - 03-design-system.md
+  - 04-component-library.md
+  - 07-development-guidelines.md
 
 Task:
 [DESCRIBE FEATURE]
@@ -215,8 +215,11 @@ Navigation items:
 - AI Studio
 - Queue
 - Channels
-- Analytics
 - Settings
+
+Profile must be accessed from the header user menu, not the sidebar.
+Do not render a workspace selector until multi-workspace support is implemented.
+Analytics is deferred and must not appear in the MVP sidebar.
 
 Do not add business logic.
 Only implement layout.
@@ -390,6 +393,7 @@ Components:
 - StatCard
 - ActivityFeed
 - QuickActionCard
+- SystemStatus
 
 
 Page:
@@ -533,14 +537,17 @@ Page:
 
 Features:
 
-- Draft posts.
-- Scheduled posts.
-- Published posts.
-- Retry failed posts.
+- `draft` items.
+- `queued` items.
+- `scheduled` items.
+- `published` items.
+- Retry publishing failures.
 - Publish now.
 
 
 Use existing DataTable component.
+Use the canonical backend QueueStatus values exactly.
+Do not add a `failed` queue status; failures are operation errors.
 ```
 
 ---
@@ -589,7 +596,13 @@ Build Settings pages.
 
 Create:
 
-/settings
+- /settings
+- /settings/general
+- /settings/aliexpress
+- /settings/ai
+- /settings/telegram
+- /settings/discovery
+- /settings/scheduling
 
 
 Sections:
@@ -604,6 +617,7 @@ Sections:
 
 Requirements:
 
+- Treat /settings as the parent route and use /settings/general as the default section.
 - Use reusable form components.
 - Use React Hook Form.
 - Use Zod validation.
@@ -620,9 +634,9 @@ Review this implementation.
 
 Check against:
 
-- frontend-architecture.md
-- design-system.md
-- development-guidelines.md
+- 02-Frontend-Architecture.md
+- 03-design-system.md
+- 07-development-guidelines.md
 
 
 Identify:

@@ -1,6 +1,6 @@
-from datetime import datetime, timezone
-from decimal import Decimal, InvalidOperation
 import re
+from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 
 from app.aliexpress.schemas import AliExpressProductData
 from app.aliexpress.url_parser import AliExpressURLParser
@@ -79,7 +79,9 @@ class AliExpressProductMapper:
                 or payload.get("sale_price_currency")
                 or "USD"
             ),
-            description=str(payload.get("product_description") or payload.get("description") or "").strip()
+            description=str(
+                payload.get("product_description") or payload.get("description") or ""
+            ).strip()
             or None,
             category=str(category_name).strip() if category_name else None,
             category_id=str(category_id) if category_id not in (None, "") else None,
@@ -87,7 +89,7 @@ class AliExpressProductMapper:
             commission_rate=commission_rate,
             shipping_info=shipping_info,
             platform_product_type=str(payload.get("platform_product_type") or "") or None,
-            last_synced_at=datetime.now(timezone.utc),
+            last_synced_at=datetime.now(UTC),
         )
 
     def _extract_main_image(self, payload: dict) -> str:

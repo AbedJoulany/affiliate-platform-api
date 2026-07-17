@@ -29,5 +29,9 @@ def get_product_discovery_service(
 
 
 AliExpressClientDep = Annotated[AliExpressAffiliateClient, Depends(get_aliexpress_client)]
-AliExpressImportServiceDep = Annotated[AliExpressImportService, Depends(get_aliexpress_import_service)]
-ProductDiscoveryServiceDep = Annotated[ProductDiscoveryService, Depends(get_product_discovery_service)]
+AliExpressImportServiceDep = Annotated[
+    AliExpressImportService, Depends(get_aliexpress_import_service)
+]
+ProductDiscoveryServiceDep = Annotated[
+    ProductDiscoveryService, Depends(get_product_discovery_service)
+]

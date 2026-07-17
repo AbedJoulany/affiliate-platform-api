@@ -3,8 +3,6 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.channel import TelegramChannel
-from app.core.enums import BotPermissionStatus
-from app.models.channel import TelegramChannel
 from app.repositories.channel import ChannelRepository
 from app.schemas.channel import ChannelCreate, ChannelListResponse, ChannelUpdate
 from app.services.exceptions import ConflictError, NotFoundError
@@ -42,8 +40,13 @@ class ChannelService:
     async def update(self, channel_id: UUID, payload: ChannelUpdate) -> TelegramChannel:
         channel = await self._get_or_404(channel_id)
 
-        if payload.telegram_channel_id and payload.telegram_channel_id != channel.telegram_channel_id:
-            existing = await self.channel_repo.get_by_telegram_channel_id(payload.telegram_channel_id)
+        if (
+            payload.telegram_channel_id
+            and payload.telegram_channel_id != channel.telegram_channel_id
+        ):
+            existing = await self.channel_repo.get_by_telegram_channel_id(
+                payload.telegram_channel_id
+            )
             if existing:
                 raise ConflictError("Telegram channel already registered")
             channel.telegram_channel_id = payload.telegram_channel_id

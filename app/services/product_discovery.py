@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from app.aliexpress.client import AliExpressAffiliateClient
@@ -38,12 +39,9 @@ class ProductDiscoveryService:
 
     async def discover(self, query: ProductDiscoveryQuery) -> DiscoveryResult:
         products, meta = await self._fetch_by_mode(query)
-        # ADD THIS TEMP LOG TO DEBUG:
-        print("🔥 RAW FROM API:", len(products))
-        print("🔥 SAMPLE:", products[:1])
         products = self._dedupe_products(products)
-        #products = self._apply_filters(products, query)
-        #products = self._apply_sort(products, query.sort)
+        products = self._apply_filters(products, query)
+        products = self._apply_sort(products, query.sort)
 
         persisted_count = 0
         if query.persist and self.importer and products:
@@ -187,6 +185,11 @@ class ProductDiscoveryService:
                 continue
             if query.min_discount is not None and product.discount < query.min_discount:
                 continue
+            if query.free_shipping and not (
+                product.shipping_info
+                and product.shipping_info.get("free_shipping") is True
+            ):
+                continue
             filtered.append(product)
         return filtered
 
@@ -202,7 +205,9 @@ class ProductDiscoveryService:
             ProductSortOption.PRICE_ASC: lambda item: item.price,
             ProductSortOption.PRICE_DESC: lambda item: item.price,
             ProductSortOption.COMMISSION_DESC: lambda item: item.commission_rate or Decimal("0"),
-            ProductSortOption.NEWEST: lambda item: item.last_synced_at,
+            ProductSortOption.NEWEST: lambda item: (
+                item.last_synced_at or datetime.min.replace(tzinfo=UTC)
+            ),
         }
         reverse = sort != ProductSortOption.PRICE_ASC
         return sorted(products, key=key_map[sort], reverse=reverse)

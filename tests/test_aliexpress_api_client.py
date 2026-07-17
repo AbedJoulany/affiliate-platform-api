@@ -1,8 +1,8 @@
 from unittest.mock import MagicMock, patch
 
-import iop
 import pytest
 
+import iop
 from app.aliexpress.api_client import AliExpressAPIClient
 from app.aliexpress.constants import METHOD_PRODUCT_QUERY
 from app.aliexpress.exceptions import AliExpressAPIError

@@ -1,11 +1,14 @@
+from typing import TYPE_CHECKING
+
 from sqlalchemy import Boolean, Enum, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
-from app.core.model_mixins import TimestampMixin, UUIDPrimaryKeyMixin
 from app.core.enums import UserRole
+from app.core.model_mixins import TimestampMixin, UUIDPrimaryKeyMixin
 
-# Type-only imports removed; string annotations used for forward refs
+if TYPE_CHECKING:
+    from app.models.affiliate import Affiliate
 
 
 class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):

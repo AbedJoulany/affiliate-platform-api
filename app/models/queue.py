@@ -7,8 +7,8 @@ from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
-from app.core.model_mixins import TimestampMixin, UUIDPrimaryKeyMixin
 from app.core.enums import QueueStatus
+from app.core.model_mixins import TimestampMixin, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
     from app.models.channel import TelegramChannel

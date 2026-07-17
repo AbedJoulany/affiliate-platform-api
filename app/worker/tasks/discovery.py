@@ -1,8 +1,8 @@
+from app.aliexpress.client import AliExpressAffiliateClient
+from app.core.database import get_async_session_maker
+from app.services.product_discovery_persistence import ProductDiscoveryPersistenceService
 from app.worker.async_utils import run_async
 from app.worker.celery_app import celery_app
-from app.core.database import get_async_session_maker
-from app.aliexpress.client import AliExpressAffiliateClient
-from app.services.product_discovery_persistence import ProductDiscoveryPersistenceService
 
 
 async def _refresh_hot_products() -> dict:

@@ -1,6 +1,22 @@
+from datetime import datetime
+
 from pydantic import BaseModel, Field, HttpUrl, model_validator
 
+from app.schemas.common import ORMModel
 from app.schemas.product import ProductRead
+
+
+class AliExpressCategoryRead(ORMModel):
+    category_id: int
+    category_name: str
+    parent_category_id: int
+    synced_at: datetime
+
+
+class AliExpressCategoryListResponse(BaseModel):
+    items: list[AliExpressCategoryRead]
+    total: int
+    synced_at: datetime | None
 
 
 class AliExpressImportRequest(BaseModel):

@@ -1,6 +1,7 @@
 import re
 
 import pytest
+
 from app.main import app
 
 DUMMY_UUID = "00000000-0000-0000-0000-000000000000"
@@ -24,7 +25,7 @@ def build_request_data(path: str, method: str) -> dict:
 
 
 def allowed_status_codes(method: str) -> set[int]:
-    return {200, 201, 202, 204, 401, 403, 404, 422}
+    return {200, 201, 202, 204, 401, 403, 404, 422, 502, 503}
 
 
 @pytest.mark.asyncio

@@ -12,6 +12,7 @@ from app.auth.service import AuthService
 from app.core.database import get_db
 from app.core.enums import UserRole
 
+
 # 🚀 Lazy loader function to pull OAuth dynamically without top-level locks
 def get_oauth2_scheme() -> OAuth2PasswordBearer:
     from app.core.config import get_settings

@@ -3,7 +3,7 @@
 ## AI Affiliate Automation Platform
 
 **Document Version:** 1.0
-**Last Updated:** 2026-07-14
+**Last Updated:** 2026-07-16
 
 ---
 
@@ -97,6 +97,7 @@ The following features are intentionally postponed.
 
 Includes:
 
+* Future route: `/analytics`.
 * Revenue tracking.
 * Conversion analytics.
 * Click attribution.
@@ -329,6 +330,8 @@ Implement:
 * Responsive behavior.
 * Desktop layout.
 * Mobile navigation drawer.
+* Profile access through the header user menu.
+* Keep the workspace selector hidden until multi-workspace support is implemented.
 
 ---
 
@@ -453,7 +456,7 @@ Build the main product management workspace.
 Implement:
 
 ```text
-Product Table
+ProductTable backed by the common DataTable
 
 Search
 
@@ -569,7 +572,7 @@ Queue
 ```text
 AIContentEditor
 
-PromptSelector
+PromptProfileSelector
 
 GenerationStatus
 ```
@@ -607,18 +610,20 @@ Manage content lifecycle.
 Implement:
 
 ```text
-Drafts
+draft
 
-Scheduled Posts
+queued
 
-Published Posts
+scheduled
 
-Failed Posts
+published
 
 Retry
 
 Publish Now
 ```
+
+The lowercase status values must match the backend `QueueStatus` enum exactly. Publishing failures are operation errors that can offer Retry; they are not a `failed` queue status.
 
 ---
 
@@ -681,18 +686,20 @@ Provide application configuration.
 ## Sections
 
 ```text
-General
+/settings/general
 
-AliExpress
+/settings/aliexpress
 
-AI Providers
+/settings/ai
 
-Telegram
+/settings/telegram
 
-Discovery
+/settings/discovery
 
-Scheduling
+/settings/scheduling
 ```
+
+`/settings` is the parent route and should redirect to or render `/settings/general` by default.
 
 ---
 

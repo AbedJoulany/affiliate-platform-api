@@ -3,7 +3,7 @@
 ## AI Affiliate Automation Platform
 
 **Document Version:** 1.0
-**Last Updated:** 2026-07-14
+**Last Updated:** 2026-07-16
 
 ---
 
@@ -290,24 +290,22 @@ The publishing system manages content lifecycle.
 Statuses:
 
 ```text
-Draft
+draft
 
 ↓
 
-Queued
+queued
 
 ↓
 
-Scheduled
+scheduled
 
 ↓
 
-Published
-
-↓
-
-Failed
+published
 ```
+
+These values match the backend `QueueStatus` enum. Publishing failures are operation errors and do not introduce a `failed` queue status.
 
 ---
 
@@ -328,11 +326,11 @@ Capabilities:
 
 ---
 
-# 7.7 Analytics
+# 7.7 Future Analytics
 
-The platform tracks system performance.
+Analytics is deferred until after the MVP. The planned frontend route is `/analytics`; it is not included in the MVP route map or sidebar.
 
-Initial metrics:
+Planned metrics:
 
 * Products discovered.
 * Products imported.

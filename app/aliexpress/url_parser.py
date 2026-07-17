@@ -1,4 +1,3 @@
-import hashlib
 import re
 from urllib.parse import parse_qs, urlparse
 

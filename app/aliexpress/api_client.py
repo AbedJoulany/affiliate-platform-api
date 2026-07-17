@@ -3,10 +3,8 @@ import json
 import random
 from functools import lru_cache
 from typing import Any
-from urllib import response
 
 import iop
-
 from app.aliexpress.constants import FAVORITE_PRODUCT_FIELDS
 from app.aliexpress.exceptions import (
     AliExpressAPIError,
@@ -141,11 +139,8 @@ class AliExpressAPIClient:
 
         request = iop.IopRequest(method)
 
-        params_debug = {}
-
         def add(k, v):
             request.add_api_param(k, v)
-            params_debug[k] = v
 
         add("target_currency", self.settings.aliexpress_target_currency)
         add("target_language", self.settings.aliexpress_target_language)
@@ -159,12 +154,6 @@ class AliExpressAPIClient:
             if value is None:
                 continue
             add(key, value)
-
-        print("\n🔥 RAW REQUEST PARAMS (BEFORE SIGN):")
-        for k, v in sorted(params_debug.items()):
-            print(f"{k} = {v}")
-
-        print("\n🔥 METHOD:", method)
 
         return request
 
@@ -201,8 +190,6 @@ class AliExpressAPIClient:
         client = self._get_iop_client()
         try:
             response = await asyncio.to_thread(client.execute, request)
-            print("=== RAW IOP RESPONSE BODY ===")
-            print(response.body)
         except Exception as exc:
             message = str(exc)
             if "429" in message or "rate limit" in message.lower():
@@ -216,7 +203,10 @@ class AliExpressAPIClient:
     def _parse_iop_response(self, response: iop.IopResponse) -> dict:
         if response.code and response.code not in ("", "0"):
             message = response.message or "AliExpress API error"
-            if response.code in {str(code) for code in CREDENTIAL_ERROR_CODES} or "invalid app" in message.lower():
+            if (
+                response.code in {str(code) for code in CREDENTIAL_ERROR_CODES}
+                or "invalid app" in message.lower()
+            ):
                 raise AliExpressCredentialsError(message, code=response.code)
             if response.code in {"429", "503"} or "rate limit" in message.lower():
                 raise AliExpressRateLimitError(message, code=response.code)
