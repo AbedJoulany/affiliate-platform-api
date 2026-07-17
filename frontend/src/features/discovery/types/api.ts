@@ -3,10 +3,14 @@ import type { Product } from "@/features/products/types/api";
 export type DiscoveryMode = "general" | "hot" | "deals" | "trending" | "category";
 export type ProductSort =
   | "orders_desc"
+  | "rating_desc"
+  | "discount_desc"
   | "price_asc"
   | "price_desc"
   | "commission_desc"
-  | "discount_desc";
+  | "newest";
+
+export type DiscoveryResultsView = "table" | "grid";
 
 export interface DiscoveryProduct {
   aliexpress_product_id: string;
@@ -28,6 +32,22 @@ export interface DiscoveryProduct {
   commission_rate: number | null;
   shipping_info: Record<string, unknown> | null;
   score: number;
+  /** Reserved for future backend score_breakdown payloads. */
+  score_breakdown?: ScoreBreakdown | null;
+}
+
+export interface ScoreFactor {
+  key: "rating" | "sales" | "discount" | "reviews";
+  label: string;
+  weightPercent: number;
+  inputValue: number;
+  inputLabel: string;
+}
+
+export interface ScoreBreakdown {
+  total: number;
+  factors: ScoreFactor[];
+  source: "backend" | "documented_weights";
 }
 
 export interface DiscoveryResponse {
@@ -61,4 +81,25 @@ export interface ProductImportResponse {
   aliexpress_product_id: string;
   imported: boolean;
   image_count: number;
+}
+
+export interface ProductImportBatchResponse {
+  imported: number;
+  updated: number;
+  failed: number;
+  products: Product[];
+}
+
+export type DiscoveryRunStatus = "idle" | "running" | "success" | "error";
+
+export interface DiscoverySessionSnapshot {
+  draftParams: DiscoveryParams;
+  committedParams: DiscoveryParams | null;
+  lastResponse: DiscoveryResponse | null;
+  lastRunAt: string | null;
+  lastRunStatus: DiscoveryRunStatus;
+  lastError: string | null;
+  importedIds: string[];
+  /** Extension point: Discovery Profiles / saved filters (future). */
+  activeProfileId?: string | null;
 }

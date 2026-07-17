@@ -17,13 +17,23 @@ const schema = z.object({
 });
 type Values = z.infer<typeof schema>;
 
-export function AIStudioView({ initialProductId }: { initialProductId?: string }) {
+export function AIStudioView({
+  initialProductId,
+  initialUrl,
+}: {
+  initialProductId?: string;
+  initialUrl?: string;
+}) {
   const generation = useGenerateContent();
   const queue = useCreateQueueItem();
   const [content, setContent] = useState("");
   const { register, handleSubmit, watch, formState: { errors } } = useForm<Values>({
     resolver: zodResolver(schema),
-    defaultValues: { sourceType: initialProductId ? "product" : "url", source: initialProductId ?? "", provider: "openai" },
+    defaultValues: {
+      sourceType: initialProductId ? "product" : "url",
+      source: initialProductId ?? initialUrl ?? "",
+      provider: "openai",
+    },
   });
   const sourceType = watch("sourceType");
   const submit = (values: Values) => {
