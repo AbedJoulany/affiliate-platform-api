@@ -14,6 +14,23 @@ AI affiliate automation platform with a FastAPI backend and Next.js frontend.
 - Docker & Docker Compose
 - Next.js 15, TypeScript, TanStack Query, and TailwindCSS
 
+## Documentation
+
+Full project documentation lives in [`docs/`](./docs/):
+
+| Doc | Topic |
+| --- | --- |
+| [01-project-overview.md](./docs/01-project-overview.md) | Vision, architecture, tech stack |
+| [02-frontend-architecture.md](./docs/02-frontend-architecture.md) | Frontend structure & workspaces |
+| [03-design-system.md](./docs/03-design-system.md) | Visual tokens & patterns |
+| [04-component-library.md](./docs/04-component-library.md) | Component registry |
+| [05-routing-and-navigation.md](./docs/05-routing-and-navigation.md) | Routes & navigation |
+| [06-api-integration.md](./docs/06-api-integration.md) | API contracts & integration status |
+| [07-development-guidelines.md](./docs/07-development-guidelines.md) | Coding standards |
+| [08-implementation-roadmap.md](./docs/08-implementation-roadmap.md) | Feature checklist & roadmap |
+| [09-cursor-prompts.md](./docs/09-cursor-prompts.md) | AI development prompts |
+| [10-production-readiness.md](./docs/10-production-readiness.md) | Release & security runbook |
+
 ## Architecture
 
 ```

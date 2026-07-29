@@ -37,6 +37,30 @@ export interface QueueCreate {
   button_url?: string | null;
 }
 
+export type QueueUpdate = Partial<QueueCreate>;
+
+export type QueueHealthStatus =
+  | "ready"
+  | "missing_schedule"
+  | "missing_channel"
+  | "publishing"
+  | "published"
+  | "error";
+
+export type QueueWorkspaceSort =
+  | "newest"
+  | "oldest"
+  | "schedule_asc"
+  | "schedule_desc"
+  | "status";
+
+export type QueueTableDensity = "comfortable" | "compact";
+
+export type QueuePublishFailure = {
+  message: string;
+  occurredAt: string;
+};
+
 export interface PublishQueueResponse {
   queue_id: string;
   telegram_message_id: number;

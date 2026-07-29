@@ -1,4 +1,4 @@
-import { AIStudioView } from "@/features/ai/components/AIStudioView";
+import { ContentWorkspaceView } from "@/features/ai/components/ContentWorkspaceView";
 
 export default async function AIPage({
   searchParams,
@@ -6,5 +6,5 @@ export default async function AIPage({
   searchParams: Promise<{ product?: string; url?: string }>;
 }) {
   const { product, url } = await searchParams;
-  return <AIStudioView initialProductId={product} initialUrl={url} />;
+  return <ContentWorkspaceView initialProductId={product} initialUrl={url} />;
 }

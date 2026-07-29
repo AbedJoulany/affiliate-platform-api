@@ -1,731 +1,195 @@
-# Project Overview v1.0
+# Project Overview
 
-## AI Affiliate Automation Platform
-
-**Document Version:** 1.0
-**Last Updated:** 2026-07-17
+**Document Version:** 2.0  
+**Last Updated:** 2026-07-29
 
 ---
 
-# 1. Introduction
+## 1. Introduction
 
-The AI Affiliate Automation Platform is an intelligent SaaS-ready platform designed to automate the affiliate marketing workflow from product discovery to content publishing.
+The **AI Affiliate Automation Platform** is an intelligent SaaS-ready system that automates affiliate marketing from product discovery through AI content generation to Telegram publishing.
 
-The platform combines:
+The repository contains:
 
-* Product discovery automation.
-* AI-powered marketing content generation.
-* Publishing automation.
-* Scheduling.
-* Analytics.
+- A **layered async FastAPI backend** (PostgreSQL, Celery, Redis)
+- A **Next.js 15 App Router frontend** with Arabic-first workspace UX
+- Integration clients for **AliExpress**, **OpenAI**, **Gemini**, and **Telegram**
 
-The main goal is to reduce manual affiliate marketing work and create a system capable of continuously discovering, evaluating, and promoting high-potential products.
-
----
-
-# 2. Vision
-
-The long-term vision is to build an intelligent affiliate automation operating system.
-
-Instead of manually:
-
-* Searching for products.
-* Checking product quality.
-* Writing marketing content.
-* Creating posts.
-* Scheduling publications.
-* Tracking performance.
-
-The platform should automatically manage the complete workflow:
+Primary workflow:
 
 ```text
-Product Discovery
-
-↓
-
-Product Evaluation
-
-↓
-
-AI Content Generation
-
-↓
-
-Publishing Queue
-
-↓
-
-Scheduled Publishing
-
-↓
-
-Analytics & Optimization
+AliExpress Discovery → Product Scoring → Inventory Review
+        ↓
+AI Content Studio → Publishing Queue → Telegram Dispatch
+        ↓
+Performance Analytics (planned)
 ```
 
 ---
 
-# 3. Problem Statement
+## 2. Vision & Problem
 
-Affiliate marketers currently spend significant time on repetitive tasks:
+Affiliate marketers spend excessive time on repetitive research, copywriting, scheduling, and channel management. This platform reduces manual work by combining data-driven product scoring, AI-generated Arabic marketing copy, and automated publishing pipelines.
 
-## Product Research
-
-Finding profitable products requires:
-
-* Searching multiple sources.
-* Comparing products.
-* Checking reviews.
-* Evaluating demand.
+Long-term vision: an **affiliate automation operating system** supporting multi-workspace SaaS, additional affiliate networks, and multi-channel publishing.
 
 ---
 
-## Content Creation
+## 3. Target Users
 
-Creating attractive marketing posts requires:
+| User | Needs |
+| --- | --- |
+| **Primary — Affiliate marketers** | Discover products, evaluate scores, generate content, publish to Telegram |
+| **Admin operators** | Import products, manage catalog lifecycle, configure channels |
+| **Future — Teams & businesses** | Shared workspaces, roles, analytics, automation rules |
 
-* Writing descriptions.
-* Translating content.
-* Adding persuasive copy.
-* Adapting content for different platforms.
-
----
-
-## Publishing Management
-
-Managing multiple channels requires:
-
-* Scheduling posts.
-* Tracking publishing status.
-* Repeating manual actions.
+Public registration creates `affiliate` users only. Admin accounts must be provisioned operationally before catalog import is available.
 
 ---
 
-## Optimization
-
-Understanding what works requires:
-
-* Analytics.
-* Performance tracking.
-* Continuous adjustments.
-
----
-
-The platform solves these challenges by automating the entire workflow.
-
----
-
-# 4. Product Goal
-
-The primary goal is:
-
-> Build an AI-powered automation platform that discovers valuable products, creates marketing content, and publishes them automatically with minimal human intervention.
-
----
-
-# 5. Target Users
-
-## Primary User
-
-Affiliate marketers who:
-
-* Promote products online.
-* Manage Telegram channels.
-* Need continuous product discovery.
-* Want to automate publishing.
-
----
-
-## Future Users
-
-Small businesses and creators who need:
-
-* Product promotion automation.
-* Social media publishing.
-* AI marketing assistance.
-
----
-
-# 6. Core Workflow
-
-The main product workflow:
+## 4. System Architecture
 
 ```text
-AliExpress Product Sources
+┌─────────────────────────────────────────────────────────────┐
+│  Next.js Frontend (workspaces: discovery, products, queue) │
+└────────────────────────────┬────────────────────────────────┘
+                             │ REST /api/v1 + JWT
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│  FastAPI API Layer (app/api/v1/*, app/auth/router.py)       │
+└────────────────────────────┬────────────────────────────────┘
+                             │
+         ┌───────────────────┼───────────────────┐
+         ▼                   ▼                   ▼
+┌─────────────────┐  ┌──────────────┐  ┌──────────────────┐
+│ Service Layer   │  │ Repositories │  │ Integration      │
+│ app/services/*  │  │ app/repos/*  │  │ ai, telegram,    │
+└────────┬────────┘  └──────┬───────┘  │ aliexpress       │
+         │                  │          └──────────────────┘
+         └──────────┬───────┘
+                    ▼
+           ┌────────────────┐
+           │ PostgreSQL 16  │
+           └────────────────┘
 
-↓
-
-Discovery Engine
-
-↓
-
-Filtering System
-
-↓
-
-Product Scoring
-
-↓
-
-AI Content Generation
-
-↓
-
-Publishing Queue
-
-↓
-
-Telegram Publishing
-
-↓
-
-Performance Analytics
+        ┌──── Celery Worker ────┐
+        │  Redis broker/beat    │
+        │  Scheduled publishing │
+        └───────────────────────┘
 ```
 
----
+### Backend layers
 
-# 7. Core Features
+| Layer | Location | Responsibility |
+| --- | --- | --- |
+| API | `app/api/v1/` | Routes, Pydantic validation, auth guards |
+| Services | `app/services/` | Business rules, orchestration |
+| Repositories | `app/repositories/` | Database access only |
+| Models | `app/models/`, `app/auth/` | SQLAlchemy 2.0 ORM |
+| Schemas | `app/schemas/` | Pydantic v2 DTOs |
+| Workers | `app/worker/` | Celery tasks (publish, discovery refresh) |
+| Integrations | `app/ai/`, `app/telegram/`, `app/aliexpress/` | External API clients |
 
----
+### Request lifecycle
 
-## Current implementation boundary (2026-07-17)
+1. HTTP request → FastAPI router
+2. Dependencies inject DB session, `CurrentUser`, role guards
+3. Service executes business logic
+4. Repository persists/queries PostgreSQL
+5. Pydantic response returned; session auto-commits on success
 
-The repository currently contains a FastAPI backend and an Arabic-first Next.js frontend.
-The frontend implements login, dashboard, products, product detail, discovery, AI generation,
-queue, Telegram channels, profile, and read-only settings/status routes. Pages are thin App
-Router entries that render client-side feature views. Advanced analytics, editable settings,
-AI prompt profiles/history, queue scheduling controls, and multi-workspace behavior remain
-target capabilities.
+### Background processing
 
-Product imports require an `admin` account. Public registration intentionally creates only
-`affiliate` users, so operational admin provisioning is required before imports can be used.
-
-
-# 7.1 Product Discovery
-
-The platform automatically discovers products from AliExpress.
-
-Supported sources:
-
-* Hot Products.
-* Trending Products.
-* Promotional Products.
-* Categories.
-* Keyword Search.
-
-Future:
-
-* Multiple affiliate networks.
-* Competitor monitoring.
-* Trend detection.
+Celery Beat triggers `process_publish_queue` on a configurable interval (default 60s). Workers publish due **scheduled** and ready **queued** items via `TelegramPublishingService`.
 
 ---
 
-# 7.2 Product Filtering
+## 5. Technology Stack
 
-Products can be filtered based on configurable rules.
+### Frontend
 
-Examples:
+| Technology | Role |
+| --- | --- |
+| Next.js 15.5 / React 19 | App Router, client feature views |
+| TypeScript | Type safety |
+| Tailwind CSS 3.4 | Styling, density/layout tokens |
+| TanStack Query 5 | Server state, caching |
+| Axios | HTTP via shared `apiClient` |
+| React Hook Form + Zod | Form validation |
+| Lucide React | Icons |
+| next-themes | Light/dark mode |
 
-* Price.
-* Rating.
-* Sales volume.
-* Review count.
-* Commission rate.
-* Categories.
-* Keywords.
+UI primitives live in `frontend/src/components/ui/primitives.tsx` (Button, Input, Select, Card, Badge, Skeleton, **Drawer**, **Popover**). shadcn/ui is not installed.
 
----
+### Backend
 
-# 7.3 Product Scoring Engine
+Python 3.12 · FastAPI · PostgreSQL 16 · SQLAlchemy 2.0 async · Alembic · Celery · Redis · Docker
 
-Each product receives a quality score.
+### External services
 
-Example:
-
-```text
-Product Score =
-
-Discount Weight
-
-+
-
-Rating Weight
-
-+
-
-Sales Weight
-
-+
-
-Reviews Weight
-
-+
-
-Commission Weight
-
-+
-
-Trend Weight
-```
-
-The scoring system is configurable.
-
-Future:
-
-* Machine learning ranking.
-* Performance-based optimization.
+AliExpress Affiliate API (IOP SDK) · OpenAI · Gemini · Telegram Bot API
 
 ---
 
-# 7.4 AI Content Generation
+## 6. Core Workflows (Current)
 
-The platform generates marketing content using AI providers.
+### Discovery workspace (`/discovery`)
 
-Supported providers:
+Browse AliExpress products by intent (hot, deals, trending, category, general). Filter, sort, bulk-select, inspect in a slide-over drawer, import (admin), and hand off to AI Studio or queue.
 
-* OpenAI.
-* Gemini.
+### Products inventory (`/products`)
 
-Generated content includes:
+Server-paginated catalog grid with density controls, column visibility, bulk selection, row-click **ProductDetailsDrawer**, admin delete, status updates, and queue/AI shortcuts.
 
-* Product title.
-* Marketing description.
-* Call-to-action.
-* Hashtags.
-* Arabic promotional text.
+### AI Content Studio (`/ai`)
 
----
+Multi-variant content workspace with tone/type/language controls, local session persistence, performance scoring (client-side), and queue/distribution actions.
 
-# 7.5 Publishing Queue
+### Publishing queue (`/queue`)
 
-The publishing system manages content lifecycle.
+KPI summary cards, filterable table, **QueueDetailsDrawer**, inline scheduling dialog, bulk publish/schedule/delete, channel routing indicators, and publish-failure tracking (client-side).
 
-Statuses:
+### Channels & settings
 
-```text
-draft
-
-↓
-
-queued
-
-↓
-
-scheduled
-
-↓
-
-published
-```
-
-These values match the backend `QueueStatus` enum. Publishing failures are operation errors and do not introduce a `failed` queue status.
+Telegram channel management; read-only settings/capability screens backed by `/ready`.
 
 ---
 
-# 7.6 Telegram Publishing
+## 7. MVP Scope & Boundaries
 
-Initial publishing platform:
+**In scope today:** Login, dashboard, discovery, products inventory, AI studio, queue operations, channels, read-only settings.
 
-```text
-Telegram
-```
-
-Capabilities:
-
-* Channel management.
-* Automatic publishing.
-* Scheduled posts.
-* Publishing status tracking.
+**Partial / roadmap:** Real-time queue streaming, tenant isolation, refresh tokens, analytics route, editable settings, image search UI, full discovery filter surface, server-side AI variant persistence.
 
 ---
 
-# 7.7 Future Analytics
+## 8. Documentation Suite
 
-Analytics is deferred until after the MVP. The planned frontend route is `/analytics`; it is not included in the MVP route map or sidebar.
+| Doc | Topic |
+| --- | --- |
+| [01-project-overview.md](./01-project-overview.md) | This document |
+| [02-frontend-architecture.md](./02-frontend-architecture.md) | Frontend structure & state |
+| [03-design-system.md](./03-design-system.md) | Visual tokens & patterns |
+| [04-component-library.md](./04-component-library.md) | Shared & feature components |
+| [05-routing-and-navigation.md](./05-routing-and-navigation.md) | Routes & navigation |
+| [06-api-integration.md](./06-api-integration.md) | API contracts & integration matrix |
+| [07-development-guidelines.md](./07-development-guidelines.md) | Coding standards |
+| [08-implementation-roadmap.md](./08-implementation-roadmap.md) | Feature checklist & phases |
+| [09-cursor-prompts.md](./09-cursor-prompts.md) | AI-assisted development prompts |
+| [10-production-readiness.md](./10-production-readiness.md) | Release & security runbook |
 
-Planned metrics:
-
-* Products discovered.
-* Products imported.
-* Queue size.
-* Published posts.
-* AI usage.
-
-AI usage is a future analytics metric; it is not part of the current dashboard API or UI.
-
-Future:
-
-* Click tracking.
-* Conversion tracking.
-* Revenue analytics.
+Legacy root documents `ARCHITECTURE.md` and `HANDOFF.md` were consolidated into this suite on 2026-07-29.
 
 ---
 
-# 8. Future SaaS Vision
+## 9. Success Criteria
 
-The platform is designed to evolve into a multi-tenant SaaS product.
+A provisioned user can:
 
-Future capabilities:
+1. Discover and inspect products with AI score breakdowns
+2. Import products (admin) and manage inventory from `/products`
+3. Generate and refine Arabic marketing content in AI Studio
+4. Create, schedule, and publish queue items to Telegram
+5. Monitor queue KPIs and resolve publish failures
 
----
-
-## Multi Workspace
-
-Support multiple users and organizations.
-
-Features:
-
-* Workspaces.
-* Teams.
-* Permissions.
-* Collaboration.
-
----
-
-## Multiple Affiliate Networks
-
-Future integrations:
-
-* Amazon.
-* Other affiliate networks.
-
----
-
-## Multi Platform Publishing
-
-Future support:
-
-```text
-Facebook
-
-Instagram
-
-WhatsApp
-
-Other social platforms
-```
-
----
-
-## Automation Engine
-
-Advanced workflows:
-
-Example:
-
-```text
-IF Product Score > 85
-
-AND
-
-Commission > 10%
-
-THEN
-
-Generate Content
-
-AND
-
-Schedule Post
-```
-
----
-
-## Competitor Intelligence
-
-Future features:
-
-* Competitor monitoring.
-* Trending product discovery.
-* Market analysis.
-
----
-
-# 9. Technical Architecture Overview
-
-The system consists of:
-
-```text
-Frontend
-
-↓
-
-Backend API
-
-↓
-
-Database
-
-↓
-
-Background Workers
-
-↓
-
-External Services
-```
-
----
-
-# 10. Technology Stack
-
-## Frontend
-
-```text
-Next.js 15.5.x and React 19
-
-TypeScript
-
-Tailwind CSS 3.4 with local primitives
-
-TanStack Query 5
-
-Axios
-
-React Hook Form
-
-Zod
-
-Lucide React
-
-next-themes
-```
-
-The current UI layer is the Tailwind-based local component set in
-`frontend/src/components/ui/primitives.tsx`; shadcn/ui is not installed. Adopting shadcn/ui
-or a richer accessible component library is a future option, not a description of the
-current implementation. CI uses Node 22.
-
----
-
-## Backend
-
-```text
-Python
-
-FastAPI
-
-PostgreSQL
-
-SQLAlchemy
-
-Alembic
-
-Celery
-
-Redis
-
-Docker
-```
-
----
-
-## External Services
-
-Current:
-
-```text
-AliExpress API
-
-OpenAI API
-
-Gemini API
-
-Telegram API
-```
-
----
-
-# 11. Project Architecture Philosophy
-
-The project follows:
-
-## Feature-Based Architecture
-
-Each feature owns:
-
-* Components.
-* API calls.
-* Hooks.
-* Types.
-
----
-
-## Separation of Concerns
-
-Frontend:
-
-* User interface.
-* User interactions.
-
-Backend:
-
-* Business logic.
-* Automation.
-* Data processing.
-
----
-
-## Scalable Design
-
-The system is designed to support:
-
-* More users.
-* More platforms.
-* More integrations.
-
----
-
-# 12. MVP Scope
-
-The first production-ready version includes:
-
-## Authentication
-
-* Login.
-* Protected routes.
-* Access-JWT session validation.
-
----
-
-## Dashboard
-
-* Basic metrics.
-* Activity overview.
-
----
-
-## Products
-
-* Product list.
-* Product details.
-* Import products.
-* Search.
-* Filters.
-
----
-
-## AI Studio
-
-* Generate marketing content.
-* Edit content.
-
----
-
-## Queue
-
-* Manage posts.
-* Filter and publish existing queue items.
-
-Creating scheduled items is supported by the API, but a scheduling editor is not currently
-implemented in the UI.
-
----
-
-## Channels
-
-* Telegram management.
-
----
-
-## Settings
-
-* Read-only capability and readiness/status screens.
-
-There are no editable settings APIs or settings forms in the current implementation.
-
----
-
-# 13. Development Principles
-
-The project prioritizes:
-
-```text
-Maintainability
-
-+
-
-Scalability
-
-+
-
-Clean Architecture
-
-+
-
-Reusable Components
-
-+
-
-AI-Assisted Development
-```
-
----
-
-# 14. Current Development Strategy
-
-Development is divided into two major stages.
-
----
-
-# Stage 1 — Frontend Productization
-
-Focus:
-
-* Build professional SaaS interface.
-* Connect existing backend.
-* Validate workflows.
-* Improve usability.
-
----
-
-# Stage 2 — Platform Expansion
-
-Focus:
-
-* Automation engine.
-* Multi-user support.
-* Analytics.
-* Additional platforms.
-
----
-
-# 15. Success Criteria
-
-Current frontend productization is successful when a provisioned user can:
-
-1. Discover and review products.
-2. Import products with an admin account.
-3. Generate and edit marketing content.
-4. Add generated content to the publishing queue.
-5. Publish queue content to a configured Telegram channel.
-
-The complete product vision additionally includes scheduling controls and performance
-monitoring with minimal manual effort. Those capabilities remain roadmap targets rather
-than claims about the current frontend.
-
----
-
-# 16. Project Summary
-
-The AI Affiliate Automation Platform is not simply a product posting tool.
-
-It is an intelligent automation system designed to transform affiliate marketing from a manual process into an automated workflow powered by:
-
-```text
-Data
-
-+
-
-Automation
-
-+
-
-Artificial Intelligence
-
-+
-
-Scalable Software Architecture
-```
-
-The ultimate goal is to create a commercial SaaS platform capable of helping affiliate marketers discover, promote, and optimize products automatically.
+Scheduling, real-time status, and analytics remain incremental goals documented in [08-implementation-roadmap.md](./08-implementation-roadmap.md).

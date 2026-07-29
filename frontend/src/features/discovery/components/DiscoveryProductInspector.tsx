@@ -1,10 +1,13 @@
 "use client";
 
 import Image from "next/image";
-import { X } from "lucide-react";
-import { Badge, Button } from "@/components/ui/primitives";
+import { Badge, Button, Drawer } from "@/components/ui/primitives";
 import { formatMoney } from "@/lib/utils";
-import { getScoreBreakdown } from "../lib/score-explanation";
+import {
+  estimateCommissionValue,
+  getScoreBreakdown,
+  getScoreQuality,
+} from "../lib/score-explanation";
 import type { DiscoveryProduct } from "../types/api";
 import { DiscoveryScoreBreakdown } from "./DiscoveryScoreBreakdown";
 
@@ -17,7 +20,6 @@ export function DiscoveryProductInspector({
   onImport,
   onGenerateAi,
   onAddToQueue,
-  onScoreFocus,
 }: {
   product: DiscoveryProduct | null;
   open: boolean;
@@ -27,29 +29,56 @@ export function DiscoveryProductInspector({
   onImport: (product: DiscoveryProduct) => void;
   onGenerateAi: (product: DiscoveryProduct) => void;
   onAddToQueue: (product: DiscoveryProduct) => void;
-  onScoreFocus?: () => void;
 }) {
-  if (!open || !product) return null;
+  if (!product) {
+    return (
+      <Drawer open={open} onClose={onClose} title="معاينة المنتج" aria-label="معاينة المنتج">
+        <p className="text-sm text-muted-foreground">لا يوجد منتج محدد.</p>
+      </Drawer>
+    );
+  }
+
   const breakdown = getScoreBreakdown(product);
+  const quality = getScoreQuality(product.score);
   const shipping = product.shipping_info;
   const freeShipping = shipping?.free_shipping === true;
   const images = product.gallery_images.length > 0 ? product.gallery_images : [product.image_url];
+  const commissionValue = estimateCommissionValue(product.price, product.commission_rate);
 
   return (
-    <aside
-      className="fixed inset-y-0 start-0 z-40 flex w-full max-w-md flex-col border-e border-border bg-surface shadow-lg sm:start-auto sm:end-0 sm:border-e-0 sm:border-s"
-      role="dialog"
-      aria-modal="true"
+    <Drawer
+      open={open}
+      onClose={onClose}
+      title="معاينة المنتج"
       aria-label="معاينة المنتج"
+      footer={
+        <div className="space-y-2">
+          <Button
+            className="w-full"
+            disabled={!canImport}
+            loading={importing}
+            onClick={() => onImport(product)}
+          >
+            استيراد المنتج
+          </Button>
+          <Button className="w-full" variant="outline" onClick={() => onGenerateAi(product)}>
+            إنشاء محتوى AI
+          </Button>
+          <Button className="w-full" variant="secondary" onClick={() => onAddToQueue(product)}>
+            إضافة إلى قائمة النشر
+          </Button>
+          <Button
+            className="w-full"
+            variant="ghost"
+            type="button"
+            onClick={() => window.open(product.product_url, "_blank", "noopener,noreferrer")}
+          >
+            فتح على AliExpress
+          </Button>
+        </div>
+      }
     >
-      <div className="flex items-center justify-between border-b border-border p-4">
-        <h2 className="font-semibold">معاينة المنتج</h2>
-        <Button variant="ghost" className="px-2" aria-label="إغلاق" onClick={onClose}>
-          <X className="size-4" />
-        </Button>
-      </div>
-
-      <div className="flex-1 space-y-5 overflow-y-auto p-4">
+      <div className="space-y-5">
         <div className="relative aspect-[16/10] overflow-hidden rounded-md bg-muted">
           <Image src={product.image_url} alt={product.title} fill className="object-cover" sizes="400px" />
         </div>
@@ -65,23 +94,30 @@ export function DiscoveryProductInspector({
 
         <div>
           <h3 className="text-base font-semibold leading-7">{product.title}</h3>
-          <p className="mt-2 text-2xl font-semibold">{formatMoney(product.price, product.currency)}</p>
+          <p className="mt-2 text-2xl font-semibold">
+            {formatMoney(product.price, product.currency)}
+          </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            <button type="button" onClick={onScoreFocus}>
-              <Badge tone="info">نتيجة {product.score.toFixed(2)}</Badge>
-            </button>
+            <Badge tone={quality.tone}>
+              AI {Math.round(product.score)} · {quality.label}
+            </Badge>
             <Badge>تقييم {product.rating.toFixed(1)}</Badge>
             <Badge>طلبات {product.sales.toLocaleString("ar")}</Badge>
             <Badge>خصم {product.discount}%</Badge>
             {product.commission_rate != null && (
-              <Badge tone="success">عمولة {product.commission_rate}%</Badge>
+              <Badge tone="success">
+                عمولة {product.commission_rate}%
+                {commissionValue != null
+                  ? ` · ${formatMoney(commissionValue, product.currency)}`
+                  : ""}
+              </Badge>
             )}
           </div>
         </div>
 
         {product.description && (
           <section>
-            <h4 className="mb-2 text-sm font-semibold">التفاصيل</h4>
+            <h4 className="mb-2 text-sm font-semibold">الوصف</h4>
             <p className="text-sm leading-7 text-muted-foreground">{product.description}</p>
           </section>
         )}
@@ -102,28 +138,30 @@ export function DiscoveryProductInspector({
           <p className="break-all" dir="ltr">
             ID: {product.aliexpress_product_id}
           </p>
-          <a className="block break-all text-primary underline" href={product.product_url} target="_blank" rel="noreferrer" dir="ltr">
-            {product.product_url}
-          </a>
-          {product.affiliate_url && (
-            <a className="block break-all text-primary underline" href={product.affiliate_url} target="_blank" rel="noreferrer" dir="ltr">
+          {product.affiliate_url ? (
+            <a
+              className="block break-all text-primary underline"
+              href={product.affiliate_url}
+              target="_blank"
+              rel="noreferrer"
+              dir="ltr"
+            >
               {product.affiliate_url}
             </a>
+          ) : (
+            <p className="text-muted-foreground">لا يوجد رابط انتساب بعد</p>
           )}
+          <a
+            className="block break-all text-primary underline"
+            href={product.product_url}
+            target="_blank"
+            rel="noreferrer"
+            dir="ltr"
+          >
+            {product.product_url}
+          </a>
         </section>
       </div>
-
-      <div className="space-y-2 border-t border-border p-4">
-        <Button className="w-full" disabled={!canImport} loading={importing} onClick={() => onImport(product)}>
-          استيراد المنتج
-        </Button>
-        <Button className="w-full" variant="outline" onClick={() => onGenerateAi(product)}>
-          إنشاء محتوى AI
-        </Button>
-        <Button className="w-full" variant="secondary" onClick={() => onAddToQueue(product)}>
-          إضافة إلى قائمة النشر
-        </Button>
-      </div>
-    </aside>
+    </Drawer>
   );
 }

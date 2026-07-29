@@ -1,411 +1,228 @@
-# API Integration Guide v1.0
+# API Integration Guide
 
-**Last Updated:** 2026-07-17
+**Document Version:** 2.0  
+**Last Updated:** 2026-07-29
 
-**Backend contract source:** current FastAPI routers and Pydantic schemas  
-**Default development origin:** `http://localhost:8000`  
-**API base URL:** `http://localhost:8000/api/v1`
+**Backend source of truth:** FastAPI routers + Pydantic schemas  
+**Default API base:** `http://localhost:8000/api/v1`  
+**Frontend env:** `NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1`
 
-The frontend should configure the origin through an environment variable such as
-`NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1`. Do not append `/api/v1` again in
-individual feature clients.
+OpenAPI: `/docs` · ReDoc: `/redoc` · Health: `GET /health` · Readiness: `GET /ready`
 
-Interactive contract references are available at:
-
-- Swagger UI: `http://localhost:8000/docs`
-- ReDoc: `http://localhost:8000/redoc`
-- OpenAPI JSON: `http://localhost:8000/openapi.json`
-- Health check (outside the versioned API): `GET /health` → `{"status":"ok"}`
-- Readiness check (outside the versioned API): `GET /ready` verifies PostgreSQL and Redis,
-  returns `200` when both are up and `503` otherwise
-
-Readiness response (the body shape is the same for `200` and `503`):
-
-```json
-{
-  "status": "not_ready",
-  "checks": {
-    "database": {"status": "up"},
-    "redis": {"status": "down"}
-  }
-}
-```
-
-This reports API dependency readiness, not Celery worker health or external-provider
-credential validity.
+---
 
 ## 1. Authentication
 
 ### Login
 
-`POST /auth/login` uses `application/x-www-form-urlencoded`, not JSON.
+`POST /auth/login` — `application/x-www-form-urlencoded`
 
-| Form field | Value |
+| Field | Value |
 | --- | --- |
-| `username` | The user's email address |
-| `password` | The user's password |
+| `username` | Email address |
+| `password` | Password |
 
-Example:
+Response: `{ "access_token", "token_type": "bearer" }`
 
-```http
-POST /api/v1/auth/login
-Content-Type: application/x-www-form-urlencoded
+Protected requests: `Authorization: Bearer <jwt>`
 
-username=user%40example.com&password=correct-horse-battery-staple
-```
+No refresh token endpoint. On `401`, clear session and redirect to login.
 
-Response:
+### Register
 
-```json
-{
-  "access_token": "<jwt>",
-  "token_type": "bearer"
-}
-```
-
-Send the token on protected requests:
-
-```http
-Authorization: Bearer <jwt>
-```
-
-Access tokens expire after `ACCESS_TOKEN_EXPIRE_MINUTES` (30 minutes by default). The
-backend currently has no refresh-token endpoint and does not issue a refresh token.
-On an authentication `401`, clear local authentication state and send the user to login.
-Logging out is a frontend operation that discards the access token.
+`POST /auth/register` — public, creates `affiliate` only. Not exposed in frontend UI.
 
 ### Current user
 
-`GET /auth/me` requires bearer authentication and returns:
+`GET /auth/me` → `UserRead` (`id`, `email`, `full_name`, `role`, `is_active`, timestamps)
 
-```json
-{
-  "id": "<uuid>",
-  "email": "user@example.com",
-  "full_name": "Example User",
-  "role": "affiliate",
-  "is_active": true,
-  "created_at": "<ISO-8601 datetime>",
-  "updated_at": "<ISO-8601 datetime>"
-}
+---
+
+## 2. Errors & Pagination
+
+Errors: `{ "detail": "..." }` or validation array for `422`.
+
+**Standard pagination** (`products`, `channels`, `queues`): `skip`, `limit` → `{ items, total, skip, limit }`
+
+**Discovery pagination**: `page`, `page_size` → includes `total_pages`, `mode`, `sort`, `persisted_count`
+
+---
+
+## 3. Frontend Integration Pattern
+
+```typescript
+// services/api-client.ts — shared Axios instance
+// features/*/api/*.api.ts — feature contracts
+// features/*/hooks/*.ts — TanStack Query wrappers
 ```
 
-### Public registration
+Query keys must include all server filter params. Mutations invalidate minimal key prefixes.
 
-`POST /auth/register` is public and accepts JSON containing only:
+---
 
-- `email`: valid email
-- `password`: 8–128 characters
-- `full_name`: 1–255 characters
+## 4. API Integration Status Matrix
 
-All public registrations create an `affiliate` user. `role` is not accepted; privileged
-users must be provisioned through trusted administration or database operations, not this
-endpoint. Success is `201` with the current-user shape above.
+Status definitions:
 
-## 2. Errors and validation
+| Status | Meaning |
+| --- | --- |
+| **Connected** | Frontend calls live backend route in production UI |
+| **Partial** | Connected with UI gaps or client-side augmentation |
+| **Backend only** | Route exists; no frontend consumer |
+| **Client-side** | No backend route; local state / derived UI |
+| **Pending backend** | UI stub or future capability waiting on API |
 
-Application errors use:
+### 4.1 Authentication & account
 
-```json
-{
-  "detail": "Human-readable message"
-}
-```
-
-Typical statuses:
-
-- `400`: invalid business input
-- `401`: missing, invalid, expired, or inactive-user token
-- `403`: authenticated but insufficient role or ownership
-- `404`: resource not found
-- `409`: duplicate or conflicting state
-- `422`: request/form/query validation failure; FastAPI returns `detail` as a list of
-  validation error objects
-- `501`: AliExpress image search is not enabled/supported
-- `502`: upstream AliExpress failure
-
-Do not depend on message text for control flow. Branch on HTTP status and keep the returned
-detail for user feedback or diagnostics.
-
-## 3. Pagination
-
-Two pagination contracts currently exist.
-
-Standard paginated resources (`products`, `channels`, and `queues`) accept zero-based
-`skip` and `limit` and return:
-
-```json
-{
-  "items": [],
-  "total": 0,
-  "skip": 0,
-  "limit": 20
-}
-```
-
-- Default `limit`: 20
-- Maximum `limit`: 200
-
-Affiliate, campaign, and conversion list endpoints also accept `skip` and `limit`, but
-currently return a bare JSON array with no total.
-
-Discovery endpoints accept one-based `page` and `page_size` (default 1 and 20, maximum 50)
-and return `items`, `total`, `skip`, `limit`, `page`, `total_pages`, `mode`, `sort`, and
-`persisted_count`.
-
-## 4. MVP endpoint contract
-
-Access labels below are: **Public**, **Bearer**, **Admin**, or the named role.
-
-### Authentication
-
-| Method | Path | Access | Contract |
+| Endpoint | Frontend module | Status | Types / notes |
 | --- | --- | --- | --- |
-| POST | `/auth/register` | Public | JSON `email`, `password`, `full_name`; `201 UserRead` |
-| POST | `/auth/login` | Public | Form `username`, `password`; returns bearer token |
-| GET | `/auth/me` | Bearer | Returns `UserRead` |
+| `POST /auth/login` | `auth.api.ts` | Connected | `LoginInput` → `TokenResponse` |
+| `GET /auth/me` | `auth.api.ts` | Connected | `User` — role gating for admin import/delete |
+| `POST /auth/register` | — | Backend only | Public registration not in UI |
 
-### Products
+### 4.2 Dashboard
 
-| Method | Path | Access | Contract |
+| Endpoint | Frontend module | Status | Types / notes |
 | --- | --- | --- | --- |
-| GET | `/products` | Public | Filters `title`, `status`, `skip=0`, `limit=20`; paginated `ProductRead` |
-| GET | `/products/{product_id}` | Public | Returns `ProductRead` |
-| POST | `/products` | Admin | `ProductCreate`; `201 ProductRead` |
-| PATCH | `/products/{product_id}` | Admin | Partial `ProductUpdate`; returns `ProductRead` |
-| DELETE | `/products/{product_id}` | Admin | Returns `{"message":"Product deleted successfully"}` |
+| `GET /dashboard` | `dashboard.api.ts` | Connected | `DashboardOverview` — counts, activity, DB status |
+| `GET /ready` | `categories.api.ts` | Connected | `ReadinessResponse` — settings capability views |
+| `GET /health` | — | Backend only | Ops/monitoring |
 
-`ProductCreate` requires `title`, non-negative `price`, `image_url`, and `product_url`.
-Optional/defaulted fields are `discount` (0–100), `rating` (0–5), `sales`, `reviews`,
-`score`, and `status`. Updates accept the same fields as optional values. `ProductRead`
-also exposes AliExpress enrichment fields: `aliexpress_product_id`, `description`,
-`original_price`, `gallery_images`, `affiliate_url`, `category`, `store_name`, `currency`,
-`commission_rate`, `shipping_info`, and `last_synced_at`.
+### 4.3 Products catalog
 
-### Dashboard
-
-| Method | Path | Access | Contract |
+| Endpoint | Frontend module | Status | Types / notes |
 | --- | --- | --- | --- |
-| GET | `/dashboard` | Bearer | Product, queue, and channel counts; recent product/queue activity; DB status |
+| `GET /products` | `products.api.ts` | Connected | `ProductListParams` → `ProductListResponse`; server pagination |
+| `GET /products/{id}` | `products.api.ts` | Connected | `Product` — detail page + drawer context |
+| `PATCH /products/{id}` | `products.api.ts` | Connected | Admin status updates from inventory |
+| `DELETE /products/{id}` | `products.api.ts` | Connected | Admin bulk delete dialog |
+| `POST /products` | — | Backend only | No create-product form in UI |
+| Client search/sort/density | `useProductInventoryState` | Client-side | Operates on fetched page |
+| Pipeline badges | `lib/inventory.ts` | Partial | Joins product list + `GET /queues` client-side |
 
-Optional query `activity_limit` defaults to 10 and accepts 1–50. The exact response summary
-is:
+### 4.4 Product discovery & import
 
-```json
-{
-  "products": {"total": 0, "by_status": {"draft": 0, "active": 0, "inactive": 0, "archived": 0}},
-  "queue": {"total": 0, "by_status": {"draft": 0, "queued": 0, "scheduled": 0, "published": 0}},
-  "channels": {"total": 0, "active": 0, "inactive": 0},
-  "recent_activity": [],
-  "system_status": {"status": "operational", "database": "up", "generated_at": "<ISO-8601 datetime>"}
-}
-```
-
-Recent activity contains products and queue records only, with `resource_type`,
-`resource_id`, `title`, `status`, and `occurred_at`. There is no AI-usage metric.
-
-### Product discovery and import
-
-Discovery list filters are `category_id`, `min_rating`, `min_orders`, `min_price`,
-`max_price`, `min_discount`, `shipping_country` (two characters), `currency` (three
-characters), `choice_only`, `free_shipping`, `keywords`, `sort`, `page`, `page_size`,
-`persist`, and `promotion_name`.
-
-| Method | Path | Access | Contract |
+| Endpoint | Frontend module | Status | Types / notes |
 | --- | --- | --- | --- |
-| GET | `/products/discover` | Public | General discovery filters; `ProductDiscoveryResponse` |
-| GET | `/products/discover/hot` | Public | Hot products; same response |
-| GET | `/products/discover/deals` | Public | Deals; same response |
-| GET | `/products/discover/trending` | Public | Trending products; same response |
-| GET | `/products/discover/category/{category_id}` | Public | Category discovery; same response |
-| GET | `/products/search` | Public | Requires `q`; supports discovery filters except `keywords`/`promotion_name` |
-| POST | `/products/search/image` | Public | Exactly one of `image_url` or `image_base64`; optional `page`, `page_size`, `persist` |
-| POST | `/products/import-url` | Admin | JSON `{"url":"..."}`; `201` if created, otherwise `200` |
-| POST | `/products/import` | Admin | Exactly one of `url` or numeric `product_id`; `201` or `200` |
-| POST | `/products/import/batch` | Admin | `product_ids`: 1–50 numeric strings; returns counts and products |
-| POST | `/aliexpress/import` | Admin | Exactly one of `url` or numeric `product_id`; `201` or `200` |
-| GET | `/aliexpress/categories` | Bearer | Cached AliExpress categories, total, and latest sync time |
+| `GET /products/discover` | `discovery.api.ts` | Connected | General mode |
+| `GET /products/discover/hot` | `discovery.api.ts` | Connected | |
+| `GET /products/discover/deals` | `discovery.api.ts` | Connected | |
+| `GET /products/discover/trending` | `discovery.api.ts` | Connected | |
+| `GET /products/discover/category/{id}` | `discovery.api.ts` | Connected | Requires `category_id` |
+| `GET /products/search` | — | Backend only | Keyword mode uses discover paths |
+| `POST /products/search/image` | — | Backend only | DS image search; env-gated |
+| `POST /products/import` | `discovery.api.ts` | Connected | Single import (admin) |
+| `POST /products/import/batch` | `discovery.api.ts` | Connected | Bulk import from selection bar |
+| `POST /products/import-url` | — | Backend only | URL import not in UI |
+| `GET /aliexpress/categories` | `categories.api.ts` | Connected | Category picker |
+| `POST /aliexpress/import` | — | Backend only | Duplicate of `/products/import` |
+| Discovery session persistence | `discovery/lib/session.ts` | Client-side | Filters/UI prefs in `localStorage` |
+| Score breakdown display | `lib/product-score.ts` | Partial | Uses server `score`; breakdown fallback if no `score_breakdown` |
+| `persist=true` on discover | — | Pending backend UI | API supports; UI does not expose toggle |
 
-Setting `persist=true` writes discovered products to the product store; leave it false for
-browsing. Import responses contain `product`, `aliexpress_product_id`, `imported`, and
-`image_count`. Batch responses contain `imported`, `updated`, `failed`, and `products`.
-Category items contain numeric `category_id`, `category_name`, `parent_category_id`, and
-`synced_at`.
+### 4.5 AI content
 
-The current discovery UI exposes general, hot, deals, trending, and category modes with
-keywords, minimum rating, minimum discount, and category controls. Other contract filters,
-image search, persistence toggles, and paging controls are backend capabilities not yet
-surfaced by the UI. Imports are disabled in the UI unless `/auth/me` reports `admin`.
-
-### AI content
-
-| Method | Path | Access | Contract |
+| Endpoint | Frontend module | Status | Types / notes |
 | --- | --- | --- | --- |
-| POST | `/ai-content/generate` | Bearer | Exactly one of `product_id` or `url`; optional `provider` |
+| `POST /ai-content/generate` | `ai.api.ts` | Connected | Extended request: `content_type`, `tone`, `language`, `length`, `instruction_modifiers` |
+| Variant session | `useContentSession` | Client-side | Variants, edits in `localStorage` — not persisted server-side |
+| Content quality scores | `ai/lib/scores.ts` | Client-side | Heuristic scoring for UI badges |
+| Prompt profiles / history API | — | Pending backend | No save/list endpoints |
 
-The response contains nullable `product_id`, nullable `source_url`, `provider`, and Arabic
-marketing `content`. Providers are `openai` and `gemini`.
+**GenerateContentInput** (frontend) ↔ **GenerateContentRequest** (Pydantic) — keep enums in sync via `features/ai/types/api.ts` and `app/schemas/ai_content.py`.
 
-### Publishing queue
+### 4.6 Publishing queue
 
-| Method | Path | Access | Contract |
+| Endpoint | Frontend module | Status | Types / notes |
 | --- | --- | --- | --- |
-| POST | `/queues` | Bearer | `QueueCreate`; `201 QueueRead` |
-| GET | `/queues` | Bearer | `status`, `skip=0`, `limit=20`; paginated |
-| GET | `/queues/{queue_id}` | Bearer | Returns `QueueRead` |
-| PATCH | `/queues/{queue_id}` | Bearer | Partial `QueueUpdate` |
-| POST | `/queues/{queue_id}/publish` | Bearer | Returns publish receipt |
-| DELETE | `/queues/{queue_id}` | Bearer | Returns a message |
+| `GET /queues` | `queue.api.ts` | Connected | Fetches up to 200 items for workspace |
+| `GET /queues/{id}` | `queue.api.ts` | Connected | Available; primary UX uses list payload |
+| `POST /queues` | `queue.api.ts` | Connected | Draft/queued creation from AI, products, discovery |
+| `PATCH /queues/{id}` | `queue.api.ts` | Connected | Schedule, channel assign, content edit via drawer |
+| `POST /queues/{id}/publish` | `queue.api.ts` | Connected | Single + bulk via `useQueuePublishingOperations` |
+| `DELETE /queues/{id}` | `queue.api.ts` | Connected | Bulk delete with confirmation |
+| Publishing KPI "publishing" | `useQueuePublishingOperations` | Client-side | In-flight publish IDs |
+| Failed today KPI | `lib/operations.ts` | Client-side | Derived from client failure map |
+| Real-time status stream | — | Pending backend | No WebSocket/SSE yet |
 
-Queue input supports `title`, required `content`, `status`, `scheduled_at`, `channel_id`,
-`product_id`, `image_url`, `button_text`, and `button_url`. A scheduled item requires
-`scheduled_at`. Button text and URL must be supplied together. A publish receipt contains
-`queue_id`, `telegram_message_id`, `chat_id`, `message_type`, and `published_at`.
+### 4.7 Telegram channels
 
-The current queue UI lists, filters, and publishes items. AI Studio can create a `draft`;
-editing, deleting, and schedule creation/picking are not currently exposed.
-
-### Telegram channels
-
-| Method | Path | Access | Contract |
+| Endpoint | Frontend module | Status | Types / notes |
 | --- | --- | --- | --- |
-| POST | `/channels` | Bearer | `telegram_channel_id`, optional `title`, `is_active`; `201` |
-| GET | `/channels` | Bearer | `skip=0`, `limit=20`; paginated |
-| PUT | `/channels/{channel_id}` | Bearer | Partial channel fields |
-| DELETE | `/channels/{channel_id}` | Bearer | Returns a message |
+| `GET /channels` | `channels.api.ts` | Connected | Paginated list |
+| `POST /channels` | `channels.api.ts` | Connected | Register channel |
+| `PUT /channels/{id}` | `channels.api.ts` | Connected | Active toggle + metadata |
+| `DELETE /channels/{id}` | — | Backend only | Not exposed in Channels UI |
 
-Channel responses include normalized Telegram ID, title/username, permission status,
-post/edit/delete permission flags, permission check time/detail, and active state.
+### 4.8 Affiliates, campaigns, conversions
 
-The current channel UI lists, creates, and toggles active state. Delete and an explicit
-connection-test action are not exposed.
-
-## 5. Supporting backend endpoints
-
-These routes exist in the current backend even though campaigns and conversions are beyond
-the frontend MVP described in the roadmap.
-
-### Affiliates
-
-| Method | Path | Access | Contract |
-| --- | --- | --- | --- |
-| POST | `/affiliates` | Bearer; service requires `affiliate` role | Create own profile; `201` |
-| GET | `/affiliates/me` | Bearer | Return own affiliate profile |
-| PATCH | `/affiliates/{affiliate_id}` | Owner or admin | Partial profile update |
-| POST | `/affiliates/join-campaign` | Bearer | JSON `campaign_id`; `201` tracking link |
-| GET | `/affiliates` | Admin | `skip=0`, `limit=100`; bare array |
-
-An affiliate owner may update `company_name`, `website`, and `payout_details`. Only an admin
-may update `status` or `commission_rate`; an affiliate request containing either field
-returns `403`.
-
-### Campaigns
-
-| Method | Path | Access | Contract |
-| --- | --- | --- | --- |
-| POST | `/campaigns` | Admin or advertiser | Create campaign; `201` |
-| GET | `/campaigns/active` | Public | `skip=0`, `limit=100`; bare array |
-| GET | `/campaigns/{campaign_id}` | Public | Return campaign |
-| GET | `/campaigns` | Admin | `skip=0`, `limit=100`; bare array |
-| PATCH | `/campaigns/{campaign_id}` | Bearer; service enforces ownership/role | Partial update |
-
-Create requires `name`, positive `payout_amount`, and `landing_url`; it accepts optional
-`description`, three-character `currency` (default USD), `starts_at`, and `ends_at`.
-
-### Conversions
-
-| Method | Path | Access | Contract |
-| --- | --- | --- | --- |
-| POST | `/conversions` | Public | Record conversion; `201` |
-| GET | `/conversions/me` | Bearer | Affiliate conversions; bare array |
-| GET | `/conversions` | Admin | All conversions; bare array |
-| PATCH | `/conversions/{conversion_id}` | Admin | JSON `status`; returns conversion |
-
-Conversion creation requires `affiliate_id`, `campaign_id`, `external_order_id`, and a
-positive `amount`; `currency` defaults to USD and `click_id` is optional.
-
-## 6. Current enums
-
-- User role: `admin`, `affiliate`, `advertiser`
-- Affiliate status: `pending`, `active`, `suspended`, `rejected`
-- Campaign status: `draft`, `active`, `paused`, `completed`
-- Conversion status: `pending`, `approved`, `rejected`, `paid`
-- Product status: `draft`, `active`, `inactive`, `archived`
-- Queue status: `draft`, `queued`, `scheduled`, `published`
-- Telegram bot permission: `unknown`, `pending`, `granted`, `partial`, `denied`
-- AI provider: `openai`, `gemini`
-- Discovery mode: `general`, `hot`, `deals`, `big_discount`, `choice`, `category`,
-  `keyword`, `commission`, `trending`
-- Product sort: `orders_desc`, `rating_desc`, `discount_desc`, `price_asc`, `price_desc`,
-  `newest`, `commission_desc`
-
-## 7. Frontend integration pattern
-
-### Current UI coverage matrix
-
-| Area | Current frontend coverage | Contract-only / future UI |
+| Endpoint | Status | Notes |
 | --- | --- | --- |
-| Auth | Login, `/auth/me`, logout/session clearing | Registration page, refresh tokens |
-| Dashboard | Counts, recent product/queue activity, DB status | AI usage and analytics |
-| Products | List/search/status filter, details | Admin CRUD controls |
-| Discovery | Five modes, selected filters, categories, admin import | Full filter set, image search, paging/persist controls |
-| AI | Generate by product ID or URL, edit/copy locally, create draft | Prompt profiles, history, saved AI records |
-| Queue | List/filter/publish; create draft from AI Studio | Edit/delete and scheduling UI |
-| Channels | List/create/toggle active, permission display | Delete and explicit connection test |
-| Settings | Read-only capability/readiness views | Editable settings APIs/forms |
-| Affiliates/campaigns/conversions | No MVP screens | Supporting backend contracts only |
+| `GET/POST/PATCH /affiliates/*` | Backend only | No MVP screens |
+| `GET/POST/PATCH /campaigns/*` | Backend only | No MVP screens |
+| `GET/POST/PATCH /conversions/*` | Backend only | No MVP screens |
 
-Keep transport concerns in the shared Axios client and feature contracts in feature-owned
-API modules, matching the documented feature-based frontend architecture.
+---
 
-```ts
-import axios from "axios";
+## 5. View → Contract Mapping
 
-export const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1",
-  headers: { Accept: "application/json" },
-});
+| View | Primary endpoints | Key response fields |
+| --- | --- | --- |
+| **Discovery grid** | `GET /products/discover*` | `items[].score`, `rating`, `sales`, `discount`, `commission_rate`, `gallery_images` |
+| **Discovery inspector drawer** | Same + optional import | Score breakdown, shipping, affiliate URL |
+| **Products inventory** | `GET /products`, `GET /queues` | `ProductRead`, pipeline via queue join |
+| **Product details drawer** | `GET /products/{id}` (from list) | `image_url`, `gallery_images`, `score`, `affiliate_url` |
+| **AI Studio** | `POST /ai-content/generate` | `content`, `provider`, `content_type`, `tone`, `language` |
+| **Queue KPI cards** | `GET /queues` + client ops | Status counts + publish failures |
+| **Queue table/drawer** | `GET /queues`, `PATCH`, `POST publish` | `content`, `scheduled_at`, `channel_id`, `status` |
+| **Schedule dialog** | `PATCH /queues/{id}` | `scheduled_at`, `channel_id`, `status: scheduled` |
+| **Channels** | `GET/POST/PUT /channels` | `bot_permission_status`, `can_post_messages`, `is_active` |
+| **Dashboard** | `GET /dashboard` | Product/queue/channel aggregates |
+| **Settings** | `GET /ready` | `checks.database`, `checks.redis` |
 
-api.interceptors.request.use((config) => {
-  const token = getAccessToken();
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
-});
+---
 
-api.interceptors.response.use(undefined, (error) => {
-  if (error.response?.status === 401) {
-    clearAccessToken();
-    redirectToLogin();
-  }
-  return Promise.reject(error);
-});
-```
+## 6. Enums (must match backend)
 
-Submit login as form data:
+- **User role:** `admin`, `affiliate`, `advertiser`
+- **Product status:** `draft`, `active`, `inactive`, `archived`
+- **Queue status:** `draft`, `queued`, `scheduled`, `published`
+- **AI provider:** `openai`, `gemini`
+- **Content type:** `social`, `description`, `telegram`, `facebook`, `blog`, `email`
+- **Tone:** `professional`, `friendly`, `luxury`, `technical`, `urgent`, `minimal`, `persuasive`, `funny`
+- **Language:** `ar`, `en`, `fr`, `de`
+- **Length:** `short`, `medium`, `long`
+- **Discovery mode:** `general`, `hot`, `deals`, `trending`, `category`
+- **Discovery sort:** `orders_desc`, `rating_desc`, `discount_desc`, `price_asc`, `price_desc`, `newest`, `commission_desc`
 
-```ts
+---
+
+## 7. Security & Tenancy Notes
+
+- JWT in `sessionStorage`; middleware cookie is presence-only
+- Import/delete require admin role in UI; backend enforces on routes
+- Queue and channel routes are authenticated but **not user-scoped** — do not imply tenant isolation
+- `/ready` checks PostgreSQL + Redis only — not Celery worker liveness or provider credentials
+
+---
+
+## 8. Axios Reference
+
+```typescript
 const body = new URLSearchParams({ username: email, password });
-const { data } = await api.post<TokenResponse>("/auth/login", body, {
+await apiClient.post("/auth/login", body, {
   headers: { "Content-Type": "application/x-www-form-urlencoded" },
 });
-```
 
-TanStack Query keys should include every server-side filter:
-
-```ts
 useQuery({
-  queryKey: ["products", { title, status, skip, limit }],
-  queryFn: () => productsApi.list({ title, status, skip, limit }),
+  queryKey: ["products", { status, skip, limit }],
+  queryFn: () => getProducts({ status, skip, limit }),
 });
 ```
 
-After mutations, invalidate the smallest relevant resource keys (for example
-`["products"]`, `["queues"]`, or `["channels"]`). Use the server's `total`, `skip`, and
-`limit` for standard list controls, and `page`/`total_pages` for discovery. Keep enum
-strings in shared TypeScript unions or generated OpenAPI types so invalid UI states cannot
-be submitted.
+---
 
-Because channel and queue routes are currently authenticated but not scoped by user in the
-HTTP contract, the frontend must not imply tenant isolation that the backend does not
-enforce. Treat backend authorization as authoritative and still hide role-ineligible
-actions for usability.
+## 9. Related Documents
+
+- [02-frontend-architecture.md](./02-frontend-architecture.md)
+- [08-implementation-roadmap.md](./08-implementation-roadmap.md) — Upcoming API work (SSE, retries)

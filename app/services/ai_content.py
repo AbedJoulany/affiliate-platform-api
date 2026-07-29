@@ -4,9 +4,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.factory import get_ai_provider
 from app.ai.product_context import ProductContext
-from app.ai.prompts import build_arabic_marketing_prompt
+from app.ai.prompts import build_marketing_prompt
 from app.ai.url_fetcher import ProductURLFetcher
-from app.core.enums import AIProviderType
+from app.core.enums import (
+    AIProviderType,
+    ContentLanguage,
+    ContentLength,
+    ContentType,
+    ToneProfile,
+)
 from app.repositories.product import ProductRepository
 from app.schemas.ai_content import GenerateContentResponse
 from app.services.exceptions import NotFoundError
@@ -24,6 +30,11 @@ class AIContentService:
         product_id: UUID | None = None,
         url: str | None = None,
         provider: AIProviderType | None = None,
+        content_type: ContentType = ContentType.TELEGRAM,
+        tone: ToneProfile = ToneProfile.PERSUASIVE,
+        language: ContentLanguage = ContentLanguage.AR,
+        length: ContentLength = ContentLength.MEDIUM,
+        instruction_modifiers: list[str] | None = None,
     ) -> GenerateContentResponse:
         if product_id is not None:
             context = await self._context_from_product_id(product_id)
@@ -31,7 +42,14 @@ class AIContentService:
             context = await self._context_from_url(str(url))
 
         ai_provider = get_ai_provider(provider)
-        prompt = build_arabic_marketing_prompt(context)
+        prompt = build_marketing_prompt(
+            context,
+            content_type=content_type,
+            tone=tone,
+            language=language,
+            length=length,
+            instruction_modifiers=instruction_modifiers or [],
+        )
         content = await ai_provider.generate_content(prompt)
 
         return GenerateContentResponse(
@@ -39,6 +57,10 @@ class AIContentService:
             source_url=context.product_url if context.product_id is None else None,
             provider=AIProviderType(ai_provider.name),
             content=content,
+            content_type=content_type,
+            tone=tone,
+            language=language,
+            length=length,
         )
 
     async def _context_from_product_id(self, product_id: UUID) -> ProductContext:

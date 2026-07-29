@@ -1,947 +1,217 @@
-# Implementation Roadmap v1.0
+# Implementation Roadmap
+
+**Document Version:** 2.0  
+**Last Updated:** 2026-07-29
+
+Consolidated feature tracker (replaces empty `PROJECT_STATUS.md`). See [06-api-integration.md](./06-api-integration.md) for endpoint-level status.
+
+---
+
+## 1. Executive Summary
+
+The frontend has completed a **workspace UI transformation** (July 2026): drawer-based inspection, operational queue center, inventory grid controls, AI content studio overhaul, and shared score/toast components. Backend integration is **live-first** — no mock API layers in production paths.
+
+---
+
+## 2. Feature Completion Checklist
+
+Legend: ✅ Done · 🟡 Partial · ⬜ Planned
+
+### Platform foundation
+
+| Feature | Status | Notes |
+| --- | --- | --- |
+| Next.js App Router + feature folders | ✅ | |
+| TanStack Query + Axios client | ✅ | |
+| Auth login + JWT session | ✅ | No refresh token |
+| AppShell + sidebar navigation | ✅ | |
+| RTL + dark mode | ✅ | |
+| Shared loading/empty/error states | ✅ | |
+| Drawer + Popover primitives | ✅ | |
+| ToastOverlay feedback | ✅ | Custom; not sonner |
+| Shared DataTable extraction | ⬜ | Feature-local tables |
+| Registration UI | ⬜ | API exists |
+
+### Dashboard
+
+| Feature | Status | Notes |
+| --- | --- | --- |
+| Product/queue/channel counts | ✅ | `GET /dashboard` |
+| Recent activity feed | ✅ | |
+| System status (DB) | ✅ | |
+| AI usage metrics | ⬜ | Not in API |
+
+### Discovery workspace (`/discovery`)
+
+| Feature | Status | Notes |
+| --- | --- | --- |
+| Intent tabs (hot/deals/trending/category/general) | ✅ | |
+| Filter bar (keywords, rating, discount, category) | ✅ | |
+| Advanced filters drawer (price, orders, shipping, sort) | ✅ | |
+| Interactive results grid | ✅ | |
+| AI Score Breakdown Popover (`ProductAiScoreCell`) | ✅ | |
+| Slide-over product inspector drawer | ✅ | Score, images, commission, actions |
+| Bulk selection + batch import | ✅ | Admin only |
+| CSV export | ✅ | |
+| Session persistence (filters/UI prefs) | ✅ | localStorage |
+| Image search UI | ⬜ | Backend `POST /products/search/image` |
+| Persist toggle (`persist=true`) | ⬜ | API only |
+| Full paging UI for all modes | 🟡 | page/page_size in advanced drawer |
+
+### Products inventory (`/products`)
+
+| Feature | Status | Notes |
+| --- | --- | --- |
+| Server-paginated inventory grid | ✅ | |
+| Density controls (comfortable/compact) | ✅ | |
+| Column visibility toggles | ✅ | |
+| Client search + sort on page | ✅ | |
+| Bulk selection bar | ✅ | |
+| Row-click `ProductDetailsDrawer` | ✅ | Aspect-ratio image, score breakdown |
+| Image hover preview | ✅ | |
+| Pipeline/health badges | ✅ | Joins queue data |
+| Admin status update | ✅ | `PATCH /products/{id}` |
+| Admin bulk delete | ✅ | |
+| Add to queue / AI handoff | ✅ | |
+| CSV export | ✅ | |
+| Admin create product form | ⬜ | |
+| Server-side search/sort | ⬜ | Client-only today |
 
-## AI Affiliate Automation Platform
+### AI Content Studio (`/ai`)
 
-**Document Version:** 1.0
-**Last Updated:** 2026-07-17
+| Feature | Status | Notes |
+| --- | --- | --- |
+| Content workspace (replaces AIStudioView) | ✅ | |
+| Multi-variant generation + tabs | ✅ | |
+| Tone / type / language / length config | ✅ | Synced with backend schema |
+| Instruction modifiers | ✅ | |
+| Local session persistence | ✅ | localStorage |
+| Client content quality scores | ✅ | Display only |
+| Variant compare dialog | ✅ | |
+| Queue draft + distribution hub | ✅ | |
+| Server-side variant/history persistence | ⬜ | |
+| Dedicated regenerate API | ⬜ | Re-submit generate |
 
----
-
-# 1. Purpose
-
-This document defines the implementation roadmap for building the frontend application.
-
-The roadmap translates the architecture documents into actionable development phases.
-
-The goal is to build the frontend incrementally while maintaining:
-
-* Clean architecture.
-* Consistent design.
-* High code quality.
-* Fast iteration.
-* AI-assisted development efficiency.
-
----
-
-# 2. Development Strategy
-
-The frontend will be developed in incremental phases.
-
-Each phase should produce a usable improvement to the product.
-
-The implementation order follows:
-
-```text
-Foundation
-
-↓
-
-Design System
-
-↓
-
-Application Shell
-
-↓
-
-Authentication
-
-↓
-
-Core Features
-
-↓
-
-Automation Features
-
-↓
-
-Advanced Features
-```
-
----
-
-# 3. MVP Scope
-
-The first version focuses on creating a usable affiliate automation workspace.
-
-MVP includes:
-
-```text
-Authentication
-
-Application Layout
-
-Dashboard
-
-Products Management
-
-Product Discovery
-
-AI Content Generation
-
-Publishing Queue
-
-Telegram Channels
-
-Read-only Settings Status
-```
-
-## Current implementation status — 2026-07-17
-
-The frontend foundation, application shell, login/session protection, dashboard, products,
-discovery, AI generation, queue, channels, profile, settings route set, and shared
-loading/empty/error states are implemented at MVP depth.
-
-Still partial or future: a shared `DataTable` and richer UI primitives, registration UI,
-admin provisioning tooling, full discovery controls, AI prompt profiles/history, queue
-scheduling/editing, explicit channel connection testing/deletion, editable settings APIs,
-broader tests/accessibility polish, and analytics. Settings currently display read-only
-capability/status information; they do not configure the system.
-
----
-
-# 4. Deferred Features
-
-The following features are intentionally postponed.
-
-## Advanced Analytics
-
-Includes:
-
-* Future route: `/analytics`.
-* Revenue tracking.
-* Conversion analytics.
-* Click attribution.
-* Performance reports.
-
----
-
-## Multi Workspace
-
-Includes:
-
-* Organizations.
-* Teams.
-* Workspace switching.
-* Roles.
-
----
-
-## Additional Publishing Platforms
-
-Future:
-
-* Facebook.
-* Instagram.
-* WhatsApp.
-
----
-
-## Advanced Automation
-
-Includes:
-
-* Workflow builder.
-* Conditional rules.
-* Automation templates.
-
----
-
-## Competitor Analysis
-
-Includes:
-
-* Product monitoring.
-* Market intelligence.
-* Trend tracking.
-
----
-
-# 5. Phase 0 — Project Foundation
-
-**Status: Done for the MVP foundation; tooling partial.** The app, environment pattern,
-aliases, theme provider, RTL root, and feature structure exist. Prettier script/CI
-integration remains future.
-
-## Goal
-
-Create a clean and scalable Next.js project foundation.
-
----
-
-## Tasks
-
-Initialize:
-
-```text
-Next.js 15
-
-TypeScript
-
-TailwindCSS
-
-Local Tailwind UI primitives (shadcn/ui is a future option)
-
-ESLint
-
-Prettier dependency (script/CI integration future)
-```
-
-Current result: Next.js 15.5.x, React 19, Tailwind 3.4, TypeScript, ESLint, TanStack Query 5,
-Axios, React Hook Form/Zod, Lucide, and next-themes are installed. The UI uses local
-Tailwind primitives; shadcn/ui is not installed. Prettier is installed but has no npm
-format script or CI step.
-
----
-
-Configure:
-
-* Project structure.
-* Environment variables.
-* Path aliases.
-* Theme provider.
-* RTL support.
-
----
-
-Create:
-
-```text
-src/
-
-app/
-
-components/
-
-features/
-
-services/
-
-lib/
-```
-
-Current hooks and API types live inside feature folders; utilities live in `lib/utils.ts`.
-
----
-
-## Deliverables
-
-Completed:
-
-* Running Next.js application.
-* Clean folder structure.
-* Development environment ready.
-
----
-
-# 6. Phase 1 — Design System Foundation
-
-**Status: Partial.** Button, Input, Select, Textarea, Card, Badge, Skeleton, and shared
-loading/empty/error states exist. Dialog, dropdown, toast, shared DataTable/SearchBar/
-FilterPanel, and richer accessible primitives remain planned.
-
-## Goal
-
-Create reusable UI foundations before building pages.
-
----
-
-## Tasks
-
-Implement:
-
-## UI Components
-
-```text
-Button
-
-Input
-
-Select
-
-Card
-
-Badge
-
-Dialog
-
-Dropdown
-
-Toast
-```
-
----
-
-## Layout Components
-
-```text
-AppShell
-
-Sidebar
-
-Header
-
-PageContainer
-
-PageHeader
-```
-
----
-
-## Common Components
-
-```text
-DataTable (planned extraction)
-
-SearchBar
-
-FilterPanel
-
-EmptyState
-
-LoadingState
-
-ErrorState
-```
-
----
-
-## Deliverables
-
-A reusable component library matching:
-
-* Design System.
-* Dark mode.
-* RTL.
-* Accessibility rules.
-
----
-
-# 7. Phase 2 — Application Shell
-
-**Status: Done at MVP depth.** `AppShell.tsx` combines the sidebar, header, responsive
-drawer, navigation, theme toggle, user menu, and content frame.
-
-## Goal
-
-Create the main application workspace.
-
----
-
-## Tasks
-
-Build:
-
-```text
-Sidebar
-
-Header
-
-Navigation
-
-User Menu
-
-Theme Toggle
-
-Main Content Layout
-```
-
----
-
-Implement:
-
-* Responsive behavior.
-* Desktop layout.
-* Mobile navigation drawer.
-* Profile access through the header user menu.
-* Keep the workspace selector hidden until multi-workspace support is implemented.
-
----
-
-## Deliverables
-
-A complete application frame where all pages can be displayed.
-
----
-
-# 8. Phase 3 — Authentication
-
-**Status: Done at MVP depth.** Login, logout, middleware redirect, access-JWT
-`sessionStorage`, presence-only cookie, `/auth/me` validation, and `401` clearing are
-implemented. There is no auth provider/context and no refresh token. Registration UI and
-operational admin-provisioning tooling remain future.
-
-## Goal
-
-Connect frontend authentication with backend.
-
----
-
-## Tasks
-
-Implement:
-
-```text
-Login Page
-
-Protected Routes
-
-Session Handling
-
-Logout
-```
-
----
-
-Integrate:
-
-* JWT authentication.
-* API client.
-* Error handling.
-
----
-
-## Deliverables
-
-Users can:
-
-* Login.
-* Access protected pages.
-* Logout.
-
----
-
-# 9. Phase 4 — Dashboard
-
-**Status: Done at MVP depth.** The real `GET /dashboard` contract powers product/queue/
-published/active-channel counts, recent product/queue activity, and database status.
-
-## Goal
-
-Create the main workspace overview.
-
----
-
-## Components
-
-Implement:
-
-```text
-StatCard
-
-ActivityFeed
-
-QuickActionCard
-
-SystemStatus
-```
-
----
+### Publishing queue (`/queue`)
 
-## Dashboard Sections
+| Feature | Status | Notes |
+| --- | --- | --- |
+| KPI summary cards | ✅ | Queued, scheduled, publishing, published today, failed today |
+| Filterable/sortable table | ✅ | |
+| Channel routing indicators | ✅ | |
+| Pipeline readiness badges | ✅ | |
+| Post content preview | ✅ | |
+| Queue details drawer | ✅ | |
+| Inline + dialog schedule picker | ✅ | `PATCH` with `scheduled_at` |
+| Bulk publish / schedule / delete | ✅ | |
+| Publish failure tracking | ✅ | Client-side |
+| Real-time status updates | ⬜ | See Phase A below |
+| Dedicated retry orchestration | ⬜ | Manual re-publish only |
 
-```text
-Products Overview
+### Channels
 
-Queue Status
+| Feature | Status | Notes |
+| --- | --- | --- |
+| List + create + active toggle | ✅ | |
+| Bot permission display | ✅ | |
+| Delete channel | ⬜ | API exists |
+| Connection test action | ⬜ | |
 
-Publishing Status
+### Settings
 
-Recent Activity
+| Feature | Status | Notes |
+| --- | --- | --- |
+| Read-only capability sections | ✅ | |
+| `/ready` database + Redis display | ✅ | |
+| Editable settings forms | ⬜ | No settings API |
 
-Quick Actions
-```
-
----
-
-## Deliverables
-
-A functional dashboard connected to backend data.
-
----
-
-# 10. Phase 5 — Products Module
-
-**Status: Done at MVP depth.** List, title/status filters, pagination, and details are
-implemented using a feature-local table. A shared DataTable and frontend admin CRUD
-controls remain future.
-
-## Goal
-
-Build the main product management workspace.
-
----
-
-## Pages
-
-```text
-/products
-
-/products/[id]
-```
-
----
-
-## Features
-
-Implement:
-
-```text
-Feature-local product table (shared DataTable is future)
-
-Search
-
-Filters
-
-Pagination
-
-Product Details
-
-Open product in AI Studio
-```
-
-Admin-only import is implemented in the Discovery phase. Frontend product CRUD actions
-remain future work.
-
----
-
-## Components
-
-```text
-ProductCard
-
-ProductTable
-
-ProductFilters
-
-ProductPreview
-```
-
----
-
-## Deliverables
-
-Users can:
-
-* View products.
-* Search.
-* Filter.
-* Open product details.
-* Open a product in AI Studio.
-
----
-
-# 11. Phase 6 — Discovery Module
-
-**Status: Partial.** General/hot/deals/trending/category modes, selected filters,
-categories, results, and admin import are implemented. The complete backend filter set,
-image search, persistence/paging controls, and automation monitoring remain future.
-
-## Goal
-
-Create product discovery workspace.
-
----
-
-## Features
-
-Implement:
-
-```text
-Discovery Sources
-
-Search
-
-Filters
-
-Discovery Results
-
-Import Actions
-```
-
----
-
-Future-ready for:
-
-* Automatic discovery.
-* Trend detection.
-* Scoring engine.
-
----
-
-## Deliverables
-
-Users can discover and import products.
-
----
-
-# 12. Phase 7 — AI Studio
-
-**Status: Partial.** Provider selection, generation by product ID or URL, local editing,
-copy, and draft creation are implemented. Prompt profiles, saved history, persistence, and
-dedicated regenerate/save workflows remain future.
-
-## Goal
-
-Create AI content generation workspace.
-
----
-
-## Features
-
-Implement:
-
-```text
-Content Generator
-
-Prompt Profiles
-
-Content Editor
-
-Regenerate
-
-Save
-
-Queue
-```
-
----
-
-## Components
-
-```text
-AIContentEditor
-
-PromptProfileSelector (future)
-
-GenerationStatus
-```
-
----
-
-## Deliverables
-
-Users can:
-
-* Generate marketing content.
-* Edit content.
-* Prepare content for publishing.
-
----
-
-# 13. Phase 8 — Publishing Queue
-
-**Status: Partial.** List, status filter, and publish-now are implemented. AI Studio can
-create drafts. Editing, deleting, retry orchestration, and scheduling controls remain
-future even though the API accepts scheduled records.
-
-## Goal
-
-Manage content lifecycle.
-
----
-
-## Pages
-
-```text
-/queue
-```
-
----
-
-## Features
-
-Implement:
-
-```text
-draft
-
-queued
-
-scheduled
-
-published
-
-Publish Now
-```
-
-The lowercase status values must match the backend `QueueStatus` enum exactly. Publishing
-failures are operation errors, not a `failed` queue status. Dedicated retry controls and
-retry orchestration remain future work.
-
----
-
-## Deliverables
-
-Users can manage publishing workflow.
-
----
-
-# 14. Phase 9 — Channels Management
-
-**Status: Partial.** List, add, permission display, and active-state toggle are implemented.
-Delete, a richer connection-test action, and additional platforms remain future.
-
-## Goal
-
-Manage publishing destinations.
-
----
-
-## Features
-
-Implement:
-
-```text
-Channel List
-
-Add Channel
-
-Connection Test (future)
-
-Channel Settings (future)
-```
-
----
-
-Initial support:
-
-```text
-Telegram
-```
-
-Future:
-
-```text
-Facebook
-
-Instagram
-
-WhatsApp
-```
-
----
-
-# 15. Phase 10 — Settings
-
-**Status: Partial/read-only.** All routes exist and render capability/status screens.
-There are no editable settings APIs, forms, or persistence.
-
-## Goal
-
-Provide application configuration.
-
----
-
-## Sections
-
-```text
-/settings/general
-
-/settings/aliexpress
-
-/settings/ai
-
-/settings/telegram
-
-/settings/discovery
-
-/settings/scheduling
-```
-
-`/settings` is the parent route and should redirect to or render `/settings/general` by default.
-
----
-
-## Deliverables
-
-Users can inspect documented capability details and database/Redis readiness. Editable
-configuration is a future deliverable.
-
----
-
-# 16. Phase 11 — Polish & Optimization
-
-**Status: Ongoing.**
-
-## Goal
-
-Improve quality before release.
-
----
-
-## Tasks
-
-Improve:
-
-* Loading states.
-* Empty states.
-* Error handling.
-* Animations.
-* Responsive behavior.
-* Accessibility.
-
----
-
-Review:
-
-* Component reuse.
-* Code quality.
-* Performance.
-
----
-
-# 17. Cursor Development Workflow
-
-Every implementation task follows:
-
-```text
-Documentation
-
-↓
-
-Task Definition
-
-↓
-
-Cursor Prompt
-
-↓
-
-Generated Code
-
-↓
-
-Manual Review
-
-↓
-
-Refactor
-
-↓
-
-Commit
-```
-
 ---
 
-# 18. Cursor Prompt Rules
+## 3. Upcoming Implementation Phases
 
-Prompts should:
+### Phase A — Real-time operations (Q3 2026)
 
-Include:
+**WebSockets / SSE for publishing queue**
 
-* Feature name.
-* File location.
-* Required components.
-* Design requirements.
-* Architecture rules.
+- Stream queue item status transitions: `queued` → `scheduled` → `published`
+- Surface Celery worker publish failures as events (today: client-only failure map)
+- Fallback: TanStack Query polling with exponential backoff when SSE unavailable
 
-Example:
+**Deliverables:** Backend SSE endpoint or WebSocket channel; frontend subscription hook; KPI cards update live
 
-Good:
+### Phase B — Background workers & queue execution
 
-```text
-Create ProductTable component inside
-features/products/components.
+Document and harden existing Celery setup:
 
-Inspect the current feature-local table first. Extract or extend a shared DataTable only
-when the task explicitly includes that planned refactor.
-Follow Design System.
-Support loading and empty states.
-Use TypeScript.
-```
+| Task | Schedule | Action |
+| --- | --- | --- |
+| `process_publish_queue` | 60s (configurable) | Publish due scheduled + queued items |
+| `refresh_hot_products` | 6h | Catalog sync |
+| `refresh_trending_products` | 6h | Catalog sync |
+| `refresh_categories` | 24h | Category cache |
 
----
+**Requirements:**
 
-Avoid:
+- Worker health probe independent of `/ready`
+- Flower or Prometheus metrics for task failures
+- Idempotent publish tasks with deduplication keys
+- Document Redis/Celery env in [10-production-readiness.md](./10-production-readiness.md)
 
-```text
-Build products page.
-```
+### Phase C — Error handling & retries
 
----
+**External API retry policy** (Telegram, AliExpress, OpenAI/Gemini):
 
-# 19. Definition of Done
+| Provider | Strategy |
+| --- | --- |
+| AliExpress IOP | Existing rate limit + exponential backoff in `api_client.py` |
+| Telegram | Retry 429/5xx with jitter; max 3 attempts; dead-letter queue item flag |
+| AI providers | Retry transient 502/503; surface `AIProviderError` to UI |
 
-A feature is complete only when:
+**Queue publish failures:**
 
-## Architecture
+- Optional `failed` metadata table or audit log (without changing `QueueStatus` enum)
+- UI retry button wired to `POST /queues/{id}/publish`
+- Celery task retry with `countdown` for scheduled recovery
 
-✓ Correct folder structure
-✓ Reusable components
-✓ No duplicated logic
+### Phase D — Form & schema validation standardization
 
----
+- Shared Zod schemas in `features/*/lib/schemas.ts` mirroring Pydantic
+- Drawer inline edits: product status, queue schedule, channel assignment
+- React Hook Form + zodResolver for scheduling dialog
+- Validation error copy in Arabic
 
-## UX
+### Phase E — Platform expansion (V2)
 
-✓ Loading state
-✓ Empty state
-✓ Error handling
-✓ Responsive design
+Multi-workspace tenancy · JWT refresh · Analytics `/analytics` · Editable settings · Image search UI · Admin bootstrap CLI · Click tracking · Payout module
 
 ---
 
-## Quality
+## 4. Backend Completeness (from legacy architecture audit)
 
-✓ TypeScript errors resolved
-✓ Code reviewed
-✓ Design system followed
+| Module | Status |
+| --- | --- |
+| Auth (register/login/me) | ✅ |
+| Products CRUD + discovery/import | ✅ |
+| AI content (extended generate) | ✅ |
+| Queue CRUD + publish | ✅ |
+| Channels CRUD | ✅ |
+| Dashboard + readiness | ✅ |
+| Celery publishing | ✅ |
+| Affiliates/campaigns/conversions | ✅ API, no UI |
+| Refresh tokens | ⬜ Config only |
+| Rate limiting middleware | ⬜ |
+| CI/CD full lint gate | 🟡 Partial Ruff scope |
 
 ---
-
-# 20. Future Version Roadmap
-
-## V2 — SaaS Platform
-
-Potential additions:
-
-```text
-Multi Workspace
-
-Team Collaboration
-
-Roles & Permissions
 
-Multiple Affiliate Networks
+## 5. Definition of Done (unchanged)
 
-Advanced Analytics
+A feature is complete when: correct folder structure · reusable components · loading/empty/error states · TypeScript clean · design system compliance · API contract documented in `06-api-integration.md`
 
-Workflow Automation
-
-Competitor Intelligence
-
-Subscription System
-```
-
 ---
-
-# Implementation Philosophy
-
-The frontend will be built as a product, not a collection of pages.
-
-The priorities are:
-
-```text
-Quality
-
-+
-
-Consistency
-
-+
-
-Scalability
-
-+
-
-Maintainability
-
-+
 
-Fast Iteration
-```
+## 6. Related Documents
 
-The final goal is a professional SaaS-ready application that can evolve from a personal affiliate automation tool into a commercial platform.
+- [06-api-integration.md](./06-api-integration.md) — Integration matrix
+- [10-production-readiness.md](./10-production-readiness.md) — Release gates & infra
+- [09-cursor-prompts.md](./09-cursor-prompts.md) — AI development templates

@@ -11,6 +11,17 @@ export type ProductSort =
   | "newest";
 
 export type DiscoveryResultsView = "table" | "grid";
+export type TableDensity = "comfortable" | "compact";
+
+export type DiscoveryTableColumn =
+  | "product"
+  | "price"
+  | "rating"
+  | "orders"
+  | "commission"
+  | "score"
+  | "status"
+  | "actions";
 
 export interface DiscoveryProduct {
   aliexpress_product_id: string;
@@ -71,9 +82,26 @@ export interface DiscoveryParams {
   min_price?: number;
   max_price?: number;
   min_discount?: number;
+  shipping_country?: string;
+  free_shipping?: boolean;
+  choice_only?: boolean;
+  /** UI-only until backend supports min commission. */
+  min_commission?: number;
+  /** Future-ready draft fields (not sent to API). */
+  exclude_keywords?: string;
+  max_orders?: number;
+  max_discount?: number;
+  max_commission?: number;
+  store_rating?: number;
   sort?: ProductSort;
   page?: number;
   page_size?: number;
+}
+
+export interface DiscoveryUiPrefs {
+  density: TableDensity;
+  visibleColumns: DiscoveryTableColumn[];
+  resultSearch: string;
 }
 
 export interface ProductImportResponse {
@@ -102,4 +130,5 @@ export interface DiscoverySessionSnapshot {
   importedIds: string[];
   /** Extension point: Discovery Profiles / saved filters (future). */
   activeProfileId?: string | null;
+  uiPrefs?: DiscoveryUiPrefs;
 }

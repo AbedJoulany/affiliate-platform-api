@@ -9,9 +9,11 @@ import type {
   DiscoveryResponse,
   DiscoverySessionSnapshot,
   DiscoveryProduct,
+  DiscoveryUiPrefs,
 } from "../types/api";
 import { productKeys } from "@/features/products/hooks/useProducts";
 import type { ApiError } from "@/services/api-client";
+import { normalizeUiPrefs } from "../lib/ui-prefs";
 
 export function useDiscoverySession() {
   const [session, setSession] = useState<DiscoverySessionSnapshot>(() => loadDiscoverySession());
@@ -31,6 +33,26 @@ export function useDiscoverySession() {
     setSession((prev) => ({
       ...prev,
       draftParams: { ...prev.draftParams, ...patch },
+    }));
+  }, []);
+
+  const updateUiPrefs = useCallback((patch: Partial<DiscoveryUiPrefs>) => {
+    setSession((prev) => ({
+      ...prev,
+      uiPrefs: normalizeUiPrefs({ ...normalizeUiPrefs(prev.uiPrefs), ...patch }),
+    }));
+  }, []);
+
+  const resetDraftFilters = useCallback(() => {
+    setSession((prev) => ({
+      ...prev,
+      draftParams: {
+        mode: prev.draftParams.mode ?? "hot",
+        sort: "orders_desc",
+        page: 1,
+        page_size: prev.draftParams.page_size ?? 20,
+        category_id: prev.draftParams.mode === "category" ? prev.draftParams.category_id : undefined,
+      },
     }));
   }, []);
 
@@ -76,6 +98,8 @@ export function useDiscoverySession() {
     session,
     hydrated,
     updateDraft,
+    updateUiPrefs,
+    resetDraftFilters,
     markRunning,
     markSuccess,
     markError,

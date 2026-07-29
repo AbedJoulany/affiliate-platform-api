@@ -1,743 +1,217 @@
-# Frontend Architecture v1.0
+# Frontend Architecture
 
-## AI Affiliate Automation Platform
-
-**Document Version:** 1.0
-**Last Updated:** 2026-07-17
+**Document Version:** 2.0  
+**Last Updated:** 2026-07-29
 
 ---
 
-# 1. Purpose
+## 1. Purpose
 
-The frontend of the AI Affiliate Automation Platform is designed to provide a modern, scalable, and productive workspace for managing affiliate marketing automation workflows.
+The frontend delivers a modern, workspace-oriented SaaS experience for affiliate automation. It is a **client application** — business logic stays in the FastAPI backend.
 
-The application is not intended to be a traditional administration dashboard. The target
-SaaS-like experience allows users to:
+Responsibilities:
 
-* Discover affiliate products.
-* Review and manage imported products.
-* Generate AI-powered marketing content.
-* Manage publishing workflows.
-* Schedule and monitor content distribution.
-* Configure automation settings.
-
-Current settings routes are read-only capability/status screens; editable automation
-configuration remains future work.
-
-The frontend acts as a client application responsible for user interaction, presentation, and communication with backend services.
-
-Business logic remains exclusively in the backend.
+- Render data and workspace UI
+- Manage interaction state (drawers, selection, density)
+- Validate forms (Zod)
+- Communicate with `/api/v1` via TanStack Query
 
 ---
 
-# 2. Architecture Goals
+## 2. Architecture Principles
 
-The frontend architecture should achieve the following goals:
-
-* Build a modern SaaS-quality user experience.
-* Maintain clean separation between UI, state management, and backend communication.
-* Support future scalability into a multi-user SaaS platform.
-* Enable fast development using AI-assisted tools such as Cursor.
-* Maximize component reuse.
-* Maintain predictable project organization.
-* Ensure long-term maintainability.
+| Principle | Rule |
+| --- | --- |
+| **API first** | No business rules in components; use feature API modules + hooks |
+| **Feature-based** | Each domain owns `components/`, `api/`, `hooks/`, `types/`, `lib/` |
+| **Thin routes** | App Router `page.tsx` files render one client feature view |
+| **Composition** | Shared patterns in `components/common/`; primitives in `components/ui/` |
+| **Drawer-first detail** | Row clicks open slide-over drawers; full pages for deep links only |
 
 ---
 
-# 3. Architecture Principles
+## 3. Project Structure
 
-## Current implementation snapshot
-
-The frontend uses thin App Router `page.tsx` files and client feature views under
-`src/features`. Implemented feature folders are `ai`, `auth`, `categories`, `channels`,
-`dashboard`, `discovery`, `products`, `queue`, and `settings`; each owns its API module,
-TanStack Query hook, and API types where applicable.
-
-Shared transport and session code lives in `src/services`; `src/lib/utils.ts` provides class
-merging and formatting helpers. `components/layout/AppShell.tsx` currently combines sidebar,
-mobile navigation, header, theme toggle, user menu, and content shell. `components/layout/page.tsx`
-contains `PageContainer` and `PageHeader`.
-
-## 3.1 API First
-
-The frontend consumes backend APIs and does not contain business logic.
-
-The frontend is responsible for:
-
-* Rendering data.
-* Handling user interactions.
-* Managing UI state.
-* Validating user input.
-* Providing user feedback.
-
-The backend is responsible for:
-
-* Product discovery.
-* Product scoring.
-* AI generation logic.
-* Scheduling.
-* Publishing automation.
-* Affiliate processing.
-
----
-
-## 3.2 Feature-Based Architecture
-
-The project is organized around business features rather than technical layers.
-
-Each feature should contain its own:
-
-* Components.
-* API functions.
-* Hooks.
-* Types.
-* Validation schemas.
-* Utilities.
-
-Example:
-
-```
-features/
-
-products/
-    components/
-    api/
-    hooks/
-    types/
-
-queue/
-    components/
-    api/
-    hooks/
-    types/
-```
-
-This approach improves scalability and makes features easier to understand and maintain.
-
----
-
-## 3.3 Reusable Components
-
-Generic UI components must exist only once.
-
-Examples:
-
-* Buttons.
-* Inputs.
-* Cards.
-* Tables.
-* Dialogs.
-* Dropdowns.
-* Pagination.
-* Loading states.
-* Empty states.
-
-Reusable components belong to:
-
-```
-components/ui
-```
-
-Feature-specific components belong inside their feature folder.
-
----
-
-## 3.4 Separation of Responsibilities
-
-Each layer has a clear responsibility.
-
-### Components
-
-Responsible for:
-
-* Rendering UI.
-* User interaction.
-
-Should not:
-
-* Call APIs directly.
-* Contain complex business rules.
-
----
-
-### Hooks
-
-Responsible for:
-
-* Managing reusable logic.
-* Connecting UI with application state.
-
-Examples:
-
-```
-useProducts()
-useChannels()
-useQueue()
-```
-
----
-
-### Services
-
-Responsible for:
-
-* API communication.
-* HTTP configuration.
-* External integrations.
-
----
-
-### Backend
-
-Responsible for:
-
-* Business rules.
-* Automation.
-* Data processing.
-
----
-
-# 4. Technology Stack
-
-## Framework
-
-```
-Next.js 15.5.x with React 19
-```
-
-Using:
-
-* App Router.
-* Server Components where applicable.
-* Client Components only when required.
-
----
-
-## Language
-
-```
-TypeScript
-```
-
-Reasons:
-
-* Type safety.
-* Better developer experience.
-* Easier AI-assisted development.
-
----
-
-## Styling
-
-```
-Tailwind CSS 3.4
-```
-
-Used for:
-
-* Layout.
-* Responsive design.
-* Utility styling.
-
----
-
-## UI Layer
-
-The implemented UI layer is the Tailwind-based local set in
-`src/components/ui/primitives.tsx`: `Button`, `Input`, `Select`, `Textarea`, `Card`, `Badge`,
-and `Skeleton`. shadcn/ui is not installed. A richer accessible library, including
-shadcn/ui, remains a future option.
-
----
-
-## Data Fetching
-
-```
-TanStack Query 5
-```
-
-Responsible for:
-
-* Server state.
-* API caching.
-* Background updates.
-* Loading/error states.
-
----
-
-## HTTP Client
-
-```
-Axios
-```
-
-Used through a centralized API client.
-
-Components should never call Axios directly.
-
----
-
-## Forms
-
-```
-React Hook Form
-+
-Zod
-```
-
-Used for:
-
-* Form management.
-* Validation.
-* Type-safe schemas.
-
----
-
-## Icons
-
-```
-Lucide React
-```
-
-Used as the single icon system.
-
----
-
-## Theme
-
-```
-next-themes
-```
-
-Supports:
-
-* Light mode.
-* Dark mode.
-* System preference.
-
----
-
-# 5. Project Structure
-
-Current structure:
-
-```
-src/
+```text
+frontend/src/
 
 app/
-    (auth)/
-    (dashboard)/
-    layout.tsx
-    providers.tsx
+  (auth)/login/
+  (dashboard)/
+    dashboard/
+    discovery/
+    products/ + [id]/
+    ai/
+    queue/
+    channels/
+    settings/*/
+    profile/
+  layout.tsx, providers.tsx
 
 components/
-
-    ui/
-    layout/
-    common/
+  ui/primitives.tsx       # Button, Drawer, Popover, …
+  layout/AppShell.tsx       # Sidebar, header, mobile nav
+  layout/page.tsx           # PageContainer, PageHeader
+  common/                   # ToastOverlay, ConfirmDialog, score cells, …
 
 features/
-
-    auth/
-
-    dashboard/
-
-    products/
-
-    discovery/
-
-    ai/
-
-    queue/
-
-    channels/
-
-    settings/
-
-    categories/
+  ai/           ContentWorkspaceView, useContentSession
+  auth/         LoginForm, AuthGuard, useAuth
+  categories/   AliExpress category fetch
+  channels/     ChannelsView
+  dashboard/    DashboardView
+  discovery/    DiscoveryView, session + advanced filters
+  products/     ProductsView, ProductDetailsDrawer, inventory hooks
+  queue/        QueueView, scheduling, operational stats
+  settings/     CapabilityView (read-only)
 
 services/
-    api-client.ts
-    session.ts
+  api-client.ts   # Axios + JWT interceptor
+  session.ts      # Token storage
 
 lib/
-    utils.ts
+  utils.ts
+  product-score.ts
 ```
 
-Hooks and API types are feature-local; there are no current top-level `hooks`, `types`, or
-`utils` directories.
+Hooks and API types are **feature-local**. There is no top-level `hooks/` or `types/` directory.
 
 ---
 
-# 6. Routing Strategy
+## 4. Workspace Architecture
 
-Application routes:
+### 4.1 Discovery (`features/discovery`)
 
-```
-/login
+| Piece | Role |
+| --- | --- |
+| `DiscoveryView` | Orchestrates intent tabs, filter bar, results table, selection bar |
+| `useDiscoverySession` | Persists draft/committed filters + UI prefs to `localStorage` |
+| `useDiscoveryQuery` | TanStack Query → `GET /products/discover*` |
+| `DiscoveryProductInspector` | Slide-over drawer: score, images, import/AI/queue actions |
+| `DiscoveryAdvancedFiltersDrawer` | Extended filters (price, orders, shipping, sort) |
+| `DiscoveryAiScoreCell` | Popover score breakdown in grid |
 
-/dashboard
+Data flow: user edits draft → commits search → API fetch → results rendered → row/inspector opens drawer.
 
-/products
+### 4.2 Products inventory (`features/products`)
 
-/products/[id]
+| Piece | Role |
+| --- | --- |
+| `ProductsView` | Grid workspace with toolbar, table, selection bar |
+| `useProducts` | Server list via `GET /products` (skip/limit/status) |
+| `useProductInventoryState` | Client density, columns, search, sort, bulk selection |
+| `ProductDetailsDrawer` | Row-click slide-over with image preview, score, pipeline badges |
+| `DeleteProductsDialog` | Admin bulk/single delete confirmation |
 
-/discovery
+Server pagination + client-side search/sort on the current page set. Queue index derived from `useQueue` for pipeline state badges.
 
-/ai
+### 4.3 AI Content Studio (`features/ai`)
 
-/queue
+| Piece | Role |
+| --- | --- |
+| `ContentWorkspaceView` | Replaces legacy `AIStudioView`; full workspace layout |
+| `useContentSession` | Variants, config, product context in `localStorage` |
+| `useGenerateContent` | Mutation → `POST /ai-content/generate` |
+| `ConfigControlBoard`, `ToneMatrix`, `ContentTypeScroller` | Generation config UI |
+| `RichDocumentCanvas`, `VariantTabs`, `VariantCompareDialog` | Edit/compare variants |
+| `DistributionHub` | Queue draft creation, optional publish |
 
-/channels
+Generation payload includes `content_type`, `tone`, `language`, `length`, `instruction_modifiers` (synced with backend Pydantic schema).
 
-/settings
+### 4.4 Publishing queue (`features/queue`)
 
-/settings/general
+| Piece | Role |
+| --- | --- |
+| `QueueView` | KPI cards, toolbar, table, drawers, bulk actions |
+| `useQueue` | `GET /queues` (up to 200 items for workspace) |
+| `useQueueWorkspaceState` | Filters, density, pagination (client-side on fetched set) |
+| `useQueuePublishingOperations` | Sequential bulk publish + client failure map |
+| `QueueOperationalStats` | Queued / scheduled / publishing / published today / failed today |
+| `QueueDetailsDrawer` | Post preview, channel, schedule, actions |
+| `QueueSchedulingDialog` | Channel picker + datetime + presets → `PATCH /queues/{id}` |
 
-/settings/aliexpress
-
-/settings/ai
-
-/settings/telegram
-
-/settings/discovery
-
-/settings/scheduling
-```
-
-Routes should represent business features.
-
-`/settings` is the parent settings route and should redirect to or render the default nested section. Profile remains available at `/profile`, accessed from the header user menu rather than the sidebar. Analytics is deferred; its planned post-MVP route is `/analytics`.
-
----
-
-# 7. State Management
-
-The application separates state into two categories.
-
-## Server State
-
-Managed by:
-
-```
-TanStack Query
-```
-
-Examples:
-
-* Products.
-* Channels.
-* Queue items.
-* Dashboard statistics.
+`publishing` and `failedToday` KPIs are **client-derived** during publish operations; they are not backend queue statuses.
 
 ---
 
-## Client State
+## 5. State Management
 
-Used only for UI state.
+### Server state (TanStack Query)
 
-Examples:
+Products, discovery results, queue, channels, dashboard, auth `/me`, categories.
 
-* Sidebar collapsed state.
-* Modal visibility.
-* Theme.
-* Temporary filters.
+Query keys include all server-side filter parameters. Mutations invalidate the smallest relevant key prefix.
 
-Possible tools:
+### Client / session state
 
-* React Context.
-* Zustand if complexity increases.
+| State | Storage | Examples |
+| --- | --- | --- |
+| Auth token | `sessionStorage` | JWT access token |
+| Session marker | Cookie (`1`) | Middleware redirect only |
+| Discovery session | `localStorage` | Filters, UI prefs, last response |
+| AI content session | `localStorage` | Variants, config, active variant |
+| Workspace UI | React `useState` | Drawer open, selection, density, toasts |
 
----
-
-# 8. API Architecture
-
-All backend communication must go through an API layer.
-
-Example:
-
-```
-features/products/api/products.api.ts
-```
-
-Example usage:
-
-```
-useProducts()
-```
-
-instead of:
-
-```
-axios.get("/products")
-```
-
-inside components.
+No global Zustand/Context auth provider — `AuthGuard` validates via `GET /auth/me`.
 
 ---
 
-# 9. Authentication Architecture
+## 6. Authentication
 
-Authentication will support future SaaS requirements.
+```text
+Login → POST /auth/login (form) → store JWT
+Protected route → middleware cookie check → AuthGuard → GET /auth/me
+401 response → clear session → redirect /login
+```
 
-Current version:
-
-* The access JWT is stored in browser `sessionStorage`.
-* A presence-only cookie (value `1`, never the JWT) lets middleware redirect requests
-  without a session marker.
-* `AuthGuard` validates the session through `GET /auth/me`; there is no React auth
-  provider/context.
-* The shared Axios interceptor attaches the bearer token and clears session state on `401`.
-* There is no refresh token or refresh endpoint; logout clears local session state.
-* Public registration creates an `affiliate`. Trusted operational provisioning is required
-  for admins, and imports require an admin.
-
-Future support:
-
-* Workspaces.
-* Roles.
-* Permissions.
-* Team members.
+Refresh tokens are **not implemented**. Sessions expire when the access JWT expires.
 
 ---
 
-# 10. UI Architecture
+## 7. Slide-Over Drawer Pattern
 
-The application follows a workspace design approach.
+Shared `Drawer` primitive (`components/ui/primitives.tsx`):
 
-Main layout:
+- Fixed right panel, backdrop, title, footer actions
+- Used by `ProductDetailsDrawer`, `DiscoveryProductInspector`, `QueueDetailsDrawer`, `DiscoveryAdvancedFiltersDrawer`
+- Row click opens drawer; checkbox/actions use `stopPropagation`
+- Drawer boundaries: read-only inspection + primary CTAs; destructive confirm uses `ConfirmDialog`
 
-```
-Application Shell
-
-├── Sidebar
-├── Header
-└── Content Area
-```
-
-The design inspiration:
-
-* Linear.
-* Vercel.
-* Stripe.
-* Notion.
-
-The interface should prioritize:
-
-* Simplicity.
-* Clear hierarchy.
-* Fast navigation.
-* Minimal visual noise.
+`Popover` used for compact overlays (`ProductAiScoreCell` score breakdown).
 
 ---
 
-# 11. Error Handling
+## 8. Error & Feedback
 
-Route-level fallbacks are implemented by `src/app/global-error.tsx` and
-`src/app/not-found.tsx`; they are framework files, not `/error` or `/not-found` routes.
-Feature views use shared loading, empty, and error states plus inline mutation alerts.
-
-Every page must support:
-
-## Loading State
-
-Example:
-
-* Skeleton components.
-* Loading indicators.
+| Pattern | Location |
+| --- | --- |
+| `LoadingState`, `EmptyState`, `ErrorState` | `components/common/states.tsx` |
+| `ToastOverlay` | Floating success/error toasts (Products, Queue) |
+| Inline alerts | Discovery, AI Studio mutations |
+| `ConfirmDialog` | Delete products, delete queue items, reset AI session |
 
 ---
 
-## Empty State
+## 9. Performance Guidelines
 
-Example:
-
-* No products found.
-* Empty queue.
-
----
-
-## Error State
-
-Example:
-
-* API unavailable.
-* Permission errors.
-
-The application should never show broken screens.
+- Prefer server components for static shells; feature views are `"use client"`
+- `keepPreviousData` on product list queries
+- Lazy-load heavy dialogs only when open
+- Client-side filter/sort on fetched slices — revisit server-side when catalog scale grows
 
 ---
 
-# 12. Performance Guidelines
+## 10. RTL & Theming
 
-The application should follow performance best practices:
-
-* Avoid unnecessary client components.
-* Use server components when possible.
-* Lazy load heavy features.
-* Optimize images.
-* Cache API requests.
-* Avoid unnecessary re-renders.
+- Root layout sets Arabic RTL (`dir="rtl"`)
+- Semantic CSS variables for light/dark (`--background`, `--surface`, `--primary`, …)
+- All new components must work in both themes without hardcoded colors
 
 ---
 
-# 13. RTL and Internationalization
+## 11. Related Documents
 
-The platform must support Arabic-first content.
-
-Requirements:
-
-* Full RTL support.
-* Layout mirroring.
-* Arabic-friendly typography.
-* Future language expansion.
-
-Supported direction:
-
-```
-RTL
-```
-
-Future:
-
-```
-LTR
-```
-
----
-
-# 14. AI-Friendly Development Principles
-
-Because development uses AI coding assistants, the project must maintain:
-
-* Small components.
-* Clear naming.
-* Predictable structure.
-* Minimal hidden dependencies.
-* Strong documentation.
-
-Every feature should be understandable independently.
-
----
-
-# 15. Coding Standards
-
-## Naming
-
-Components:
-
-```
-PascalCase
-```
-
-Example:
-
-```
-ProductCard.tsx
-```
-
-Hooks:
-
-```
-camelCase with use prefix
-```
-
-Example:
-
-```
-useProducts.ts
-```
-
-Files:
-
-```
-kebab-case where applicable
-```
-
----
-
-## Components
-
-Components should:
-
-* Have one responsibility.
-* Avoid excessive complexity.
-* Prefer composition.
-
----
-
-## Types
-
-Current feature-specific API types:
-
-```
-features/[feature]/types
-```
-
-The current codebase has no top-level `types/` directory. Add shared types there only when
-multiple features genuinely require the same frontend model; otherwise keep types colocated
-with their feature.
-
----
-
-# 16. Future Scalability
-
-The architecture should allow future expansion:
-
-## Multi Workspace
-
-Support:
-
-* Multiple users.
-* Multiple organizations.
-* Team collaboration.
-
----
-
-## Multiple Affiliate Networks
-
-Future integrations:
-
-* AliExpress.
-* Amazon.
-* Other affiliate platforms.
-
----
-
-## Multiple Publishing Channels
-
-Future support:
-
-* Telegram.
-* Facebook.
-* Instagram.
-* WhatsApp.
-
----
-
-# 17. Architecture Decision Summary
-
-The project follows:
-
-```
-Next.js 15.5.x / React 19
-+
-TypeScript
-+
-Feature-Based Architecture
-+
-TanStack Query
-+
-Tailwind 3.4 local UI primitives
-+
-TailwindCSS
-+
-API First Design
-+
-SaaS Ready Structure
-```
-
-The goal is to build a maintainable, scalable, AI-assisted frontend that can evolve from a personal automation tool into a commercial SaaS platform.
-
-TanStack Query 5, Axios, React Hook Form with Zod, Lucide React, and next-themes support the
-implemented data, forms, icons, and theme layers. CI uses Node 22.
+- [03-design-system.md](./03-design-system.md) — Visual tokens
+- [04-component-library.md](./04-component-library.md) — Component registry
+- [05-routing-and-navigation.md](./05-routing-and-navigation.md) — Route map
+- [06-api-integration.md](./06-api-integration.md) — API contracts

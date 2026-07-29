@@ -1,7 +1,23 @@
 import type { ReactNode } from "react";
+import { cn } from "@/lib/utils";
 
-export function PageContainer({ children }: { children: ReactNode }) {
-  return <main className="mx-auto w-full max-w-7xl p-4 sm:p-6 lg:p-8">{children}</main>;
+export function PageContainer({
+  children,
+  wide = false,
+}: {
+  children: ReactNode;
+  wide?: boolean;
+}) {
+  return (
+    <main
+      className={cn(
+        "mx-auto w-full p-4 sm:p-6 lg:p-8",
+        wide ? "max-w-none" : "max-w-7xl",
+      )}
+    >
+      {children}
+    </main>
+  );
 }
 
 export function PageHeader({

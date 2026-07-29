@@ -23,6 +23,11 @@ async def generate_content(
             product_id=payload.product_id,
             url=str(payload.url) if payload.url else None,
             provider=payload.provider,
+            content_type=payload.content_type,
+            tone=payload.tone,
+            language=payload.language,
+            length=payload.length,
+            instruction_modifiers=payload.instruction_modifiers,
         )
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc

@@ -1,476 +1,46 @@
-# Routing and Navigation v1.0
+# Routing and Navigation
 
-## AI Affiliate Automation Platform
-
-**Document Version:** 1.0
-**Last Updated:** 2026-07-17
+**Document Version:** 2.0  
+**Last Updated:** 2026-07-29
 
 ---
 
-# 1. Purpose
+## 1. Purpose
 
-This document defines the routing architecture and navigation structure of the AI Affiliate Automation Platform frontend.
-
-The purpose of this architecture is to provide:
-
-* A predictable URL structure.
-* Clear separation between application areas.
-* Scalable routing for future SaaS expansion.
-* Consistent navigation patterns.
-* Support for authentication and authorization.
-
-The routing system should reflect the product structure and business modules.
+Defines URL structure, sidebar navigation, page layouts, and **drawer vs route** boundaries after the 2026 workspace UI transformation.
 
 ---
 
-# 2. Routing Principles
+## 2. Routing Principles
 
-## 2.1 Feature-Based Routes
+- **Feature-based URLs** — `/discovery`, not `/dashboard/discovery`
+- **Clean deep links** — `/products/[id]`, `/ai?product=…`
+- **Drawer for inspection** — row click opens slide-over; URL optional
+- **SaaS-ready** — avoid patterns that block future `/workspace/{id}/…` prefix
 
-Routes should represent product features.
+---
 
-Example:
+## 3. Route Groups
 
 ```text
-/products
-/discovery
-/queue
-/channels
-```
-
-Each route maps to a business module.
-
----
-
-## 2.2 Clean URLs
-
-URLs should be:
-
-* Short.
-* Predictable.
-* Human-readable.
-
-Preferred:
-
-```
-/products/123
-```
-
-Avoid:
-
-```
-/dashboard/products/details?id=123
+app/(auth)/          → Public (login)
+app/(dashboard)/     → Protected (AuthGuard + middleware cookie)
 ```
 
 ---
 
-## 2.3 SaaS Ready Structure
-
-Although version one supports a single user, the routing design should allow future support for:
-
-* Multiple workspaces.
-* Organizations.
-* Teams.
-* Permissions.
-
-Future example:
-
-```
-/workspace/{workspaceId}/products
-```
-
-The current implementation should avoid decisions that prevent this evolution.
-
----
-
-# 3. Next.js Routing Strategy
-
-The application uses:
-
-```
-Next.js 15 App Router
-```
-
-The routing structure follows:
-
-```
-src/app/
-```
-
----
-
-# 4. Application Route Groups
-
-The application is divided into route groups.
-
-Structure:
-
-```text
-app/
-
-├── (auth)/
-│
-└── (dashboard)/
-```
-
----
-
-# 5. Authentication Routes
-
-Location:
-
-```text
-app/(auth)/
-```
-
-These routes are accessible without authentication.
-
----
-
-## Login
-
-Route:
-
-```
-/login
-```
-
-Purpose:
-
-Allows users to authenticate.
-
-Contains:
-
-* Email input.
-* Password input.
-* Login action.
-* Error handling.
-
----
-
-## Future Authentication Routes
-
-Potential additions:
-
-```
-/register
-
-/forgot-password
-
-/reset-password
-
-/verify-email
-```
-
----
-
-# 6. Application Routes
-
-Location:
-
-```text
-app/(dashboard)/
-```
-
-These routes require authentication.
-
-The shared layout contains:
-
-* Sidebar.
-* Header.
-* Navigation.
-* User menu.
-
----
-
-# 7. Main Application Routes
-
-## Dashboard
-
-Route:
-
-```
-/dashboard
-```
-
-Purpose:
-
-Main workspace overview.
-
-Contains:
-
-* Key metrics.
-* Recent activity.
-* Quick actions.
-* System status.
-
----
-
-## Products
-
-Route:
-
-```
-/products
-```
-
-Purpose:
-
-Manage discovered and imported products.
-
-Features:
-
-* Product list.
-* Search.
-* Filtering.
-* Pagination.
-
-Import is performed from `/discovery` and is visible only to provisioned admin users.
-Frontend product CRUD actions remain future work.
-
----
-
-## Product Details
-
-Route:
-
-```
-/products/[id]
-```
-
-Purpose:
-
-Detailed product workspace.
-
-Contains:
-
-* Product information.
-* Affiliate data.
-* Description and product metadata.
-* Affiliate link.
-* Link to open AI Studio with the product selected.
-
-Persisted AI content, direct publishing actions, and product history are future additions.
-
-Example:
-
-```
-/products/12345
-```
-
----
-
-## Discovery
-
-Route:
-
-```
-/discovery
-```
-
-Purpose:
-
-Manage product discovery workflows.
-
-Contains:
-
-* Discovery sources.
-* Keyword, minimum-rating, minimum-discount, and category controls.
-* Discovery results.
-* Admin-only import actions.
-
-The current UI exposes general, hot, deals, trending, and category modes. The backend
-contract supports additional filters and modes documented in `06-api-integration.md`; they
-are not all exposed in this first UI.
-
-Future:
-
-* Automated discovery monitoring.
-* Trend detection.
-
----
-
-## AI Studio
-
-Route:
-
-```
-/ai
-```
-
-Purpose:
-
-AI content generation workspace.
-
-Contains:
-
-* Content generation.
-* Editing.
-* Copying.
-* Add generated content to the queue as a draft.
-
-Prompt profiles, saved generation history, and server-side content persistence are future
-work.
-
----
-
-## Queue
-
-Route:
-
-```
-/queue
-```
-
-Purpose:
-
-Manage publishing lifecycle.
-
-Contains:
-
-* `draft` items.
-* `queued` items.
-* `scheduled` items.
-* `published` items.
-
-These four lowercase values are the canonical backend `QueueStatus` enum. Publishing failures are operation errors; they are not a `failed` queue status. The current UI shows the error and allows the user to invoke Publish Now again, but it has no dedicated retry control or retry orchestration.
-The current UI lists and filters items and can publish immediately. It does not yet create
-scheduled items, edit queue records, or provide a schedule picker.
-
----
-
-## Channels
-
-Route:
-
-```
-/channels
-```
-
-Purpose:
-
-Manage publishing destinations.
-
-Current:
-
-```
-Telegram
-```
-
-The current UI lists channels, adds a Telegram channel, displays bot permission state, and
-toggles active state. Delete and a separate connection-test action are not exposed.
-
-Future:
-
-```
-Facebook
-
-Instagram
-
-WhatsApp
-```
-
----
-
-## Future Analytics
-
-Route:
-
-```
-/analytics
-```
-
-Purpose:
-
-Monitor performance.
-
-Analytics is deferred until after the MVP. The route is reserved for future implementation and is not included in the MVP route map or sidebar.
-
-Future features:
-
-* Click tracking.
-* Engagement.
-* Conversion.
-* Revenue.
-
----
-
-## Settings
-
-Route:
-
-```
-/settings
-```
-
-Purpose:
-
-Display application capabilities and operational status.
-
-Sections:
-
-```
-/settings/general
-
-/settings/aliexpress
-
-/settings/ai
-
-/settings/telegram
-
-/settings/discovery
-
-/settings/scheduling
-```
-
-`/settings` is the parent route and should redirect to or render `/settings/general` as its default section. All settings sections use nested routes consistently.
-All current settings sections are read-only `CapabilityView` screens. There are no editable
-settings APIs or forms. Capability badges use `/ready`, which checks PostgreSQL and Redis
-only; they do not validate provider credentials or Celery worker health.
-
----
-
-## Profile
-
-Route:
-
-```
-/profile
-```
-
-Purpose:
-
-Display current account and session information.
-
-Profile is opened from the header user menu and is not a sidebar item.
-
-The current profile is read-only. Preferences, profile editing, and security settings are
-future because the required APIs are not implemented.
-
----
-
-# 8. Complete Route Map
-
-Current MVP:
+## 4. Complete Route Map
 
 ```text
 /
-│
 ├── login
-│
 ├── dashboard
-│
 ├── products
-│   └── [id]
-│
+│   └── [id]              ← deep link; primary UX is drawer on /products
 ├── discovery
-│
-├── ai
-│
+├── ai                      ← ?product= | ?url= query params
 ├── queue
-│
 ├── channels
-│
 ├── settings
 │   ├── general
 │   ├── aliexpress
@@ -478,336 +48,146 @@ Current MVP:
 │   ├── telegram
 │   ├── discovery
 │   └── scheduling
-│
-└── profile
+└── profile                 ← header user menu only
 ```
+
+**Deferred:** `/analytics`, `/register`, workspace routes
 
 ---
 
-# 9. Sidebar Navigation
+## 5. Workspace Routes
 
-The sidebar represents the main product modules.
+### `/discovery`
 
-Structure:
+Product discovery command center. Intent tabs drive API mode. Results grid with score popovers. **Drawer boundary:** `DiscoveryProductInspector` for product preview — does not change URL.
+
+### `/products`
+
+Inventory grid with layout controls. **Drawer boundary:** `ProductDetailsDrawer` on row click. `/products/[id]` remains for shareable deep links and legacy navigation from dashboard.
+
+### `/ai`
+
+AI Content Studio (`ContentWorkspaceView`). Accepts `?product={uuid}` or `?url=…` from discovery/products handoff. Session persisted in `localStorage`.
+
+### `/queue`
+
+Publishing Operations Center. KPI strip at top. **Drawer boundary:** `QueueDetailsDrawer` for post inspection. **Dialog boundary:** `QueueSchedulingDialog` for bulk/single schedule.
+
+### `/channels`
+
+Telegram channel registry. Full-page CRUD (no drawer).
+
+### `/settings/*`
+
+Read-only capability screens. No editable forms.
+
+### `/profile`
+
+Read-only account info from `/auth/me`.
+
+---
+
+## 6. Sidebar Navigation
 
 ```text
-Workspace
-
-├── Dashboard
-│
-├── Products
-│
-├── Discovery
-│
-├── AI Studio
-│
-├── Queue
-│
-├── Channels
-│
-└── Settings
-```
-
-Profile is available through the header user menu. Analytics is deferred and omitted from the MVP sidebar. A workspace selector must remain hidden until multi-workspace support is implemented.
-
----
-
-# 10. Navigation Item Structure
-
-Each navigation item contains:
-
-```typescript
-{
-    label: string,
-    href: string,
-    icon: Icon,
-    permissions?: Permission[]
-}
-```
-
-Example:
-
-```typescript
-{
-    label: "Products",
-    href: "/products",
-    icon: Package
-}
-```
-
----
-
-# 11. Sidebar States
-
-The sidebar supports:
-
-## Expanded Mode
-
-Desktop default.
-
-Displays:
-
-* Icon.
-* Label.
-* Optional badge.
-
----
-
-## Collapsed Mode
-
-Displays:
-
-* Icons only.
-* Tooltip labels.
-
----
-
-## Mobile Mode
-
-Uses:
-
-* Drawer navigation.
-* Overlay interaction.
-
----
-
-# 12. Breadcrumb Navigation
-
-**Future:** breadcrumbs are not currently implemented. Product detail provides a simple
-back link to products.
-
-Complex pages should display breadcrumbs.
-
-Example:
-
-```
+Dashboard
 Products
-    >
-Product Details
-    >
-AI Content
+Discovery
+AI Studio
+Queue
+Channels
+Settings
 ```
 
-Used for:
+| Item | href | Notes |
+| --- | --- | --- |
+| Dashboard | `/dashboard` | |
+| Products | `/products` | |
+| Discovery | `/discovery` | |
+| AI Studio | `/ai` | |
+| Queue | `/queue` | |
+| Channels | `/channels` | |
+| Settings | `/settings/general` | Parent redirects to general |
 
-* Deep navigation.
-* Better context.
+**Not in sidebar:** Profile (header menu), Analytics (deferred), Workspace switcher (hidden)
 
 ---
 
-# 13. Route Protection
+## 7. Navigation Item Shape
 
-Protected routes use:
-
-* Middleware checking a presence-only session cookie.
-* `AuthGuard` validating the access JWT through `GET /auth/me`.
-* The Axios interceptor clearing session state on `401`.
-
-There is no authentication provider/context in the current frontend.
-
-Unauthenticated users:
-
+```typescript
+{
+  label: string;
+  href: string;
+  icon: LucideIcon;
+  permissions?: ("admin")[];
+}
 ```
-Any protected route
-        ↓
-Redirect
-        ↓
-/login
-```
+
+Import actions and product delete are gated on `role === "admin"` in views, not route-level.
 
 ---
 
-# 14. Authorization Strategy
+## 8. Drawer vs Dialog vs Page Boundaries
 
-Future SaaS support requires permissions.
+| Pattern | Use when | Examples |
+| --- | --- | --- |
+| **Drawer** | Inspect entity in context of list | Product details, discovery inspector, queue post |
+| **Dialog** | Confirm destructive or short form | Delete, schedule, reset AI session |
+| **Full page** | Shareable URL or multi-section detail | `/products/[id]`, settings sections |
+| **Popover** | Compact secondary detail | AI score breakdown |
 
-Example:
+Drawers should not nest drawers. Esc closes top overlay (future standardization).
+
+---
+
+## 9. Cross-Workspace Handoffs
+
+| From | Action | Target |
+| --- | --- | --- |
+| Discovery | Generate AI | `/ai?product={aliexpress_id}` or imported id |
+| Discovery | Add to queue | Creates via API, optional `/queue` navigation |
+| Products | Generate AI | `/ai?product={id}` |
+| Products | Add to queue | Inline API create |
+| AI Studio | Add to queue | `POST /queues` draft |
+| Queue | Edit content | Opens drawer; links to `/ai` if re-generation needed |
+
+---
+
+## 10. Route Protection
 
 ```text
-User
-
-Workspace Owner
-
-Admin
-
-Editor
-
-Viewer
+Request → middleware (session cookie present?)
+       → AuthGuard (GET /auth/me valid?)
+       → Feature view
 ```
 
-Routes may define required permissions.
-
-Example:
-
-```
-/settings
-requires:
-ADMIN
-```
+401 → clear token → `/login`  
+403 → inline error in feature (no dedicated `/unauthorized` route)
 
 ---
 
-# 15. Dynamic Navigation
+## 11. Error Routes
 
-Navigation should support future dynamic modules.
+| File | Role |
+| --- | --- |
+| `app/global-error.tsx` | Framework error boundary |
+| `app/not-found.tsx` | 404 |
 
-Example:
+---
 
-Future workspace configuration:
+## 12. Future Routing
 
 ```text
-Enabled Features:
-
-✓ Products
-
-✓ Telegram
-
-✓ Analytics
-
-✗ Facebook
-```
-
-The sidebar should render based on enabled modules.
-
----
-
-# 16. Page Layout Rules
-
-Every application page follows:
-
-```text
-Page Layout
-
-├── Page Header
-│
-│   ├── Title
-│   ├── Description
-│   └── Actions
-│
-└── Page Content
-```
-
----
-
-# 17. Loading Navigation
-
-Navigation should provide feedback for:
-
-* Route changes.
-* Data loading.
-* Permission checks.
-
-Preferred:
-
-* Skeleton states.
-* Optimistic transitions.
-
----
-
-# 18. Error Routes
-
-The application should provide:
-
-## Global Error
-
-`src/app/global-error.tsx` handles unexpected errors. It is a Next.js framework boundary,
-not an `/error` route.
-
----
-
-## Not Found
-
-`src/app/not-found.tsx` handles invalid routes. It is a Next.js framework boundary, not a
-`/not-found` route.
-
----
-
-## Unauthorized
-
-Handles:
-
-* Missing permissions.
-* Restricted pages.
-
-**Future:** there is no dedicated unauthorized page/route today. Current `401` handling
-returns users to login; backend `403` responses are shown through feature error handling.
-
----
-
-# 19. Future Routing Expansion
-
-Potential future routes:
-
-## Analytics
-
-```
 /analytics
-```
-
----
-
-## Workspaces
-
-```
-/workspaces
-
-/workspaces/[id]
-```
-
----
-
-## Automation
-
-```
-/automation
-
+/workspace/[id]/products
 /automation/workflows/[id]
-```
-
----
-
-## Competitor Analysis
-
-```
-/competitors
-```
-
----
-
-## Integrations
-
-```
 /integrations
 ```
 
 ---
 
-# 20. Routing Summary
+## 13. Related Documents
 
-The routing architecture follows:
-
-```
-Next.js App Router
-
-+
-
-Feature-Based Routes
-
-+
-
-Protected Application Shell
-
-+
-
-Clean URLs
-
-+
-
-SaaS Expansion Ready
-
-+
-
-Permission-Aware Navigation
-```
-
-The goal is to create a navigation system that remains simple for the MVP while supporting the evolution into a full SaaS platform.
+- [02-frontend-architecture.md](./02-frontend-architecture.md)
+- [04-component-library.md](./04-component-library.md)

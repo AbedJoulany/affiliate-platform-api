@@ -1,111 +1,212 @@
 # Production Readiness and Release Runbook
 
-**Last Updated:** 2026-07-17
+**Document Version:** 2.0  
+**Last Updated:** 2026-07-29
 
-This runbook is the release gate for the MVP. It supplements, and does not change, the
-architecture defined in documents 01–09.
+Release gate supplement to documents 01–09. Defines security boundaries, environment configuration, CI/CD, deployment checklists, and **upcoming architectural requirements**.
 
-## 1. Required environment
+---
 
-- PostgreSQL 16 and Redis 7 are reachable from the API and workers.
-- `JWT_SECRET_KEY` is a generated production secret.
-- `CORS_ORIGINS` contains only deployed frontend origins.
-- Telegram, AliExpress, and the selected AI provider use non-development credentials.
-- `NEXT_PUBLIC_API_URL` is set at frontend image build time.
-- Database migrations run once before the API and workers are promoted.
+## 1. Required Environment
 
-Never copy credentials from examples. Rotate a credential immediately if it is committed,
-logged, pasted into an issue, or otherwise exposed.
+### Backend
 
-## 2. Automated gate
+- PostgreSQL 16 and Redis 7 reachable from API and workers
+- `JWT_SECRET_KEY` — generated production secret (never default)
+- `CORS_ORIGINS` — deployed frontend origins only
+- `TELEGRAM_BOT_TOKEN` — live bot for permission checks
+- `ALIEXPRESS_APP_KEY` / `ALIEXPRESS_APP_SECRET` — discovery/import
+- `OPENAI_API_KEY` or `GEMINI_API_KEY` — AI generation
+- Celery broker/backend URLs
 
-The CI workflow must pass:
+### Frontend
 
-- Ruff checks for production-readiness additions and the full backend pytest suite. Existing
-  repository-wide lint debt should be removed incrementally before expanding the lint gate.
-- Frontend typecheck, ESLint, unit/component tests, and production build.
+- `NEXT_PUBLIC_API_URL` set at **build time**
+- No secrets in client bundle
 
-The current GitHub Actions workflow uses Python 3.12 and Node 22. It runs the full backend
-pytest suite, Ruff only on the explicitly listed production-readiness files, and frontend
-typecheck, lint, Vitest, and build. Playwright exists as `npm run test:e2e` for local/manual
-verification; it is not currently a CI job or required automated check.
+### Migrations
 
-Do not release from a working tree or commit with a failing or skipped required check.
+Run `alembic upgrade head` once before API/worker promotion.
 
-## 3. Staging deployment
+See `.env.example` for full variable list (migrated from legacy handoff doc).
 
-1. Build immutable backend and frontend images.
-2. Apply Alembic migrations.
-3. Provision a staging admin through the trusted operational/database process. Public
-   registration only creates affiliates, while product import requires admin access.
-4. Start PostgreSQL, Redis, API, Celery worker, and Celery beat.
-5. Confirm `GET /health` returns `200`.
-6. Confirm `GET /ready` returns `200` with database and Redis both `up`.
-7. Verify Celery worker/beat health separately; Redis readiness proves connectivity, not
-   that a worker is alive or consuming tasks.
-8. Start the frontend and confirm login redirects to the protected dashboard.
-9. Confirm API and frontend security headers are present.
-10. Confirm application logs contain no passwords, tokens, provider payloads, or secrets.
+---
 
-## 4. MVP acceptance flow
+## 2. Docker Services
 
-Execute this flow with a staging admin account:
+| Service | Port | Purpose |
+| --- | --- | --- |
+| `api` | 8000 | FastAPI + migrate on start |
+| `db` | 5432 | PostgreSQL 16 |
+| `redis` | 6379 | Celery broker |
+| `celery-worker` | — | Background tasks |
+| `celery-beat` | — | Periodic publish + discovery refresh |
 
-1. Authenticate and load the dashboard.
-2. Browse general/keyword, hot, trending, deals, and category discovery through the current
-   UI.
-3. Verify keyword, rating, discount, and category controls affect results. Verify additional
-   order, price, shipping, sort, paging, and persistence contract options separately at the
-   API level until corresponding UI controls exist.
-4. Import one product and verify its details and images.
-5. Generate Arabic content and review/edit the result.
-6. Register a staging Telegram channel and verify bot permissions.
-7. Create a draft queue item in AI Studio and publish it from the queue. Verify scheduled
-   creation separately through the API until the scheduling UI is implemented.
-8. Confirm the Telegram message, image, affiliate button, and published queue state.
-9. Simulate an upstream AI/AliExpress error and confirm safe user feedback.
-10. Simulate Redis unavailability and confirm `/ready` returns `503` with a stable
-    `not_ready` body; separately stop a Celery worker and confirm worker monitoring detects
-    it without assuming `/ready` will.
+Startup: DB/Redis healthy → migrate → Uvicorn → worker/beat connect.
 
-## 5. Non-functional checks
+---
 
-- Arabic RTL layout at mobile, tablet, and desktop widths. English/LTR is a future
-  internationalization gate, not a current UI mode.
-- Keyboard-only navigation, visible focus, labels, and error announcements on implemented
-  controls. Add dialog-specific checks when shared dialogs are introduced.
-- Light and dark themes without hardcoded unreadable colors.
-- Expired JWT clears the session and returns the user to login.
-- Slow and failed requests show loading, retry, empty, and error states.
-- Product and queue lists remain usable at expected production volumes.
-- Database backup, restore, retention, and rollback procedures have been exercised.
-- Repeat time-sensitive checks relative to the execution time (for example, "published
-  during this verification window"), not hard-coded calendar dates or "today" fixtures.
+## 3. Automated CI Gate
 
-## 6. Release and rollback
+GitHub Actions (Python 3.12, Node 22):
 
-- Record image digests, migration revision, environment version, and acceptance owner.
-- Promote the exact staging images; do not rebuild between staging and production.
-- Monitor API error rate, worker failures, queue age, provider errors, and publish success.
-- Roll back application images if health degrades. Roll back database changes only through a
-  reviewed Alembic downgrade or forward-fix procedure.
+- Backend: full pytest suite; Ruff on production-readiness file set
+- Frontend: typecheck, ESLint, Vitest, production build
 
-## 7. Current verification boundary
+Playwright (`npm run test:e2e`) — local/manual; **not** CI gate today.
 
-The repository defines frontend typecheck, lint, unit/component tests, and production build
-checks. Record fresh command output and CI run IDs for each release; do not treat a
-time-sensitive statement that they once passed as permanent evidence.
-Provider-backed staging acceptance requires valid staging credentials and reachable
-PostgreSQL/Redis/Celery services; it cannot be certified by mocked tests alone.
+Do not release from failing required checks.
 
-## 8. Security and tenancy boundaries
+---
 
-- The browser stores the access JWT in `sessionStorage`; the middleware cookie is a
-  presence-only marker and is not proof of authentication. `AuthGuard` confirms `/auth/me`.
-- A `401` clears local session state. There is no refresh-token flow.
-- Product import endpoints require admin access. Public registration cannot create admins.
-- Queue and channel HTTP routes require authentication but their data access is not
-  tenant/user scoped in the current backend. Do not represent them as isolated per user or
-  deploy this boundary as multi-tenant SaaS without backend ownership enforcement.
-- `/ready` exposes dependency state only; keep secrets and provider payloads out of status
-  responses and logs.
+## 4. Staging Deployment Checklist
+
+1. Build immutable backend + frontend images
+2. Apply Alembic migrations
+3. Provision staging admin (DB/trusted process — not public register)
+4. Start PostgreSQL, Redis, API, Celery worker, Celery beat
+5. `GET /health` → 200
+6. `GET /ready` → 200 (database + redis `up`)
+7. **Separately** verify Celery worker consumes a test task
+8. Frontend login → dashboard redirect
+9. Security headers present; logs contain no secrets
+
+---
+
+## 5. MVP Acceptance Flow (Updated UI)
+
+Execute with staging admin:
+
+1. **Discovery** — Run hot/trending/deals/category searches; open score popover; open product inspector drawer; batch import
+2. **Products** — Verify inventory grid density/columns; open `ProductDetailsDrawer`; admin delete; export CSV
+3. **AI Studio** — Generate with tone/type/modifiers; compare variants; create queue draft
+4. **Channels** — Register Telegram channel; verify permission badges
+5. **Queue** — Verify KPI cards; schedule via dialog; bulk publish; confirm Telegram message; verify failure toast on simulated error
+6. **Settings** — Readiness shows DB + Redis
+7. Expired JWT clears session → login
+
+---
+
+## 6. Security Boundaries
+
+| Topic | Rule |
+| --- | --- |
+| JWT storage | `sessionStorage` only; cookie is presence marker |
+| Session validation | `AuthGuard` → `GET /auth/me` |
+| Admin operations | Import, delete — backend + UI role check |
+| Tenancy | Queue/channel data **not user-scoped** — not multi-tenant safe |
+| Public endpoints | Discovery read, product list, `/conversions` POST |
+| `/ready` | Dependency state only — no secrets |
+| Auth service | Remove debug password logging before prod (`app/auth/service.py`) |
+
+---
+
+## 7. Non-Functional Checks
+
+- Arabic RTL at mobile/tablet/desktop
+- Keyboard focus on drawers, dialogs, tables
+- Light/dark theme readability
+- Slow network: skeletons, no broken layouts
+- Product/queue lists at expected volume (200-item queue fetch limit documented)
+
+---
+
+## 8. Release & Rollback
+
+- Record image digests, migration revision, acceptance owner
+- Promote exact staging images — no rebuild between stages
+- Monitor: API 5xx, Celery failures, queue age, publish success rate
+- Rollback: application images first; DB via reviewed Alembic downgrade only
+
+---
+
+## 9. Upcoming Architectural Requirements
+
+### 9.1 Real-time status streaming (Phase A)
+
+**Problem:** Queue KPIs and row status rely on manual refresh and client publish state.
+
+**Target architecture:**
+
+```text
+Celery publish task → emit status event → Redis pub/sub or SSE endpoint → frontend subscription
+```
+
+**Requirements:**
+
+- SSE endpoint `GET /queues/stream` or WebSocket `/ws/queue` (auth required)
+- Events: `status_changed`, `publish_started`, `publish_succeeded`, `publish_failed`
+- Frontend: `useQueueEventStream` hook; fallback polling 5s → 30s backoff
+- Do not add `failed` to `QueueStatus` enum — use event payload + audit log
+
+### 9.2 Background workers & queue execution
+
+**Current:** Celery Beat + `process_publish_queue` every 60s.
+
+**Enhancements:**
+
+- Dead-letter queue for exhausted Telegram retries
+- Publish task idempotency key (`queue_id` + content hash)
+- Worker health endpoint or heartbeat key in Redis
+- Separate queues: `publishing`, `discovery_refresh`, `ai_batch` (future)
+- Monitor with Flower/Prometheus; alert on beat/worker absence
+
+**Env vars:** `CELERY_PUBLISH_INTERVAL_SECONDS`, `CELERY_PUBLISH_BATCH_SIZE`, discovery refresh intervals (see `.env.example`)
+
+### 9.3 Error handling & retries
+
+| Integration | Policy |
+| --- | --- |
+| **Telegram Bot API** | 3 retries, exponential backoff (1s, 4s, 16s + jitter), respect 429 `retry_after` |
+| **AliExpress IOP** | Existing client rate limit + `ALIEXPRESS_MAX_RETRIES` |
+| **OpenAI / Gemini** | 2 retries on 502/503; timeout 60s; user-facing `AIProviderError` message |
+| **Celery tasks** | `autoretry_for`, `max_retries=3`, `retry_backoff=True` |
+
+Log structured failure records (queue_id, provider, attempt, error_code) — no token leakage.
+
+### 9.4 Form & schema validation
+
+- Zod schemas generated or manually synced with Pydantic (`features/*/lib/schemas.ts`)
+- Drawer inline edits validated before mutation
+- Shared `useValidatedMutation` pattern: parse → API call → toast on success/error
+- Arabic validation messages
+
+### 9.5 Observability & CI/CD (Phase 4)
+
+- Structured JSON logging with request IDs
+- GitHub Actions: expand Ruff to full codebase; add Playwright smoke to CI when stable
+- Secret management: Vault/AWS Secrets Manager for production
+- HTTPS termination, HSTS, CSP headers on frontend
+
+---
+
+## 10. Known Issues (Production Blockers)
+
+| Issue | Severity | Action |
+| --- | --- | --- |
+| Debug prints in auth service | High | Remove before prod |
+| Default JWT secret | Critical | Rotate in all non-dev envs |
+| Silent Celery publish skip | Medium | Add logging + retry |
+| No refresh token | Medium | Document session expiry UX |
+| Conversion POST public | Info | Rate limit when adding middleware |
+| Single Celery beat instance | Info | Document ops constraint |
+
+---
+
+## 11. Quick Reference Commands
+
+```bash
+docker compose up --build
+alembic upgrade head
+pytest
+cd frontend && npm ci && npm run typecheck && npm run lint && npm test && npm run build
+celery -A app.worker.celery_app worker --loglevel=info
+celery -A app.worker.celery_app beat --loglevel=info
+```
+
+---
+
+## 12. Related Documents
+
+- [06-api-integration.md](./06-api-integration.md)
+- [08-implementation-roadmap.md](./08-implementation-roadmap.md)

@@ -1,4 +1,5 @@
 import { apiClient } from "@/services/api-client";
+import { normalizeDiscoveryResponse, type DiscoveryResponseRaw } from "../lib/normalize";
 import type {
   DiscoveryParams,
   DiscoveryResponse,
@@ -17,19 +18,22 @@ export async function discoverProducts(params: DiscoveryParams): Promise<Discove
       : mode === "general"
         ? "/products/discover"
         : `/products/discover/${mode}`;
-  const query: Record<string, string | number | undefined> = {
+  const query: Record<string, string | number | boolean | undefined> = {
     keywords: params.keywords,
     min_rating: params.min_rating,
     min_orders: params.min_orders,
     min_price: params.min_price,
     max_price: params.max_price,
     min_discount: params.min_discount,
+    shipping_country: params.shipping_country,
+    free_shipping: params.free_shipping || undefined,
+    choice_only: params.choice_only || undefined,
     sort: params.sort,
     page: params.page,
     page_size: params.page_size,
   };
-  const { data } = await apiClient.get<DiscoveryResponse>(path, { params: query });
-  return data;
+  const { data } = await apiClient.get<DiscoveryResponseRaw>(path, { params: query });
+  return normalizeDiscoveryResponse(data);
 }
 
 export async function importProduct(productId: string): Promise<ProductImportResponse> {

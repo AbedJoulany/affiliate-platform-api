@@ -24,7 +24,7 @@ export function DiscoverySelectionBar({
   if (count === 0) return null;
 
   return (
-    <div className="sticky bottom-4 z-30 mx-auto w-full max-w-5xl rounded-xl border border-border bg-surface/95 p-3 shadow-lg backdrop-blur">
+    <div className="sticky bottom-4 z-30 w-full rounded-xl border border-border bg-surface/95 p-3 shadow-lg backdrop-blur">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm font-medium">{count.toLocaleString("ar")} محدد</p>
         <div className="flex flex-wrap gap-2">

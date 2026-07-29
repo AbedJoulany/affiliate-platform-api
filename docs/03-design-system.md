@@ -1,898 +1,258 @@
-# Design System v1.0
+# Design System
 
-## AI Affiliate Automation Platform
-
-**Document Version:** 1.0
-**Last Updated:** 2026-07-17
+**Document Version:** 2.0  
+**Last Updated:** 2026-07-29
 
 ---
 
-# 1. Purpose
+## 1. Purpose
 
-The Design System defines the visual language, interaction patterns, and reusable UI principles of the AI Affiliate Automation Platform.
+Defines visual language, layout scales, density controls, status semantics, and feedback patterns for the AI Affiliate Automation Platform.
 
-Its purpose is to create a consistent, scalable, and professional user experience across all application modules.
-
-The design system should ensure that every page feels like part of the same product while allowing individual features to evolve independently.
+Design inspiration: Linear, Vercel, Stripe, Notion — clarity over decoration.
 
 ---
 
-# 2. Design Philosophy
+## 2. Core Principles
 
-The platform should feel like a modern SaaS workspace rather than a traditional administration dashboard.
-
-The main design inspiration comes from:
-
-* Linear
-* Vercel Dashboard
-* Stripe Dashboard
-* Notion
-* GitHub
-
-The interface should prioritize:
-
-* Clarity over decoration.
-* Productivity over complexity.
-* Information hierarchy.
-* Fast navigation.
-* Minimal cognitive load.
-* Consistent interactions.
+- **Minimalism** — subtle borders/shadows, generous whitespace
+- **Consistency** — same badge/button/table patterns across workspaces
+- **Hierarchy** — page purpose → primary actions → metrics → content
+- **Efficiency** — bulk actions, drawer flows, keyboard-friendly controls
 
 ---
 
-# 3. Core Design Principles
+## 3. Color System (Semantic Tokens)
 
-## 3.1 Minimalism
+Implemented via CSS variables in `globals.css`:
 
-The interface should avoid unnecessary visual elements.
+| Token | Usage |
+| --- | --- |
+| `--background` / `--foreground` | Page canvas |
+| `--surface` / `--surface-foreground` | Cards, drawers, panels |
+| `--primary` / `--primary-foreground` | Primary actions, score meters |
+| `--secondary` | Secondary buttons |
+| `--muted` / `--muted-foreground` | Hints, metadata |
+| `--border` | Dividers, table borders |
 
-Avoid:
-
-* Excessive borders.
-* Heavy shadows.
-* Too many colors.
-* Decorative elements without purpose.
-
-Prefer:
-
-* Clean spacing.
-* Clear typography.
-* Subtle visual hierarchy.
+All components must use semantic tokens — no hardcoded hex in feature code.
 
 ---
 
-## 3.2 Consistency
+## 4. Status Colors
 
-The same interaction should always look and behave the same way.
+### Product status (`ProductStatus`)
 
-Examples:
+| Value | Badge tone | Label (AR) |
+| --- | --- | --- |
+| `draft` | neutral | مسودة |
+| `active` | success | نشط |
+| `inactive` | warning | غير نشط |
+| `archived` | neutral | مؤرشف |
 
-* All primary actions use the same button style.
-* All statuses use consistent badges.
-* All tables follow the same structure.
-* All pages follow the same layout pattern.
+### Queue status (`QueueStatus`)
 
----
+| Value | Badge tone | Notes |
+| --- | --- | --- |
+| `draft` | neutral | Editable pre-publish |
+| `queued` | info | Ready for worker/API publish |
+| `scheduled` | warning | Requires `scheduled_at` |
+| `published` | success | Terminal success |
 
-## 3.3 Information Hierarchy
+**Important:** `failed` is **not** a backend queue status. Publish failures use error toasts, `QueueHealthBadge`, and client failure maps.
 
-Important information should be visually dominant.
+### Operational KPI tones (Queue workspace)
 
-Priority order:
+| KPI | Color intent |
+| --- | --- |
+| Queued / Scheduled | neutral/info borders on stat cards |
+| Publishing (in-flight) | primary accent |
+| Published today | success (`emerald`) |
+| Failed today | error (`red`) |
 
-1. Page purpose.
-2. Primary actions.
-3. Important metrics.
-4. Main content.
-5. Secondary information.
+### AI score quality bands
 
----
+| Score range | Tone | Label |
+| --- | --- | --- |
+| ≥ 85 | success | ممتاز |
+| ≥ 70 | info | إمكانية عالية |
+| ≥ 55 | warning | متوسط |
+| < 55 | neutral | يحتاج مراجعة |
 
-## 3.4 User Efficiency
+### Channel permission status
 
-The design should minimize the number of actions required to complete tasks.
-
-Examples:
-
-* Quick actions from dashboard.
-* Bulk operations.
-* Keyboard-friendly interactions.
-* Smart defaults.
-
----
-
-# 4. Visual Identity
-
-## Brand Personality
-
-The product should feel:
-
-* Intelligent.
-* Professional.
-* Reliable.
-* Modern.
-* Efficient.
-
-Avoid feeling:
-
-* Generic admin template.
-* Overly corporate.
-* Consumer shopping application.
+`unknown` · `pending` · `granted` · `partial` · `denied` — map to neutral/warning/success/error respectively.
 
 ---
 
-# 5. Color System
+## 5. Typography
 
-Colors should be implemented using CSS variables to support:
-
-* Light mode.
-* Dark mode.
-* Future customization.
-
----
-
-# 5.1 Semantic Colors
-
-## Background
-
-Used for:
-
-* Application background.
-* Page surfaces.
-
-Variables:
-
-```
---background
---foreground
-```
-
----
-
-## Surface
-
-Used for:
-
-* Cards.
-* Panels.
-* Dropdowns.
-* Modals.
-
-Variables:
-
-```
---surface
---surface-foreground
-```
-
----
-
-## Primary
-
-Used for:
-
-* Main actions.
-* Active states.
-* Important interactions.
-
-Examples:
-
-* Create Product.
-* Generate AI Content.
-* Publish.
-
-Variables:
-
-```
---primary
---primary-foreground
-```
-
----
-
-## Secondary
-
-Used for:
-
-* Secondary actions.
-* Supporting elements.
-
-Variables:
-
-```
---secondary
---secondary-foreground
-```
-
----
-
-## Muted
-
-Used for:
-
-* Secondary text.
-* Hints.
-* Disabled information.
-
-Variables:
-
-```
---muted
---muted-foreground
-```
-
----
-
-## Border
-
-Used for:
-
-* Dividers.
-* Input borders.
-* Table separators.
-
-Variable:
-
-```
---border
-```
-
----
-
-# 5.2 Status Colors
-
-## Success
-
-Used for:
-
-* Published.
-* Completed.
-* Connected.
-
----
-
-## Warning
-
-Used for:
-
-* Pending.
-* Attention required.
-
----
-
-## Error
-
-Used for:
-
-* Failed operations.
-* Validation errors.
-
----
-
-## Info
-
-Used for:
-
-* Informational messages.
-
----
-
-# 6. Typography
-
-Typography should provide clear hierarchy and readability.
-
-Current font stack:
+Current stack:
 
 ```css
 Arial, "Noto Sans Arabic", sans-serif
 ```
 
-Inter and IBM Plex Sans Arabic remain possible future brand typography; they are not
-currently loaded by the application.
+| Level | Usage |
+| --- | --- |
+| Page title | `text-2xl font-semibold` (PageHeader) |
+| Section title | `text-lg font-semibold` |
+| Body | `text-sm` |
+| Metadata | `text-xs text-muted-foreground` |
+| KPI values | `text-xl font-semibold tabular-nums` |
 
 ---
 
-# Typography Scale
+## 6. Spacing & Layout Scale
 
-## Display
+Base unit: **4px**
 
-Used for:
+Common gaps: `gap-2` (8px), `gap-3` (12px), `gap-4` (16px), `gap-5` (20px)
 
-* Landing pages.
-* Major metrics.
+Page padding via `PageContainer`: responsive horizontal padding, max-width content.
 
----
-
-## Heading 1
-
-Used for:
-
-* Page titles.
-
-Example:
-
-```
-Products
-```
+Border radius: `rounded-lg` (cards, drawers), `rounded-md` (buttons, inputs), `rounded-xl` (dialogs).
 
 ---
 
-## Heading 2
+## 7. Density Controls
 
-Used for:
+Workspace tables support **`comfortable`** and **`compact`** density modes:
 
-* Section titles.
+| Mode | Row padding | Use case |
+| --- | --- | --- |
+| `comfortable` | `py-3` / larger touch targets | Default, review workflows |
+| `compact` | `py-1.5` / tighter text | High-volume scanning |
 
----
+Implemented in:
 
-## Heading 3
+- `ProductsToolbar` / `ProductsTable`
+- `QueueToolbar` / `QueueTable`
+- `DiscoveryResultsToolbar` (via `DiscoveryUiPrefs`)
 
-Used for:
-
-* Card titles.
-
----
-
-## Body
-
-Used for:
-
-* General content.
+Column visibility toggles persist in discovery UI prefs; products inventory uses in-session state.
 
 ---
 
-## Small
+## 8. Workspace Layout Pattern
 
-Used for:
-
-* Metadata.
-* Labels.
-
----
-
-## Caption
-
-Used for:
-
-* Supporting information.
-
----
-
-# 7. Spacing System
-
-Use a consistent spacing scale.
-
-Base unit:
-
-```
-4px
-```
-
-Scale:
-
-```
-4
-8
-12
-16
-20
-24
-32
-40
-48
-64
-```
-
-Usage:
-
-```
-4px
-Small gaps
-
-16px
-Component spacing
-
-24px
-Section spacing
-
-32px+
-Page-level spacing
+```text
+PageContainer
+  PageHeader (title, description, actions)
+  Optional KPI strip (QueueOperationalStats, DiscoveryStats)
+  Toolbar (search, filters, density, export)
+  Selection bar (bulk actions — when items selected)
+  Primary content (table / workspace panels)
+  Overlay layer (Drawer, Dialog, ToastOverlay, Popover)
 ```
 
 ---
 
-# 8. Border Radius
+## 9. Tables
 
-Rounded corners should be subtle and modern.
+Feature-local responsive tables (not yet a shared `DataTable`):
 
-Values:
-
-```
-sm: 6px
-
-md: 8px
-
-lg: 12px
-
-xl: 16px
-```
-
-Usage:
-
-Buttons:
-
-```
-md
-```
-
-Cards:
-
-```
-lg
-```
-
-Modals:
-
-```
-xl
-```
+- Sticky header on scroll
+- Checkbox column for bulk select
+- Row hover + click → drawer
+- Empty/loading via shared states
+- Pagination: server (products API) or client slice (queue/discovery)
 
 ---
 
-# 9. Shadows
+## 10. Drawer & Overlay Rules
 
-Shadows should be minimal.
+**Drawer** (`Drawer` primitive):
 
-Usage:
+- Width: `max-w-xl` typical; advanced filters may be wider
+- Footer: primary + secondary actions, full-width on mobile
+- Backdrop click closes; focus trap recommended (future a11y pass)
 
-## Small
+**Popover** (score breakdown):
 
-Dropdowns.
+- Anchored to score cell button
+- Compact `ProductScoreBreakdown` variant
+- Click outside closes
 
-## Medium
+**Dialog** (`ConfirmDialog`, `QueueSchedulingDialog`, AI `ResetStudioDialog`):
 
-Cards requiring elevation.
-
-## Large
-
-Dialogs and overlays.
-
-Avoid heavy shadows.
-
----
-
-# 10. Layout System
-
-The application uses a workspace layout.
-
-```
-Application
-
-├── Sidebar
-│
-├── Header
-│
-└── Main Content
-```
+- Centered modal, `z-50`
+- Destructive actions use danger button variant
 
 ---
 
-# Page Layout Pattern
+## 11. Toast Notification Rules
 
-Every page should follow:
+### Current implementation: `ToastOverlay`
 
-```
-Page Container
+Custom component at `components/common/ToastOverlay.tsx` — **not** `sonner` or `react-hot-toast` (neither is installed).
 
-    Page Header
+| Property | Value |
+| --- | --- |
+| Position | Fixed bottom-center (`bottom-5`, `z-[70]`) |
+| Duration | 3500ms default, auto-dismiss |
+| Tones | `success` (emerald border) · `error` (red border) |
+| ARIA | `role="status"` or `role="alert"` |
+| Dismiss | Manual close button |
 
-        Title
+**When to use toasts:**
 
-        Description
+- Bulk product delete success/failure
+- Queue publish/schedule/delete outcomes
+- Export completed
 
-        Actions
+**When to use inline alerts:**
 
+- Discovery run errors (persistent until next run)
+- AI generation errors in studio
+- Form validation messages
 
-    Main Content
+### Future: library toast
 
-        Sections
+If adopting `sonner` or `react-hot-toast`:
 
-        Cards
-
-        Tables
-```
-
----
-
-# 11. Components Principles
-
-All components should:
-
-* Be reusable.
-* Support loading states.
-* Support disabled states.
-* Support accessibility.
-* Have predictable APIs.
+- Single provider in `app/providers.tsx`
+- Max 3 visible; queue subsequent
+- Never duplicate inline + toast for the same error
+- Match semantic success/error colors above
 
 ---
 
-# 12. Component Categories
+## 12. Forms & Validation
 
-## UI Components
-
-Location:
-
-```
-components/ui
-```
-
-Examples:
-
-* Button.
-* Input.
-* Select.
-* Card.
-* Badge.
-* Dialog.
+- Labels above inputs, helper text in `text-muted-foreground`
+- Inline Zod errors in discovery filter panel
+- Datetime inputs use `datetime-local` in scheduling dialog
+- Loading state on submit buttons via `loading` prop
 
 ---
 
-## Layout Components
+## 13. Loading & Empty States
 
-Location:
+Prefer **skeleton** loading (`Skeleton` primitive) over full-page spinners.
 
-```
-components/layout
-```
-
-Examples:
-
-* Sidebar.
-* Header.
-* PageContainer.
-* Navigation.
+Every list workspace requires `EmptyState` with a primary action (e.g., "ابدأ الاكتشاف").
 
 ---
 
-## Feature Components
+## 14. Dark Mode & RTL
 
-Location:
-
-```
-features/[feature]/components
-```
-
-Examples:
-
-```
-ProductCard
-
-QueueItem
-
-ChannelCard
-```
+- `next-themes` class strategy on `<html>`
+- Mirror layout for RTL; icons that imply direction should flip where meaningful
+- Score meters and badges must remain readable in both themes
 
 ---
 
-# 13. Buttons
+## 15. Accessibility Targets
 
-Buttons represent actions.
-
-## Primary
-
-Used for:
-
-* Main action.
-
-Examples:
-
-* Create.
-* Generate.
-* Publish.
+- Visible focus rings on interactive elements
+- `aria-label` on icon-only buttons (Arabic labels)
+- Drawer/dialog: `aria-modal`, labelled titles
+- Table headers associated with sortable columns where applicable
 
 ---
 
-## Secondary
+## 16. Related Documents
 
-Used for:
-
-* Supporting actions.
-
----
-
-## Ghost
-
-Used for:
-
-* Low emphasis actions.
-
----
-
-## Danger
-
-Used for:
-
-* Destructive actions.
-
-Examples:
-
-* Delete.
-
----
-
-# 14. Cards
-
-Cards are used to group related information.
-
-Types:
-
-## Stat Card
-
-Used for:
-
-* Dashboard metrics.
-
-Example:
-
-```
-Products Imported
-
-245
-```
-
----
-
-## Content Card
-
-Used for:
-
-* Product information.
-* AI content.
-
----
-
-## Action Card
-
-Used for:
-
-* Quick actions.
-
----
-
-# 15. Tables
-
-Tables are a core component of the platform.
-
-Current implementation: product and queue views render feature-local responsive HTML
-tables. They support the controls needed by those screens, but there is no shared
-`DataTable` component.
-
-Target shared table behavior:
-
-* Search.
-* Filtering.
-* Sorting.
-* Pagination.
-* Loading.
-* Empty state.
-* Row actions.
-* Bulk actions.
-
----
-
-# 16. Status System
-
-Statuses should always use badges.
-
-Examples:
-
-Product:
-
-```
-draft
-active
-inactive
-archived
-```
-
-Queue:
-
-```
-draft
-queued
-scheduled
-published
-```
-
-Queue badges must use these exact values from the backend `QueueStatus` enum. A publishing failure is shown as operation feedback, not as a queue status.
-Product badges must use the exact backend `ProductStatus` values above.
-
----
-
-# 17. Forms
-
-Forms should follow:
-
-* Clear labels.
-* Helpful descriptions.
-* Inline validation.
-* Consistent spacing.
-
-Required:
-
-* Loading state.
-* Error handling.
-* Success feedback.
-
----
-
-# 18. Feedback Patterns
-
-## Toast
-
-Used for:
-
-* Short notifications.
-
-Examples:
-
-"Product imported successfully"
-
----
-
-Current implementation uses inline `role="alert"` / `role="status"` messages for mutation
-feedback. A reusable toast system is future work.
-
-## Dialog
-
-Used for:
-
-* Confirmation.
-* Important decisions.
-
----
-
-## Empty State
-
-Every empty page needs:
-
-* Explanation.
-* Helpful action.
-
----
-
-# 19. Loading Patterns
-
-Preferred:
-
-* Skeleton loading.
-
-Avoid:
-
-* Full-page spinners whenever possible.
-
-Examples:
-
-* Table skeleton.
-* Card skeleton.
-* Content skeleton.
-
----
-
-# 20. Dark Mode
-
-Dark mode is a first-class feature.
-
-Requirements:
-
-* All components support dark mode.
-* No hardcoded colors.
-* Use semantic variables.
-
----
-
-# 21. Responsive Design
-
-The application should support:
-
-Desktop:
-
-Primary experience.
-
-Tablet:
-
-Supported.
-
-Mobile:
-
-Basic usability.
-
----
-
-# 22. RTL Support
-
-Arabic is a primary content language.
-
-Requirements:
-
-* Layout mirroring.
-* Correct text alignment.
-* RTL-aware components.
-* Icon positioning awareness.
-
----
-
-# 23. Accessibility
-
-All components should follow accessibility best practices:
-
-* Keyboard navigation.
-* Proper labels.
-* Focus states.
-* Screen reader compatibility.
-* Sufficient contrast.
-
----
-
-# 24. Animation Guidelines
-
-Animations should be subtle.
-
-Use for:
-
-* Page transitions.
-* Hover states.
-* Loading feedback.
-
-Avoid:
-
-* Excessive motion.
-* Distracting animations.
-
----
-
-# 25. Future Expansion
-
-The design system should support future:
-
-* Multiple themes.
-* White labeling.
-* Workspace customization.
-* Additional platforms.
-* Additional languages.
-
----
-
-# Design System Summary
-
-The AI Affiliate Automation Platform design system follows these principles:
-
-```
-Modern SaaS Experience
-
-+
-
-Minimal Interface
-
-+
-
-Reusable Components
-
-+
-
-Consistent Patterns
-
-+
-
-RTL Ready
-
-+
-
-Dark Mode Ready
-
-+
-
-AI Development Friendly
-```
-
-The goal is to create an interface that feels like a professional automation platform, not a traditional admin panel.
+- [04-component-library.md](./04-component-library.md) — Component inventory
+- [07-development-guidelines.md](./07-development-guidelines.md) — Implementation rules

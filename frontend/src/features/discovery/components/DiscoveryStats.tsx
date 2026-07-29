@@ -1,6 +1,5 @@
 "use client";
 
-import { Card } from "@/components/ui/primitives";
 import type { DiscoveryRunStatus } from "../types/api";
 
 const statusLabel: Record<DiscoveryRunStatus, string> = {
@@ -10,6 +9,7 @@ const statusLabel: Record<DiscoveryRunStatus, string> = {
   error: "فشل",
 };
 
+/** Compact KPI strip for header/toolbar — not large dashboard cards. */
 export function DiscoveryStats({
   totalDiscovered,
   lastRunStatus,
@@ -21,21 +21,25 @@ export function DiscoveryStats({
   pendingReview: number;
   importedCount: number;
 }) {
-  const stats = [
-    { label: "إجمالي المكتشف", value: totalDiscovered.toLocaleString("ar") },
-    { label: "حالة آخر تشغيل", value: statusLabel[lastRunStatus] },
+  const items = [
+    { label: "مكتشف", value: totalDiscovered.toLocaleString("ar") },
+    { label: "آخر تشغيل", value: statusLabel[lastRunStatus] },
     { label: "بانتظار المراجعة", value: pendingReview.toLocaleString("ar") },
-    { label: "تم الاستيراد", value: importedCount.toLocaleString("ar") },
+    { label: "مستورد", value: importedCount.toLocaleString("ar") },
   ] as const;
 
   return (
-    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="ملخص الاكتشاف">
-      {stats.map((stat) => (
-        <Card key={stat.label} className="p-4">
-          <p className="text-xs text-muted-foreground">{stat.label}</p>
-          <p className="mt-1 text-xl font-semibold tabular-nums">{stat.value}</p>
-        </Card>
+    <div
+      className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm"
+      aria-label="ملخص الاكتشاف"
+    >
+      {items.map((item, index) => (
+        <div key={item.label} className="flex items-center gap-2">
+          {index > 0 ? <span className="hidden text-border sm:inline" aria-hidden>|</span> : null}
+          <span className="text-xs text-muted-foreground">{item.label}</span>
+          <span className="font-semibold tabular-nums">{item.value}</span>
+        </div>
       ))}
-    </section>
+    </div>
   );
 }

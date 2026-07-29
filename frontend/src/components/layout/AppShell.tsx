@@ -29,7 +29,7 @@ const navigation = [
   { label: "لوحة التحكم", href: "/dashboard", icon: LayoutDashboard },
   { label: "المنتجات", href: "/products", icon: Package },
   { label: "الاكتشاف", href: "/discovery", icon: Compass },
-  { label: "استوديو الذكاء", href: "/ai", icon: BrainCircuit },
+  { label: "محتوى التسويق", href: "/ai", icon: BrainCircuit },
   { label: "قائمة النشر", href: "/queue", icon: Radio },
   { label: "القنوات", href: "/channels", icon: Bot },
   { label: "الإعدادات", href: "/settings", icon: Settings },

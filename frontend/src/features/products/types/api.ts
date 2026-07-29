@@ -40,3 +40,26 @@ export interface ProductListParams {
   skip?: number;
   limit?: number;
 }
+
+export interface ProductUpdate {
+  status?: ProductStatus;
+}
+
+export type ProductTableDensity = "comfortable" | "compact";
+
+export type ProductTableColumn =
+  | "product"
+  | "price"
+  | "rating"
+  | "sales"
+  | "score"
+  | "status"
+  | "actions";
+
+export type ProductSort =
+  | "newest"
+  | "score_desc"
+  | "sales_desc"
+  | "rating_desc"
+  | "price_asc"
+  | "price_desc";

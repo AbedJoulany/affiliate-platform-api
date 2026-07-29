@@ -1,81 +1,305 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Search } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { EmptyState, ErrorState, LoadingState } from "@/components/common/states";
+import { ToastOverlay } from "@/components/common/ToastOverlay";
 import { PageContainer, PageHeader } from "@/components/layout/page";
-import { Badge, Button, Card, Input, Select } from "@/components/ui/primitives";
-import { formatMoney } from "@/lib/utils";
-import { useProducts } from "../hooks/useProducts";
-import type { ProductStatus } from "../types/api";
-
-const PAGE_SIZE = 20;
+import { Button } from "@/components/ui/primitives";
+import { useCurrentUser } from "@/features/auth/hooks/useAuth";
+import { useCreateQueueItem, useQueue } from "@/features/queue/hooks/useQueue";
+import { exportProductsCsv } from "../lib/export";
+import { getProductPipelineState, indexQueueByProduct } from "../lib/inventory";
+import {
+  useDeleteProduct,
+  useProductInventoryState,
+  useProducts,
+  useUpdateProduct,
+} from "../hooks/useProducts";
+import type { Product, ProductStatus } from "../types/api";
+import { DeleteProductsDialog } from "./DeleteProductsDialog";
+import { ProductDetailsDrawer } from "./ProductDetailsDrawer";
+import { ProductsSelectionBar } from "./ProductsSelectionBar";
+import { ProductsTable } from "./ProductsTable";
+import { ProductsToolbar } from "./ProductsToolbar";
 
 export function ProductsView() {
-  const [search, setSearch] = useState("");
+  const router = useRouter();
+  const currentUser = useCurrentUser();
   const [status, setStatus] = useState<ProductStatus | "">("");
   const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(25);
+  const [activeProduct, setActiveProduct] = useState<Product | null>(null);
+  const [deleteTargets, setDeleteTargets] = useState<Product[]>([]);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
+
   const products = useProducts({
-    title: search || undefined,
     status: status || undefined,
-    skip: page * PAGE_SIZE,
-    limit: PAGE_SIZE,
+    skip: page * pageSize,
+    limit: pageSize,
   });
+  const queue = useQueue(undefined, 200);
+  const updateProduct = useUpdateProduct();
+  const deleteProduct = useDeleteProduct();
+  const createQueue = useCreateQueueItem();
+  const items = products.data?.items ?? [];
+  const inventory = useProductInventoryState(items);
+  const canManage = currentUser.data?.role === "admin";
+  const queueIndex = useMemo(
+    () => indexQueueByProduct(queue.data?.items ?? []),
+    [queue.data?.items],
+  );
+  const busy =
+    updateProduct.isPending || deleteProduct.isPending || createQueue.isPending;
+
+  const activePipelineState = activeProduct
+    ? getProductPipelineState(activeProduct, queueIndex)
+    : null;
+
+  const sendToAi = (product: Product) => {
+    router.push(`/ai?product=${encodeURIComponent(product.id)}`);
+  };
+
+  const addProductsToQueue = async (selected: Product[]) => {
+    if (selected.length === 0) return;
+    setActionError(null);
+    try {
+      for (const product of selected) {
+        await createQueue.mutateAsync({
+          title: product.title,
+          content: [product.title, product.description, product.affiliate_url ?? product.product_url]
+            .filter(Boolean)
+            .join("\n\n"),
+          status: "queued",
+          product_id: product.id,
+          image_url: product.image_url || undefined,
+          button_text: "اشتري الآن",
+          button_url: product.affiliate_url ?? product.product_url,
+        });
+      }
+      setActionMessage(
+        `تمت إضافة ${selected.length.toLocaleString("ar")} منتج إلى قائمة النشر.`,
+      );
+      inventory.clearSelection();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "تعذر إضافة المنتجات إلى القائمة.");
+    }
+  };
+
+  const changeSelectedStatus = async (nextStatus: ProductStatus) => {
+    setActionError(null);
+    try {
+      for (const product of inventory.selectedProducts) {
+        await updateProduct.mutateAsync({ id: product.id, status: nextStatus });
+      }
+      setActionMessage("تم تحديث حالة المنتجات المحددة.");
+      inventory.clearSelection();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "تعذر تحديث الحالة.");
+    }
+  };
+
+  const confirmDelete = async () => {
+    setActionError(null);
+    try {
+      for (const product of deleteTargets) {
+        await deleteProduct.mutateAsync(product.id);
+      }
+      setActionMessage(
+        `تم حذف ${deleteTargets.length.toLocaleString("ar")} منتج من المخزون.`,
+      );
+      if (deleteTargets.some((product) => product.id === activeProduct?.id)) {
+        setActiveProduct(null);
+      }
+      inventory.clearSelection();
+      setDeleteTargets([]);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "تعذر حذف المنتجات.");
+    }
+  };
+
+  const hasSearch = inventory.clientSearch.trim().length > 0;
+  const isEmptyInventory = !products.isPending && !products.isError && items.length === 0 && !status;
+  const isFilteredEmpty =
+    !products.isPending &&
+    !products.isError &&
+    (inventory.filteredItems.length === 0 || (items.length === 0 && Boolean(status)));
 
   return (
-    <PageContainer>
-      <PageHeader title="المنتجات" description="راجع المنتجات المستوردة وجهّزها للنشر." />
-      <Card className="mb-5 grid gap-3 sm:grid-cols-[1fr_200px]">
-        <label className="relative">
-          <span className="sr-only">البحث في المنتجات</span>
-          <Search className="absolute right-3 top-3 size-4 text-muted-foreground" aria-hidden />
-          <Input className="pr-9" value={search} onChange={(event) => { setSearch(event.target.value); setPage(0); }} placeholder="ابحث بالعنوان..." />
-        </label>
-        <Select aria-label="تصفية حسب الحالة" value={status} onChange={(event) => { setStatus(event.target.value as ProductStatus | ""); setPage(0); }}>
-          <option value="">كل الحالات</option>
-          <option value="draft">مسودة</option>
-          <option value="active">نشط</option>
-          <option value="inactive">غير نشط</option>
-          <option value="archived">مؤرشف</option>
-        </Select>
-      </Card>
-      {products.isPending ? (
-        <LoadingState />
-      ) : products.isError ? (
-        <ErrorState onRetry={() => void products.refetch()} />
-      ) : products.data.items.length === 0 ? (
-        <EmptyState title="لا توجد منتجات" description="ابدأ من صفحة الاكتشاف لاستيراد أول منتج." action={<Link href="/discovery"><Button>بدء الاكتشاف</Button></Link>} />
-      ) : (
-        <>
-          <div className="overflow-x-auto rounded-lg border border-border bg-surface">
-            <table className="w-full min-w-[760px] text-sm">
-              <thead className="bg-muted/60 text-right text-muted-foreground">
-                <tr><th className="p-3">المنتج</th><th className="p-3">السعر</th><th className="p-3">التقييم</th><th className="p-3">النتيجة</th><th className="p-3">الحالة</th><th className="p-3">الإجراء</th></tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {products.data.items.map((product) => (
-                  <tr key={product.id}>
-                    <td className="max-w-sm p-3 font-medium">{product.title}</td>
-                    <td className="p-3">{formatMoney(product.price, product.currency)}</td>
-                    <td className="p-3">{product.rating} / 5</td>
-                    <td className="p-3">{product.score}</td>
-                    <td className="p-3"><Badge tone={product.status === "active" ? "success" : "neutral"}>{product.status}</Badge></td>
-                    <td className="p-3"><Link className="font-medium text-primary hover:underline" href={`/products/${product.id}`}>عرض التفاصيل</Link></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="mt-4 flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">{products.data.total} منتج</p>
-            <div className="flex gap-2">
-              <Button variant="outline" disabled={page === 0} onClick={() => setPage((value) => value - 1)}>السابق</Button>
-              <Button variant="outline" disabled={(page + 1) * PAGE_SIZE >= products.data.total} onClick={() => setPage((value) => value + 1)}>التالي</Button>
+    <PageContainer wide>
+      <PageHeader
+        title="مخزون المنتجات"
+        description="راجع المنتجات المستوردة ونظّم انتقالها إلى المحتوى وقائمة النشر."
+        actions={
+          <Link href="/discovery">
+            <Button variant="outline">استيراد من الاكتشاف</Button>
+          </Link>
+        }
+      />
+
+      <div className="mt-4 space-y-4">
+        <ProductsToolbar
+          search={inventory.clientSearch}
+          status={status}
+          sort={inventory.sort}
+          density={inventory.tableDensity}
+          visibleColumns={inventory.visibleColumns}
+          pageSize={pageSize}
+          productCount={products.data?.total ?? 0}
+          refreshing={products.isFetching}
+          onSearchChange={(value) => {
+            inventory.setClientSearch(value);
+            inventory.clearSelection();
+          }}
+          onStatusChange={(value) => {
+            setStatus(value);
+            setPage(0);
+            inventory.clearSelection();
+          }}
+          onSortChange={inventory.setSort}
+          onDensityChange={inventory.setTableDensity}
+          onToggleColumn={inventory.toggleColumn}
+          onPageSizeChange={(value) => {
+            setPageSize(value);
+            setPage(0);
+            inventory.clearSelection();
+          }}
+          onRefresh={() => {
+            void products.refetch();
+            void queue.refetch();
+          }}
+        />
+
+        {products.isPending ? (
+          <LoadingState rows={8} />
+        ) : products.isError ? (
+          <ErrorState
+            message="تعذر تحميل مخزون المنتجات."
+            onRetry={() => void products.refetch()}
+          />
+        ) : isEmptyInventory ? (
+          <EmptyState
+            title="مخزون المنتجات فارغ"
+            description="ابدأ من مساحة الاكتشاف، راجع المنتجات المرشحة، ثم استورد المناسب منها إلى المخزون."
+            action={
+              <Link href="/discovery">
+                <Button>بدء الاكتشاف</Button>
+              </Link>
+            }
+          />
+        ) : isFilteredEmpty ? (
+          <EmptyState
+            title={hasSearch ? "لا توجد نتائج للبحث" : "لا توجد منتجات بهذه الحالة"}
+            description={
+              hasSearch
+                ? "جرّب عنوانًا أو فئة أو متجرًا أو SKU مختلفًا، أو امسح البحث."
+                : "غيّر تصفية الحالة لعرض بقية منتجات المخزون."
+            }
+            action={
+              <Button
+                variant="outline"
+                onClick={() => {
+                  inventory.setClientSearch("");
+                  setStatus("");
+                  setPage(0);
+                }}
+              >
+                مسح عوامل التصفية
+              </Button>
+            }
+          />
+        ) : (
+          <>
+            <ProductsTable
+              items={inventory.filteredItems}
+              selectedProductIds={inventory.selectedProductIds}
+              allSelected={inventory.allVisibleSelected}
+              density={inventory.tableDensity}
+              visibleColumns={inventory.visibleColumns}
+              queueIndex={queueIndex}
+              canManage={canManage}
+              onToggle={inventory.toggle}
+              onToggleAll={inventory.toggleAll}
+              onPreview={setActiveProduct}
+              onGenerate={sendToAi}
+              onDelete={(product) => setDeleteTargets([product])}
+            />
+
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-muted-foreground">
+                عرض {(page * pageSize + 1).toLocaleString("ar")}–
+                {Math.min((page + 1) * pageSize, products.data.total).toLocaleString("ar")} من{" "}
+                {products.data.total.toLocaleString("ar")}
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  disabled={page === 0}
+                  onClick={() => {
+                    setPage((value) => value - 1);
+                    inventory.clearSelection();
+                  }}
+                >
+                  السابق
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={(page + 1) * pageSize >= products.data.total}
+                  onClick={() => {
+                    setPage((value) => value + 1);
+                    inventory.clearSelection();
+                  }}
+                >
+                  التالي
+                </Button>
+              </div>
             </div>
-          </div>
-        </>
-      )}
+          </>
+        )}
+
+        <ProductsSelectionBar
+          count={inventory.selectedProductIds.length}
+          busy={busy}
+          canManage={canManage}
+          onClear={inventory.clearSelection}
+          onDelete={() => setDeleteTargets(inventory.selectedProducts)}
+          onChangeStatus={(nextStatus) => void changeSelectedStatus(nextStatus)}
+          onSendToAi={() => {
+            const product = inventory.selectedProducts[0];
+            if (product) sendToAi(product);
+          }}
+          onMoveToQueue={() => void addProductsToQueue(inventory.selectedProducts)}
+          onExport={() => exportProductsCsv(inventory.selectedProducts)}
+        />
+      </div>
+
+      <ProductDetailsDrawer
+        product={activeProduct}
+        pipelineState={activePipelineState}
+        open={activeProduct != null}
+        onClose={() => setActiveProduct(null)}
+        onGenerateContent={sendToAi}
+        onAddToQueue={(product) => void addProductsToQueue([product])}
+      />
+
+      <DeleteProductsDialog
+        count={deleteTargets.length}
+        open={deleteTargets.length > 0}
+        busy={deleteProduct.isPending}
+        onCancel={() => setDeleteTargets([])}
+        onConfirm={() => void confirmDelete()}
+      />
+
+      <ToastOverlay
+        message={actionError ?? actionMessage}
+        tone={actionError ? "error" : "success"}
+        onDismiss={() => {
+          setActionError(null);
+          setActionMessage(null);
+        }}
+      />
     </PageContainer>
   );
 }

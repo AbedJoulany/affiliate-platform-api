@@ -1,9 +1,7 @@
-# Development Guidelines v1.0
+# Development Guidelines
 
-## AI Affiliate Automation Platform
-
-**Document Version:** 1.0
-**Last Updated:** 2026-07-17
+**Document Version:** 2.0  
+**Last Updated:** 2026-07-29
 
 ---
 
@@ -68,7 +66,51 @@ Ask:
 
 ---
 
-# 3. AI-Assisted Development Guidelines
+# 3. Drawer & Overlay Guidelines
+
+Workspace detail flows use the shared `Drawer` primitive — do not create parallel slide-over implementations.
+
+Rules:
+
+- Row click opens drawer; action buttons/checkboxes call `stopPropagation`
+- Drawer receives entity from list query when possible; refetch single resource only when stale
+- Destructive actions use `ConfirmDialog`, not drawer footers alone
+- One drawer open at a time per workspace view
+- Score detail uses `Popover` (`ProductAiScoreCell`), not a drawer
+
+Scheduling and delete flows use centered dialogs (`QueueSchedulingDialog`, `DeleteProductsDialog`).
+
+---
+
+# 4. Form & Schema Validation
+
+Inline edits in drawers and filter panels must use Zod schemas colocated with the feature:
+
+- Discovery: `validateDiscoveryDraft` in `DiscoveryFilterPanel`
+- Queue schedule: validate `scheduled_at` + `channel_id` before `PATCH /queues/{id}`
+- AI generation: build payload via `useContentSession.buildGeneratePayload()` — enums must match `app/schemas/ai_content.py`
+
+Synchronize frontend unions in `features/*/types/api.ts` when backend enums change.
+
+Use React Hook Form for multi-field forms; Zod `.safeParse` for toolbar/filter drafts.
+
+---
+
+# 5. AI Agent Guardrails (Cursor)
+
+AI coding assistants must:
+
+1. Read `/docs` before generating code — especially `06-api-integration.md`
+2. Extend existing feature components; never recreate deleted views (e.g., `AIStudioView` → `ContentWorkspaceView`)
+3. Not install libraries (`sonner`, shadcn, Zustand) without explicit approval
+4. Not claim features are connected unless the API module + hook exist
+5. Keep Arabic RTL labels on user-facing controls
+6. Use `ToastOverlay` for transient success/error — do not add duplicate toast libraries
+7. Match backend queue/product status strings exactly — no invented `failed` queue status
+
+---
+
+# 6. AI-Assisted Development Guidelines
 
 Because Cursor is part of the development workflow, the project must remain AI-friendly.
 
