@@ -36,8 +36,18 @@ class AIProviderError(ServiceError):
 
 
 class TelegramPublishError(ServiceError):
-    def __init__(self, message: str) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        http_status: int | None = None,
+        telegram_error_code: int | str | None = None,
+        retry_after: float | int | None = None,
+    ) -> None:
         super().__init__(message, status_code=502)
+        self.http_status = http_status
+        self.telegram_error_code = telegram_error_code
+        self.retry_after = retry_after
 
 
 class AliExpressAPIError(ServiceError):

@@ -116,7 +116,7 @@ Status definitions:
 | `POST /products/import-url` | — | Backend only | URL import not in UI |
 | `GET /aliexpress/categories` | `categories.api.ts` | Connected | Category picker |
 | `POST /aliexpress/import` | — | Backend only | Duplicate of `/products/import` |
-| Discovery session persistence | `discovery/lib/session.ts` | Client-side | Filters/UI prefs in `localStorage` |
+| Discovery session persistence | `discovery/lib/session.ts` | Client-side | Filters/UI prefs in `sessionStorage` |
 | Score breakdown display | `lib/product-score.ts` | Partial | Uses server `score`; breakdown fallback if no `score_breakdown` |
 | `persist=true` on discover | — | Pending backend UI | API supports; UI does not expose toggle |
 
@@ -125,7 +125,7 @@ Status definitions:
 | Endpoint | Frontend module | Status | Types / notes |
 | --- | --- | --- | --- |
 | `POST /ai-content/generate` | `ai.api.ts` | Connected | Extended request: `content_type`, `tone`, `language`, `length`, `instruction_modifiers` |
-| Variant session | `useContentSession` | Client-side | Variants, edits in `localStorage` — not persisted server-side |
+| Variant session | `useContentSession` | Client-side | Variants, edits in `sessionStorage` — not persisted server-side |
 | Content quality scores | `ai/lib/scores.ts` | Client-side | Heuristic scoring for UI badges |
 | Prompt profiles / history API | — | Pending backend | No save/list endpoints |
 

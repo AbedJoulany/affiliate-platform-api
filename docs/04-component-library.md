@@ -148,8 +148,8 @@ Interactive score cell with:
 | `VariantCompareDialog` | Implemented | Side-by-side variant diff |
 | `DistributionHub` | Implemented | Queue draft + publish shortcuts |
 | `ResetStudioDialog` | Implemented | Clear session confirmation |
-| `PromptProfileSelector` | Partial | Tone/type cover profiles; no server persistence |
-| `GenerationStatus` | Partial | Inline pending/error in workspace |
+
+`ToneMatrix` and `ContentTypeScroller` cover tone/type profile selection; there is no separate `PromptProfileSelector` component and no server-side profile persistence. Generation pending/error feedback is inline state in `ContentWorkspaceView` (`generation.isPending` / `generation.isError`), not a dedicated `GenerationStatus` component.
 
 ---
 

@@ -13,6 +13,7 @@ from app.schemas.queue import (
     PublishQueueResponse,
     QueueCreate,
     QueueListResponse,
+    QueuePublishAttemptListResponse,
     QueueRead,
     QueueUpdate,
 )
@@ -45,14 +46,32 @@ async def list_queue_items(
     return await QueueService(db).list_items(status=status, skip=skip, limit=limit)
 
 
+@router.get("/{queue_id}/attempts", response_model=QueuePublishAttemptListResponse)
+async def list_queue_publish_attempts(
+    queue_id: UUID,
+    _: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> QueuePublishAttemptListResponse:
+    """Return Telegram publish attempt history for a queue item, newest first.
+
+    Attempt ``status`` values are attempt-scoped (started/succeeded/failed) and are
+    not QueueStatus values. Idempotency-suppressed publishes do not create attempt
+    rows; those are surfaced as HTTP 409 from ``POST /queues/{id}/publish``.
+    """
+    try:
+        return await QueueService(db).list_publish_attempts(queue_id)
+    except ServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
 @router.get("/{queue_id}", response_model=QueueRead)
 async def get_queue_item(
     queue_id: UUID,
     _: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> QueueItem:
+) -> QueueRead:
     try:
-        return await QueueService(db).get(queue_id)
+        return await QueueService(db).get_read(queue_id)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
@@ -76,6 +95,12 @@ async def publish_queue_item(
     _: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> PublishQueueResponse:
+    """Publish a queue item to Telegram.
+
+    Idempotency-guard suppressions and other conflicts raise HTTP 409 with
+    ``detail`` set to the ConflictError message. No attempt row is created when
+    the guard suppresses a duplicate publish.
+    """
     try:
         return await QueueService(db).publish(queue_id)
     except ServiceError as exc:

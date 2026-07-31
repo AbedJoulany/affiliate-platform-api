@@ -69,7 +69,7 @@ Reuse: DiscoveryView, DiscoveryResultsTable, DiscoveryProductInspector,
 DiscoveryAiScoreCell → ProductAiScoreCell, DiscoveryAdvancedFiltersDrawer
 
 API: GET /products/discover* via discovery.api.ts
-Session: useDiscoverySession (localStorage)
+Session: useDiscoverySession (sessionStorage)
 
 Do not mock discovery results. Validate filters with Zod before run.
 Score popover uses ProductScoreBreakdown — do not duplicate.
@@ -114,7 +114,7 @@ ToneMatrix, RichDocumentCanvas, VariantTabs, DistributionHub
 
 API: POST /ai-content/generate with content_type, tone, language, length, instruction_modifiers
 
-Variants persist in localStorage only — do not claim server history unless API exists.
+Variants persist in sessionStorage only — do not claim server history unless API exists.
 Sync GenerateContentInput with app/schemas/ai_content.py.
 ```
 

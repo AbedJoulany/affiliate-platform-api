@@ -85,7 +85,7 @@ Hooks and API types are **feature-local**. There is no top-level `hooks/` or `ty
 | Piece | Role |
 | --- | --- |
 | `DiscoveryView` | Orchestrates intent tabs, filter bar, results table, selection bar |
-| `useDiscoverySession` | Persists draft/committed filters + UI prefs to `localStorage` |
+| `useDiscoverySession` | Persists draft/committed filters + UI prefs to `sessionStorage` |
 | `useDiscoveryQuery` | TanStack Query → `GET /products/discover*` |
 | `DiscoveryProductInspector` | Slide-over drawer: score, images, import/AI/queue actions |
 | `DiscoveryAdvancedFiltersDrawer` | Extended filters (price, orders, shipping, sort) |
@@ -110,7 +110,7 @@ Server pagination + client-side search/sort on the current page set. Queue index
 | Piece | Role |
 | --- | --- |
 | `ContentWorkspaceView` | Replaces legacy `AIStudioView`; full workspace layout |
-| `useContentSession` | Variants, config, product context in `localStorage` |
+| `useContentSession` | Variants, config, product context in `sessionStorage` |
 | `useGenerateContent` | Mutation → `POST /ai-content/generate` |
 | `ConfigControlBoard`, `ToneMatrix`, `ContentTypeScroller` | Generation config UI |
 | `RichDocumentCanvas`, `VariantTabs`, `VariantCompareDialog` | Edit/compare variants |
@@ -148,8 +148,8 @@ Query keys include all server-side filter parameters. Mutations invalidate the s
 | --- | --- | --- |
 | Auth token | `sessionStorage` | JWT access token |
 | Session marker | Cookie (`1`) | Middleware redirect only |
-| Discovery session | `localStorage` | Filters, UI prefs, last response |
-| AI content session | `localStorage` | Variants, config, active variant |
+| Discovery session | `sessionStorage` | Filters, UI prefs, last response |
+| AI content session | `sessionStorage` | Variants, config, active variant |
 | Workspace UI | React `useState` | Drawer open, selection, density, toasts |
 
 No global Zustand/Context auth provider — `AuthGuard` validates via `GET /auth/me`.

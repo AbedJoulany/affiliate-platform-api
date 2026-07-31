@@ -1,18 +1,58 @@
-from datetime import UTC, datetime
+import hashlib
+import json
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import BotPermissionStatus, QueueStatus
 from app.models.channel import TelegramChannel
-from app.models.queue import QueueItem
+from app.models.queue import QueueItem, QueuePublishAttempt
 from app.repositories.channel import ChannelRepository
 from app.repositories.product import ProductRepository
-from app.repositories.queue import QueueRepository
-from app.schemas.queue import PublishQueueResponse, QueueCreate, QueueListResponse, QueueUpdate
-from app.services.exceptions import ConflictError, ForbiddenError, NotFoundError, ValidationError
+from app.repositories.queue import QueuePublishAttemptRepository, QueueRepository
+from app.schemas.queue import (
+    PublishQueueResponse,
+    QueueCreate,
+    QueueListResponse,
+    QueuePublishAttemptListResponse,
+    QueuePublishAttemptRead,
+    QueueRead,
+    QueueUpdate,
+)
+from app.services.exceptions import (
+    ConflictError,
+    ForbiddenError,
+    NotFoundError,
+    ServiceError,
+    TelegramPublishError,
+    ValidationError,
+)
 from app.telegram.publisher import TelegramPublisher
-from app.telegram.types import InlineUrlButton
+from app.telegram.types import InlineUrlButton, TelegramPublishResult
+
+IDEMPOTENCY_WINDOW = timedelta(hours=24)
+
+
+@dataclass(frozen=True)
+class _PublishSnapshot:
+    """Outbound Telegram payload captured under the claim lock."""
+
+    chat_id: str | None
+    text: str
+    image_url: str | None
+    button: InlineUrlButton | None
+    message_type: str
+    parse_mode: str | None
+    content_hash: str
+
+
+@dataclass(frozen=True)
+class _PublishClaim:
+    item: QueueItem
+    attempt: QueuePublishAttempt
+    snapshot: _PublishSnapshot
 
 
 class TelegramPublishingService:
@@ -21,44 +61,55 @@ class TelegramPublishingService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.queue_repo = QueueRepository(session)
+        self.attempt_repo = QueuePublishAttemptRepository(session)
         self.publisher = TelegramPublisher()
 
     async def publish_queue_item(self, queue_id: UUID) -> PublishQueueResponse:
-        item = await self.queue_repo.get_with_relations(queue_id)
-        if not item:
-            raise NotFoundError("Queue item not found")
+        """Publish through the shared claim/idempotency guard.
 
-        if item.status == QueueStatus.PUBLISHED:
-            raise ConflictError("Queue item is already published")
+        Manual API publish, scheduled/queued Celery batch work, and Celery
+        autoretry all enter here, so they share the same lock and guard rules.
+        """
+        claim = await self._claim_publish(queue_id)
+        item = claim.item
+        attempt = claim.attempt
+        snapshot = claim.snapshot
 
-        if not item.channel_id or not item.channel:
-            raise ValidationError("Queue item must have a channel assigned before publishing")
+        try:
+            if item.status == QueueStatus.PUBLISHED:
+                raise ConflictError("Queue item is already published")
 
-        self._ensure_channel_can_publish(item.channel)
+            if not item.channel_id or not item.channel or snapshot.chat_id is None:
+                raise ValidationError("Queue item must have a channel assigned before publishing")
 
-        chat_id = item.channel.telegram_channel_id
-        image_url = self._resolve_image_url(item)
-        button = self._resolve_button(item)
+            self._ensure_channel_can_publish(item.channel)
 
-        result = await self.publisher.publish(
-            chat_id=chat_id,
-            text=item.content,
-            image_url=image_url,
-            button=button,
-        )
+            # Use only the locked snapshot — do not re-read mutable relations.
+            result = await self.publisher.publish(
+                chat_id=snapshot.chat_id,
+                text=snapshot.text,
+                image_url=snapshot.image_url,
+                button=snapshot.button,
+                parse_mode=snapshot.parse_mode,
+            )
 
-        item.status = QueueStatus.PUBLISHED
-        item.published_at = datetime.now(UTC)
-        item.telegram_message_id = result.message_id
-        await self.queue_repo.update(item)
+            await self._mark_attempt_succeeded(attempt, result)
 
-        return PublishQueueResponse(
-            queue_id=item.id,
-            telegram_message_id=result.message_id,
-            chat_id=result.chat_id,
-            message_type=result.message_type,
-            published_at=item.published_at,
-        )
+            item.status = QueueStatus.PUBLISHED
+            item.published_at = datetime.now(UTC)
+            item.telegram_message_id = result.message_id
+            await self.queue_repo.update(item)
+
+            return PublishQueueResponse(
+                queue_id=item.id,
+                telegram_message_id=result.message_id,
+                chat_id=result.chat_id,
+                message_type=result.message_type,
+                published_at=item.published_at,
+            )
+        except Exception as exc:
+            await self._mark_attempt_failed(attempt, exc)
+            raise
 
     async def publish_due_scheduled(self, *, limit: int = 50) -> list[PublishQueueResponse]:
         due_items = await self.queue_repo.list_scheduled_due(
@@ -77,8 +128,158 @@ class TelegramPublishingService:
             try:
                 results.append(await self.publish_queue_item(item.id))
             except (ValidationError, ForbiddenError, ConflictError):
+                # Failure may already be persisted, or the guard suppressed a
+                # duplicate without creating an attempt; continue the batch.
                 continue
         return results
+
+    async def _claim_publish(self, queue_id: UUID) -> _PublishClaim:
+        """Lock the queue item, apply the idempotency guard, and claim a started attempt.
+
+        Suppressed publishes raise ``ConflictError`` without inserting an attempt row.
+        On success, the started attempt is committed so the row lock is released before
+        any Telegram network I/O.
+        """
+        item = await self.queue_repo.get_with_relations_for_update(queue_id)
+        if not item:
+            raise NotFoundError("Queue item not found")
+
+        now = datetime.now(UTC)
+        snapshot = self._build_publish_snapshot(item)
+
+        blocking = await self.attempt_repo.active_guard_lookup(
+            item.id,
+            snapshot.content_hash,
+            now=now,
+        )
+        if blocking is not None:
+            if blocking.status == "succeeded":
+                raise ConflictError(
+                    "Publish already completed for this content; edit content to republish "
+                    "or wait for the idempotency window to expire"
+                )
+            raise ConflictError(
+                "Publish already in progress for this content; wait for the in-flight "
+                "attempt to finish or for the idempotency window to expire"
+            )
+
+        latest = await self.attempt_repo.latest_attempt(item.id)
+        attempt_number = 1 if latest is None else latest.attempt_number + 1
+        attempt = QueuePublishAttempt(
+            queue_id=item.id,
+            attempt_number=attempt_number,
+            provider="telegram",
+            status="started",
+            content_hash=snapshot.content_hash,
+            idempotency_expires_at=now + IDEMPOTENCY_WINDOW,
+            occurred_at=now,
+        )
+        attempt = await self.attempt_repo.create_attempt(attempt)
+        # Commit releases the QueueItem row lock and makes the started marker durable
+        # before Telegram is contacted.
+        await self.session.commit()
+        return _PublishClaim(item=item, attempt=attempt, snapshot=snapshot)
+
+    def _build_publish_snapshot(self, item: QueueItem) -> _PublishSnapshot:
+        image_url = self._resolve_image_url(item)
+        button = self._resolve_button(item)
+        chat_id = item.channel.telegram_channel_id if item.channel else None
+        message_type = "photo" if image_url else "text"
+        parse_mode = None
+        content_hash = self._compute_content_hash(
+            chat_id=chat_id,
+            text=item.content,
+            image_url=image_url,
+            button=button,
+            message_type=message_type,
+            parse_mode=parse_mode,
+        )
+        return _PublishSnapshot(
+            chat_id=chat_id,
+            text=item.content,
+            image_url=image_url,
+            button=button,
+            message_type=message_type,
+            parse_mode=parse_mode,
+            content_hash=content_hash,
+        )
+
+    async def _mark_attempt_succeeded(
+        self,
+        attempt: QueuePublishAttempt,
+        result: TelegramPublishResult,
+    ) -> QueuePublishAttempt:
+        attempt.status = "succeeded"
+        attempt.provider_chat_id = result.chat_id
+        attempt.provider_message_id = result.message_id
+        attempt.error_code = None
+        attempt.error_message = None
+        return await self.attempt_repo.update(attempt)
+
+    async def _mark_attempt_failed(
+        self,
+        attempt: QueuePublishAttempt,
+        exc: BaseException,
+    ) -> QueuePublishAttempt:
+        attempt.status = "failed"
+        attempt.error_code = self._error_code_for(exc)
+        attempt.error_message = self._error_message_for(exc)
+        attempt.provider_chat_id = None
+        attempt.provider_message_id = None
+        attempt = await self.attempt_repo.update(attempt)
+        # Persist the failure before the exception propagates and triggers rollback.
+        await self.session.commit()
+        return attempt
+
+    def _compute_content_hash(
+        self,
+        *,
+        chat_id: str | None,
+        text: str,
+        image_url: str | None,
+        button: InlineUrlButton | None,
+        message_type: str,
+        parse_mode: str | None,
+    ) -> str:
+        payload = {
+            "button_text": button.text if button else None,
+            "button_url": button.url if button else None,
+            "chat_id": chat_id,
+            "image_url": image_url,
+            "message_type": message_type,
+            "parse_mode": parse_mode,
+            "provider": "telegram",
+            "text": text,
+        }
+        canonical = json.dumps(
+            payload,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+    def _error_code_for(self, exc: BaseException) -> str:
+        if isinstance(exc, ValidationError):
+            return "validation_error"
+        if isinstance(exc, ForbiddenError):
+            return "forbidden_error"
+        if isinstance(exc, ConflictError):
+            return "conflict_error"
+        if isinstance(exc, TelegramPublishError):
+            if exc.http_status == 429 or exc.telegram_error_code == 429:
+                return "telegram_429"
+            if exc.telegram_error_code is not None:
+                return f"telegram_{exc.telegram_error_code}"
+            return "transport_error"
+        if isinstance(exc, ServiceError):
+            return "service_error"
+        return "unexpected_error"
+
+    def _error_message_for(self, exc: BaseException) -> str:
+        if isinstance(exc, ServiceError):
+            return exc.message
+        return str(exc) or exc.__class__.__name__
 
     def _ensure_channel_can_publish(self, channel: TelegramChannel) -> None:
         if not channel.is_active:
@@ -116,6 +317,7 @@ class QueueService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.queue_repo = QueueRepository(session)
+        self.attempt_repo = QueuePublishAttemptRepository(session)
         self.channel_repo = ChannelRepository(session)
         self.product_repo = ProductRepository(session)
         self.publishing_service = TelegramPublishingService(session)
@@ -146,6 +348,11 @@ class QueueService:
             raise NotFoundError("Queue item not found")
         return item
 
+    async def get_read(self, queue_id: UUID) -> QueueRead:
+        """Return a queue item with backend-owned attempt summary fields populated."""
+        item = await self.get(queue_id)
+        return await self._to_queue_read(item)
+
     async def list_items(
         self,
         *,
@@ -158,7 +365,37 @@ class QueueService:
             skip=skip,
             limit=limit,
         )
+        # List responses keep attempt summary defaults (None/0) for compatibility and
+        # to avoid N+1 lookups; clients use GET /queues/{id}/attempts for history.
         return QueueListResponse(items=items, total=total, skip=skip, limit=limit)
+
+    async def list_publish_attempts(self, queue_id: UUID) -> QueuePublishAttemptListResponse:
+        await self.get(queue_id)
+        attempts = await self.attempt_repo.list_attempts(queue_id)
+        return QueuePublishAttemptListResponse(
+            queue_id=queue_id,
+            items=[QueuePublishAttemptRead.model_validate(attempt) for attempt in attempts],
+            total=len(attempts),
+        )
+
+    async def _to_queue_read(self, item: QueueItem) -> QueueRead:
+        latest = await self.attempt_repo.latest_attempt(item.id)
+        last_attempt = (
+            QueuePublishAttemptRead.model_validate(latest) if latest is not None else None
+        )
+        failure_reason = None
+        retry_count = 0
+        if latest is not None:
+            retry_count = latest.attempt_number
+            if latest.status == "failed":
+                failure_reason = latest.error_message
+        return QueueRead.model_validate(item).model_copy(
+            update={
+                "last_attempt": last_attempt,
+                "failure_reason": failure_reason,
+                "retry_count": retry_count,
+            }
+        )
 
     async def update(self, queue_id: UUID, payload: QueueUpdate) -> QueueItem:
         item = await self.get(queue_id)

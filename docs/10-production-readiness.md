@@ -97,7 +97,7 @@ Execute with staging admin:
 | Tenancy | Queue/channel data **not user-scoped** — not multi-tenant safe |
 | Public endpoints | Discovery read, product list, `/conversions` POST |
 | `/ready` | Dependency state only — no secrets |
-| Auth service | Remove debug password logging before prod (`app/auth/service.py`) |
+| Auth service | No password/credential logging in `app/auth/service.py` or `app/auth/security.py` (verified 2026-07-29) |
 
 ---
 
@@ -184,7 +184,6 @@ Log structured failure records (queue_id, provider, attempt, error_code) — no 
 
 | Issue | Severity | Action |
 | --- | --- | --- |
-| Debug prints in auth service | High | Remove before prod |
 | Default JWT secret | Critical | Rotate in all non-dev envs |
 | Silent Celery publish skip | Medium | Add logging + retry |
 | No refresh token | Medium | Document session expiry UX |

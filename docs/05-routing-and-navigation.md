@@ -67,7 +67,7 @@ Inventory grid with layout controls. **Drawer boundary:** `ProductDetailsDrawer`
 
 ### `/ai`
 
-AI Content Studio (`ContentWorkspaceView`). Accepts `?product={uuid}` or `?url=…` from discovery/products handoff. Session persisted in `localStorage`.
+AI Content Studio (`ContentWorkspaceView`). Accepts `?product={uuid}` or `?url=…` from discovery/products handoff. Session persisted in `sessionStorage`.
 
 ### `/queue`
 

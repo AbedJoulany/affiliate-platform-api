@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field, HttpUrl, model_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
 from app.core.enums import QueueStatus
 from app.schemas.common import PaginatedResponse, TimestampSchema
@@ -59,6 +59,27 @@ class QueueUpdate(BaseModel):
         return self
 
 
+class QueuePublishAttemptRead(BaseModel):
+    """Attempt-scoped publish history row. ``status`` is not a QueueStatus value."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    attempt_number: int
+    status: str
+    provider: str
+    occurred_at: datetime
+    error_code: str | None = None
+    error_message: str | None = None
+    provider_chat_id: str | None = None
+    provider_message_id: int | None = None
+
+
+class QueuePublishAttemptListResponse(BaseModel):
+    queue_id: UUID
+    items: list[QueuePublishAttemptRead]
+    total: int
+
+
 class QueueRead(TimestampSchema):
     id: UUID
     title: str | None
@@ -72,6 +93,10 @@ class QueueRead(TimestampSchema):
     button_text: str | None
     button_url: str | None
     telegram_message_id: int | None
+    # Additive attempt summary fields (None when not loaded, e.g. list responses).
+    last_attempt: QueuePublishAttemptRead | None = None
+    failure_reason: str | None = None
+    retry_count: int = 0
 
 
 class QueueListResponse(PaginatedResponse):
