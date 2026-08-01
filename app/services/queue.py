@@ -33,6 +33,9 @@ from app.telegram.publisher import TelegramPublisher
 from app.telegram.types import InlineUrlButton, TelegramPublishResult
 
 IDEMPOTENCY_WINDOW = timedelta(hours=24)
+# Terminal failure category after all retry paths are exhausted (or the error is
+# not Celery-retryable). QueueItem.status is never changed for this outcome.
+DEAD_LETTER_ERROR_CODE = "dead_letter"
 
 
 @dataclass(frozen=True)
@@ -64,11 +67,22 @@ class TelegramPublishingService:
         self.attempt_repo = QueuePublishAttemptRepository(session)
         self.publisher = TelegramPublisher()
 
-    async def publish_queue_item(self, queue_id: UUID) -> PublishQueueResponse:
+    async def publish_queue_item(
+        self,
+        queue_id: UUID,
+        *,
+        mark_transport_failure_terminal: bool = False,
+    ) -> PublishQueueResponse:
         """Publish through the shared claim/idempotency guard.
 
         Manual API publish, scheduled/queued Celery batch work, and Celery
         autoretry all enter here, so they share the same lock and guard rules.
+
+        ``mark_transport_failure_terminal`` is set by Celery callers on the final
+        task execution (retries exhausted) and by the manual API path (no Celery
+        retries). Non-``TelegramPublishError`` failures are always terminal.
+        Terminal failures are persisted as dead-letter attempts; QueueItem.status
+        is never set to a failure value.
         """
         claim = await self._claim_publish(queue_id)
         item = claim.item
@@ -108,28 +122,61 @@ class TelegramPublishingService:
                 published_at=item.published_at,
             )
         except Exception as exc:
-            await self._mark_attempt_failed(attempt, exc)
+            # Celery autoretries only TelegramPublishError. All other failures are
+            # terminal immediately. Transport failures become terminal when the
+            # caller reports that Celery (or the manual path) has no retries left.
+            terminal = (
+                mark_transport_failure_terminal
+                or not isinstance(exc, TelegramPublishError)
+            )
+            await self._mark_attempt_failed(attempt, exc, terminal=terminal)
             raise
 
-    async def publish_due_scheduled(self, *, limit: int = 50) -> list[PublishQueueResponse]:
+    async def publish_due_scheduled(
+        self,
+        *,
+        limit: int = 50,
+        mark_transport_failure_terminal: bool = False,
+    ) -> list[PublishQueueResponse]:
         due_items = await self.queue_repo.list_scheduled_due(
             due_before=datetime.now(UTC),
             limit=limit,
         )
-        return await self._publish_items(due_items)
+        return await self._publish_items(
+            due_items,
+            mark_transport_failure_terminal=mark_transport_failure_terminal,
+        )
 
-    async def publish_queued_items(self, *, limit: int = 50) -> list[PublishQueueResponse]:
+    async def publish_queued_items(
+        self,
+        *,
+        limit: int = 50,
+        mark_transport_failure_terminal: bool = False,
+    ) -> list[PublishQueueResponse]:
         queued_items = await self.queue_repo.list_queued_ready(limit=limit)
-        return await self._publish_items(queued_items)
+        return await self._publish_items(
+            queued_items,
+            mark_transport_failure_terminal=mark_transport_failure_terminal,
+        )
 
-    async def _publish_items(self, items: list[QueueItem]) -> list[PublishQueueResponse]:
+    async def _publish_items(
+        self,
+        items: list[QueueItem],
+        *,
+        mark_transport_failure_terminal: bool = False,
+    ) -> list[PublishQueueResponse]:
         results: list[PublishQueueResponse] = []
         for item in items:
             try:
-                results.append(await self.publish_queue_item(item.id))
+                results.append(
+                    await self.publish_queue_item(
+                        item.id,
+                        mark_transport_failure_terminal=mark_transport_failure_terminal,
+                    )
+                )
             except (ValidationError, ForbiddenError, ConflictError):
-                # Failure may already be persisted, or the guard suppressed a
-                # duplicate without creating an attempt; continue the batch.
+                # Failure may already be persisted as a terminal attempt, or the
+                # guard suppressed a duplicate without creating an attempt.
                 continue
         return results
 
@@ -220,10 +267,24 @@ class TelegramPublishingService:
         self,
         attempt: QueuePublishAttempt,
         exc: BaseException,
+        *,
+        terminal: bool = False,
     ) -> QueuePublishAttempt:
+        """Persist a failed attempt. Never modifies QueueItem.status.
+
+        When ``terminal`` is true (retries exhausted or non-retryable error), the
+        attempt is marked with ``error_code=dead_letter`` so operators can filter
+        "needs attention" from attempt history without a fake QueueStatus value.
+        """
+        underlying_code = self._error_code_for(exc)
+        underlying_message = self._error_message_for(exc)
         attempt.status = "failed"
-        attempt.error_code = self._error_code_for(exc)
-        attempt.error_message = self._error_message_for(exc)
+        if terminal:
+            attempt.error_code = DEAD_LETTER_ERROR_CODE
+            attempt.error_message = f"{underlying_code}: {underlying_message}"
+        else:
+            attempt.error_code = underlying_code
+            attempt.error_message = underlying_message
         attempt.provider_chat_id = None
         attempt.provider_message_id = None
         attempt = await self.attempt_repo.update(attempt)
@@ -440,7 +501,11 @@ class QueueService:
         await self.queue_repo.delete(item)
 
     async def publish(self, queue_id: UUID) -> PublishQueueResponse:
-        return await self.publishing_service.publish_queue_item(queue_id)
+        # Manual publish has no Celery autoretry, so transport failures are terminal.
+        return await self.publishing_service.publish_queue_item(
+            queue_id,
+            mark_transport_failure_terminal=True,
+        )
 
     async def _validate_relations(
         self,

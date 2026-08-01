@@ -52,10 +52,12 @@ def _compile_content_hash_format_postgresql(element, compiler, **kw) -> str:
 
 @compiles(_ContentHashFormatCheck, "sqlite")
 def _compile_content_hash_format_sqlite(element, compiler, **kw) -> str:
+    # SQLite GLOB negation in character classes is ``[^...]`` (not ``[!...]``).
+    # ``[!0-9a-f]`` inverts incorrectly on current SQLite and rejects valid hex.
     return (
         "length(content_hash) = 64 "
         "AND content_hash = lower(content_hash) "
-        "AND content_hash NOT GLOB '*[!0-9a-f]*'"
+        "AND content_hash NOT GLOB '*[^0-9a-f]*'"
     )
 
 

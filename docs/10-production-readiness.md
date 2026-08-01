@@ -1,7 +1,7 @@
 # Production Readiness and Release Runbook
 
-**Document Version:** 2.0  
-**Last Updated:** 2026-07-29
+**Document Version:** 2.1  
+**Last Updated:** 2026-08-01
 
 Release gate supplement to documents 01–09. Defines security boundaries, environment configuration, CI/CD, deployment checklists, and **upcoming architectural requirements**.
 
@@ -81,7 +81,7 @@ Execute with staging admin:
 2. **Products** — Verify inventory grid density/columns; open `ProductDetailsDrawer`; admin delete; export CSV
 3. **AI Studio** — Generate with tone/type/modifiers; compare variants; create queue draft
 4. **Channels** — Register Telegram channel; verify permission badges
-5. **Queue** — Verify KPI cards; schedule via dialog; bulk publish; confirm Telegram message; verify failure toast on simulated error
+5. **Queue** — Verify KPI cards; schedule via dialog; bulk publish; confirm Telegram message; on simulated Telegram failure verify a durable attempt via `GET /queues/{id}/attempts` (and toast); confirm `QueueStatus` stays without a `failed` value; duplicate publish of unchanged content returns 409
 6. **Settings** — Readiness shows DB + Redis
 7. Expired JWT clears session → login
 
@@ -145,8 +145,8 @@ Celery publish task → emit status event → Redis pub/sub or SSE endpoint → 
 
 **Enhancements:**
 
-- Dead-letter queue for exhausted Telegram retries
-- Publish task idempotency key (`queue_id` + content hash)
+- ~~Dead-letter queue for exhausted Telegram retries~~ **Done (Phase A.1):** terminal attempts use `error_code=dead_letter` on `queue_publish_attempts`; `QueueStatus` unchanged
+- ~~Publish task idempotency key (`queue_id` + content hash)~~ **Done (Phase A.1):** shared claim/guard in `TelegramPublishingService`
 - Worker health endpoint or heartbeat key in Redis
 - Separate queues: `publishing`, `discovery_refresh`, `ai_batch` (future)
 - Monitor with Flower/Prometheus; alert on beat/worker absence
@@ -155,14 +155,14 @@ Celery publish task → emit status event → Redis pub/sub or SSE endpoint → 
 
 ### 9.3 Error handling & retries
 
-| Integration | Policy |
-| --- | --- |
-| **Telegram Bot API** | 3 retries, exponential backoff (1s, 4s, 16s + jitter), respect 429 `retry_after` |
-| **AliExpress IOP** | Existing client rate limit + `ALIEXPRESS_MAX_RETRIES` |
-| **OpenAI / Gemini** | 2 retries on 502/503; timeout 60s; user-facing `AIProviderError` message |
-| **Celery tasks** | `autoretry_for`, `max_retries=3`, `retry_backoff=True` |
+| Integration | Policy | Status |
+| --- | --- | --- |
+| **Telegram Bot API** | In-process: up to 3 retries (1 initial + 3 = ≤4 HTTP attempts), exponential backoff from `0.5s` + jitter; honor 429 `parameters.retry_after`. Celery publish tasks: `autoretry_for=(TelegramPublishError,)`, `max_retries=3`, `retry_backoff=True`, `retry_jitter=True`. Failures persist on `queue_publish_attempts`; terminal → `error_code=dead_letter` | ✅ Implemented (Phase A.1) |
+| **AliExpress IOP** | Existing client rate limit + `ALIEXPRESS_MAX_RETRIES` | ⬜ Phase C' |
+| **OpenAI / Gemini** | 2 retries on 502/503; timeout 60s; user-facing `AIProviderError` message | ⬜ Phase C' |
+| **Celery publish tasks** | As above for Telegram publishing; discovery tasks unchanged | ✅ Publish path (Phase A.1) |
 
-Log structured failure records (queue_id, provider, attempt, error_code) — no token leakage.
+Log structured failure records (queue_id, provider, attempt, error_code) — no token leakage. Attempt rows are the durable audit source for Telegram publishes.
 
 ### 9.4 Form & schema validation
 
@@ -185,7 +185,6 @@ Log structured failure records (queue_id, provider, attempt, error_code) — no 
 | Issue | Severity | Action |
 | --- | --- | --- |
 | Default JWT secret | Critical | Rotate in all non-dev envs |
-| Silent Celery publish skip | Medium | Add logging + retry |
 | No refresh token | Medium | Document session expiry UX |
 | Conversion POST public | Info | Rate limit when adding middleware |
 | Single Celery beat instance | Info | Document ops constraint |

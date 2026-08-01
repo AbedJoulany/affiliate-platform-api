@@ -1,7 +1,7 @@
 # Component Library
 
-**Document Version:** 2.0  
-**Last Updated:** 2026-07-29
+**Document Version:** 2.1  
+**Last Updated:** 2026-08-01
 
 ---
 
@@ -158,13 +158,13 @@ Interactive score cell with:
 | Component | Status | Description |
 | --- | --- | --- |
 | `QueueView` | Implemented | Operations center shell |
-| `QueueOperationalStats` | Implemented | **KPI cards**: queued, scheduled, publishing, published today, failed today |
+| `QueueOperationalStats` | Implemented | **KPI cards**: queued, scheduled, publishing, published today, failed today. Failed-today should read backend attempt truth after FE Phase A.1 (client map is interim) |
 | `QueueTable` | Implemented | Status, channel, schedule, content preview, actions |
 | `QueueToolbar` | Implemented | Search, status/channel filters, sort, density |
 | `QueueSelectionBar` | Implemented | Bulk publish, schedule, delete |
-| `QueueDetailsDrawer` | Implemented | Post preview, product/channel context, inline actions |
+| `QueueDetailsDrawer` | Implemented | Post preview, product/channel context, inline actions. **Planned (FE Phase A.1):** read-only publish attempt history from `GET /queues/{id}/attempts`; retry via existing `POST /queues/{id}/publish` |
 | `QueueSchedulingDialog` | Implemented | Channel picker, datetime, presets, publish-now |
-| `QueueHealthBadge` | Implemented | Pipeline readiness (channel missing, etc.) |
+| `QueueHealthBadge` | Implemented | Pipeline readiness (channel missing, etc.). **Planned (FE Phase A.1):** surface backend `failure_reason` / latest failed attempt when present |
 | `QueueActionsMenu` | Implemented | Row actions menu |
 | `SchedulePicker` | Partial | Inline in table + dialog; no calendar widget library |
 

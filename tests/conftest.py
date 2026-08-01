@@ -151,3 +151,71 @@ def mock_queue_publish(monkeypatch):
 
     monkeypatch.setattr("app.services.queue.QueueService.publish", fake_publish)
     return fake_publish
+
+
+@pytest.fixture
+def mock_telegram_publisher_success(monkeypatch):
+    """Mock TelegramPublisher.publish success without bypassing QueueService."""
+    from app.telegram.types import TelegramPublishResult
+
+    calls: list[dict] = []
+
+    async def fake_publish(
+        self,
+        chat_id,
+        text,
+        *,
+        image_url=None,
+        button=None,
+        parse_mode=None,
+    ):
+        calls.append(
+            {
+                "chat_id": chat_id,
+                "text": text,
+                "image_url": image_url,
+                "button": button,
+                "parse_mode": parse_mode,
+            }
+        )
+        return TelegramPublishResult(
+            chat_id=str(chat_id),
+            message_id=123456789,
+            message_type="photo" if image_url else "text",
+        )
+
+    monkeypatch.setattr(
+        "app.telegram.publisher.TelegramPublisher.publish",
+        fake_publish,
+    )
+    return calls
+
+
+@pytest.fixture
+def mock_telegram_publisher_failure(monkeypatch):
+    """Mock TelegramPublisher.publish to raise a transport failure."""
+    from app.services.exceptions import TelegramPublishError
+
+    calls: list[dict] = []
+
+    async def fake_publish(
+        self,
+        chat_id,
+        text,
+        *,
+        image_url=None,
+        button=None,
+        parse_mode=None,
+    ):
+        calls.append({"chat_id": chat_id, "text": text})
+        raise TelegramPublishError(
+            "Telegram transport failed",
+            http_status=500,
+            telegram_error_code=500,
+        )
+
+    monkeypatch.setattr(
+        "app.telegram.publisher.TelegramPublisher.publish",
+        fake_publish,
+    )
+    return calls

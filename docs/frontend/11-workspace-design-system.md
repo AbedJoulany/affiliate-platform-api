@@ -1,7 +1,7 @@
 # Workspace Design System
 
-**Document Version:** 1.0  
-**Last Updated:** 2026-07-29  
+**Document Version:** 1.1  
+**Last Updated:** 2026-08-01  
 **Status:** Canonical frontend workspace architecture guide
 
 This document defines how every workspace in the AI Affiliate Automation Platform must be designed, structured, and extended. It complements — and does not replace — the existing suite in `/docs` (especially [03-design-system.md](../03-design-system.md), [04-component-library.md](../04-component-library.md), and [02-frontend-architecture.md](../02-frontend-architecture.md)).
@@ -545,7 +545,7 @@ Each workspace implements the standard layout with domain-specific content. Belo
 | **Shared components** | PageHeader, WorkspaceStats, ResultsToolbar, SelectionBar, EmptyState, LoadingState, ErrorState, StatusBadge, PipelineBadge, Drawer, ConfirmationDialog, ToastOverlay |
 | **Unique components** | Queue table, scheduling dialog, queue details drawer, queue health badge, actions menu |
 
-**Layout note:** KPI cards required. Client-derived "publishing" and "failed" counts are operational — not backend statuses.
+**Layout note:** KPI cards required. In-flight "publishing" remains ephemeral client state. "Failed" counts/reasons are **not** a `QueueStatus` — they come from backend `queue_publish_attempts` (Phase A.1). Until frontend Phase A.1 wiring lands, the UI may still show a client failure map as a rollout fallback. Drawer inspection should include read-only attempt history from `GET /queues/{id}/attempts` once FE tasks ship.
 
 ---
 

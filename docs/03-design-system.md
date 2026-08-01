@@ -1,7 +1,7 @@
 # Design System
 
-**Document Version:** 2.0  
-**Last Updated:** 2026-07-29
+**Document Version:** 2.1  
+**Last Updated:** 2026-08-01
 
 ---
 
@@ -59,16 +59,16 @@ All components must use semantic tokens — no hardcoded hex in feature code.
 | `scheduled` | warning | Requires `scheduled_at` |
 | `published` | success | Terminal success |
 
-**Important:** `failed` is **not** a backend queue status. Publish failures use error toasts, `QueueHealthBadge`, and client failure maps.
+**Important:** `failed` is **not** a backend `QueueStatus` value. Publish failures are **backend-owned attempt data** on `queue_publish_attempts` (`status` = `started` \| `succeeded` \| `failed`; terminal exhaustion may set `error_code` = `dead_letter`). UI surfaces them via attempt history / failure reason (and toasts / `QueueHealthBadge` during frontend rollout), never by inventing a queue status.
 
 ### Operational KPI tones (Queue workspace)
 
-| KPI | Color intent |
-| --- | --- |
-| Queued / Scheduled | neutral/info borders on stat cards |
-| Publishing (in-flight) | primary accent |
-| Published today | success (`emerald`) |
-| Failed today | error (`red`) |
+| KPI | Color intent | Notes |
+| --- | --- | --- |
+| Queued / Scheduled | neutral/info borders on stat cards | |
+| Publishing (in-flight) | primary accent | Ephemeral client state |
+| Published today | success (`emerald`) | |
+| Failed today | error (`red`) | Backend-owned attempt failures when FE wired; client map is rollout fallback |
 
 ### AI score quality bands
 

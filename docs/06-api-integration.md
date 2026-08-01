@@ -1,7 +1,7 @@
 # API Integration Guide
 
-**Document Version:** 2.0  
-**Last Updated:** 2026-07-29
+**Document Version:** 2.1  
+**Last Updated:** 2026-08-01
 
 **Backend source of truth:** FastAPI routers + Pydantic schemas  
 **Default API base:** `http://localhost:8000/api/v1`  
@@ -135,15 +135,41 @@ Status definitions:
 
 | Endpoint | Frontend module | Status | Types / notes |
 | --- | --- | --- | --- |
-| `GET /queues` | `queue.api.ts` | Connected | Fetches up to 200 items for workspace |
-| `GET /queues/{id}` | `queue.api.ts` | Connected | Available; primary UX uses list payload |
+| `GET /queues` | `queue.api.ts` | Connected | Fetches up to 200 items for workspace. List items do **not** populate attempt summary fields (defaults: `last_attempt=null`, `failure_reason=null`, `retry_count=0`) |
+| `GET /queues/{id}` | `queue.api.ts` | Connected | Returns `QueueRead` with attempt summary: `last_attempt`, `failure_reason`, `retry_count` |
+| `GET /queues/{id}/attempts` | — | Backend ready | `QueuePublishAttemptListResponse` — attempt history newest-first. Frontend Phase A.1 task still to wire |
 | `POST /queues` | `queue.api.ts` | Connected | Draft/queued creation from AI, products, discovery |
 | `PATCH /queues/{id}` | `queue.api.ts` | Connected | Schedule, channel assign, content edit via drawer |
-| `POST /queues/{id}/publish` | `queue.api.ts` | Connected | Single + bulk via `useQueuePublishingOperations` |
-| `DELETE /queues/{id}` | `queue.api.ts` | Connected | Bulk delete with confirmation |
-| Publishing KPI "publishing" | `useQueuePublishingOperations` | Client-side | In-flight publish IDs |
-| Failed today KPI | `lib/operations.ts` | Client-side | Derived from client failure map |
-| Real-time status stream | — | Pending backend | No WebSocket/SSE yet |
+| `POST /queues/{id}/publish` | `queue.api.ts` | Connected | Single + bulk via `useQueuePublishingOperations`. Idempotency guard returns **409** when an unexpired `started`/`succeeded` attempt blocks the same content hash (no attempt row created on suppression) |
+| `DELETE /queues/{id}` | `queue.api.ts` | Connected | Bulk delete with confirmation; cascade-deletes attempt history |
+| Publishing KPI "publishing" | `useQueuePublishingOperations` | Client-side | In-flight publish IDs (legitimately ephemeral) |
+| Failed today KPI | `lib/operations.ts` | Partial | Backend owns durable failures via `queue_publish_attempts` (`error_code`, including `dead_letter`). UI still derives from client failure map until frontend Phase A.1 tasks swap the data source |
+| Real-time status stream | — | Pending Phase A.2 | No WebSocket/SSE yet |
+
+#### Publish attempt schemas (Phase A.1 backend)
+
+**`QueuePublishAttemptRead`** — attempt-scoped only; `status` is **not** a `QueueStatus` value:
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `attempt_number` | `int` | Per-queue, one-based |
+| `status` | `str` | `started` \| `succeeded` \| `failed` |
+| `provider` | `str` | `telegram` for this milestone |
+| `occurred_at` | `datetime` | Attempt start time |
+| `error_code` | `str \| null` | Set on failure; terminal exhaustion uses `dead_letter` |
+| `error_message` | `str \| null` | Human-readable detail |
+| `provider_chat_id` | `str \| null` | Set on success |
+| `provider_message_id` | `int \| null` | Set on success |
+
+**`QueuePublishAttemptListResponse`:** `{ queue_id, items: QueuePublishAttemptRead[], total }`
+
+**`QueueRead` additive fields** (populated on `GET /queues/{id}` via `QueueService.get_read`):
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `last_attempt` | `QueuePublishAttemptRead \| null` | Latest attempt row |
+| `failure_reason` | `str \| null` | Latest attempt `error_message` when status is `failed` |
+| `retry_count` | `int` | Latest `attempt_number` (0 when never attempted) |
 
 ### 4.7 Telegram channels
 
@@ -173,8 +199,8 @@ Status definitions:
 | **Products inventory** | `GET /products`, `GET /queues` | `ProductRead`, pipeline via queue join |
 | **Product details drawer** | `GET /products/{id}` (from list) | `image_url`, `gallery_images`, `score`, `affiliate_url` |
 | **AI Studio** | `POST /ai-content/generate` | `content`, `provider`, `content_type`, `tone`, `language` |
-| **Queue KPI cards** | `GET /queues` + client ops | Status counts + publish failures |
-| **Queue table/drawer** | `GET /queues`, `PATCH`, `POST publish` | `content`, `scheduled_at`, `channel_id`, `status` |
+| **Queue KPI cards** | `GET /queues` + client ops | Status counts; failed-today still client-derived until FE Phase A.1 |
+| **Queue table/drawer** | `GET /queues`, `GET /queues/{id}`, `GET /queues/{id}/attempts`, `PATCH`, `POST publish` | `content`, `scheduled_at`, `channel_id`, `status`; attempt summary/history from backend (FE wiring pending) |
 | **Schedule dialog** | `PATCH /queues/{id}` | `scheduled_at`, `channel_id`, `status: scheduled` |
 | **Channels** | `GET/POST/PUT /channels` | `bot_permission_status`, `can_post_messages`, `is_active` |
 | **Dashboard** | `GET /dashboard` | Product/queue/channel aggregates |
@@ -186,7 +212,8 @@ Status definitions:
 
 - **User role:** `admin`, `affiliate`, `advertiser`
 - **Product status:** `draft`, `active`, `inactive`, `archived`
-- **Queue status:** `draft`, `queued`, `scheduled`, `published`
+- **Queue status:** `draft`, `queued`, `scheduled`, `published` — **no `failed` value**
+- **Publish attempt status** (attempt-scoped only): `started`, `succeeded`, `failed`
 - **AI provider:** `openai`, `gemini`
 - **Content type:** `social`, `description`, `telegram`, `facebook`, `blog`, `email`
 - **Tone:** `professional`, `friendly`, `luxury`, `technical`, `urgent`, `minimal`, `persuasive`, `funny`

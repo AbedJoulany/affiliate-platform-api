@@ -1,13 +1,15 @@
 # Implementation Roadmap
 
-**Document Version:** 2.2  
-**Last Updated:** 2026-07-30
+**Document Version:** 2.3  
+**Last Updated:** 2026-08-01
 
 Consolidated feature tracker (replaces empty `PROJECT_STATUS.md`). See [06-api-integration.md](./06-api-integration.md) for endpoint-level status.
 
 **2026-07-29 revision:** Adopted the **Publishing Reliability & Status Truth (Telegram)** milestone as the next phase (formerly `docs/planning/publishing-reliability-status-truth-roadmap.md`, approved and merged; archived under `docs/archive/`). This re-sequences §3 to fix a dependency inversion — real-time streaming was previously ordered before the backend had any structured publish-failure data to stream.
 
 **2026-07-30 revision:** Inserted **Backend Task 2.5 — create the `QueuePublishAttempt` SQLAlchemy model** — into Phase A.1's backend task sequence, between Task 2 (migration) and Task 3 (repository). A dependency review during implementation found that Task 3 and Task 9 (pytest, which builds the test database via `Base.metadata.create_all`, independent of whether the Alembic migration has been applied) both require a mapped SQLAlchemy entity that no existing task produced — Task 2 is migration-only by design, and Task 1 is a design doc only. This is a sequencing clarification, not a scope change: Tasks 3–9 keep their original numbers and content; Phase A.1's success metrics, acceptance criteria, and total deliverables are unchanged. Task 3's description is also expanded to enumerate the repository methods `create_attempt()`, `list_attempts()`, `latest_attempt()`, and `active_guard_lookup()`, since the last of these is a direct prerequisite for Task 6 (idempotency guard) that was previously left implicit.
+
+**2026-08-01 revision:** Phase A.1 **backend Tasks 1–9 are complete** (design, migration `008`, model, repository, service instrumentation, Telegram retry, idempotency guard, API surface, dead-letter marking, MVP pytest). Documentation files listed under Phase A.1 completion updates are synchronized to the implementation. **Frontend Phase A.1 tasks remain open** (types, hooks, KPI/drawer wiring). Next backend-facing milestone for streaming is Phase A.2 once FE consumes attempt truth.
 
 ---
 
@@ -108,11 +110,11 @@ Legend: ✅ Done · 🟡 Partial · ⬜ Planned
 | Queue details drawer | ✅ | |
 | Inline + dialog schedule picker | ✅ | `PATCH` with `scheduled_at` |
 | Bulk publish / schedule / delete | ✅ | |
-| Publish failure tracking | 🟡 | Client-side today; backend attempt truth planned Phase A.1 |
-| Publish attempt/event history (backend) | ⬜ | Planned Phase A.1 |
-| Telegram retry policy (backend) | ⬜ | Planned Phase A.1 |
+| Publish failure tracking | 🟡 | Backend owns `queue_publish_attempts` + dead-letter codes; UI still client-derived until FE Phase A.1 |
+| Publish attempt/event history (backend) | ✅ | `GET /queues/{id}/attempts`; `QueueRead` summary on `GET /queues/{id}` |
+| Telegram retry policy (backend) | ✅ | In-process retries + Celery `autoretry_for` / `max_retries=3` |
 | Real-time status updates | ⬜ | See Phase A.2 below |
-| Dedicated retry orchestration | ⬜ | Manual re-publish only; backend retry in Phase A.1 |
+| Dedicated retry orchestration | ✅ | Shared claim/idempotency guard; manual + Celery share path; terminal → `dead_letter` |
 
 ### Channels
 
@@ -136,10 +138,10 @@ Legend: ✅ Done · 🟡 Partial · ⬜ Planned
 ## 3. Upcoming Implementation Phases
 
 ```text
-Phase A.1 — Publishing Reliability & Status Truth (Telegram)   ← NEXT MILESTONE
-        │
+Phase A.1 — Publishing Reliability & Status Truth (Telegram)
+        │   Backend Tasks 1–9 ✅ · Frontend tasks still open
         ▼
-Phase A.2 — Real-time operations (SSE/WebSocket)
+Phase A.2 — Real-time operations (SSE/WebSocket)   ← NEXT BACKEND MILESTONE (after FE A.1 or in parallel where safe)
         │
         ▼
 Phase B — Background workers & queue execution (remainder)
@@ -154,68 +156,57 @@ Phase D — Form & schema validation standardization   (independent; may run par
 Phase E — Platform expansion (V2)
 ```
 
-### Phase A.1 — Publishing Reliability & Status Truth (Telegram) — next milestone
+### Phase A.1 — Publishing Reliability & Status Truth (Telegram)
 
-**Approved:** 2026-07-29. Highest priority: publish failures currently exist only in transient client state (`useQueuePublishingOperations`) and the scheduled publisher fails silently (`_publish_items` drops errors with `continue`). Building real-time streaming (Phase A.2) before this exists would mean streaming data that doesn't exist yet.
+**Approved:** 2026-07-29. **Backend status (2026-08-01):** Tasks 1–9 complete. Highest priority was publish failures existing only in transient client state and silent batch skips — both addressed on the backend. Frontend Phase A.1 tasks (below) remain before the milestone is fully closed for UI consumers.
 
 **Scope — Telegram only.** AliExpress and AI-provider retry hardening are explicitly deferred to Phase C' to avoid scope creep on the highest-leverage fix.
 
 **Success metrics:**
 
-- Backend becomes the single source of truth for Telegram publish attempts and failures.
-- Publish failures persist across browser refreshes and user sessions.
-- No Telegram publish failure can occur without a durable backend record.
-- Queue operational KPIs are computed from backend data rather than transient client state.
-- Retry attempts are visible and auditable.
-- The existing `QueueStatus` enum remains unchanged.
-- This milestone enables Phase A.2 (real-time streaming) without requiring changes to the event model.
+- Backend becomes the single source of truth for Telegram publish attempts and failures. ✅
+- Publish failures persist across browser refreshes and user sessions. ✅ (backend); ⬜ FE still client map
+- No Telegram publish failure can occur without a durable backend record. ✅
+- Queue operational KPIs are computed from backend data rather than transient client state. 🟡 API ready; FE pending
+- Retry attempts are visible and auditable. ✅ (API); ⬜ FE attempt-history UI pending
+- The existing `QueueStatus` enum remains unchanged. ✅
+- This milestone enables Phase A.2 (real-time streaming) without requiring changes to the event model. ✅ (backend event contract exists)
 
 **Backend tasks (in order):**
 
-**Task 1.** Design `QueuePublishAttempt` data model (design doc only, no migration): `queue_id`, `attempt_number`, `provider` (`telegram`), `status`, `error_code`, `error_message`, `occurred_at`. `failed` stays attempt-level — **no new `QueueStatus` enum value.**
+**Task 1.** ✅ Design `QueuePublishAttempt` data model — `docs/backend/queue-publish-attempt-design.md`
 
-**Task 2.** Alembic migration — additive only, no changes to `QueueItem`.
+**Task 2.** ✅ Alembic migration `008_add_queue_publish_attempts.py` — additive only, no changes to `QueueItem` table schema
 
-**Task 2.5.** Create the `QueuePublishAttempt` SQLAlchemy model. Model only — no repository logic, no service instrumentation, no API changes, no retry logic.
+**Task 2.5.** ✅ Create the `QueuePublishAttempt` SQLAlchemy model in `app/models/queue.py` (constraints mirrored for SQLite `create_all`)
 
-- Mapped entity matching the approved Task 1 design document, following existing project conventions (`UUIDPrimaryKeyMixin`, `TimestampMixin`, `Base` model style as used in `app/models/queue.py`).
-- Must match migration `008_add_queue_publish_attempts.py` exactly — same columns, types, and nullability.
-- Mirror every constraint the migration requires, where appropriate, in `__table_args__` (status-value check, content-hash format check, outcome-consistency check, the unique `(queue_id, attempt_number)` constraint, and both composite indexes). This matters independently of Alembic: `tests/conftest.py` builds the test database via `Base.metadata.create_all(...)`, so any constraint not mirrored on the model is untested and can silently drift from production.
-- Decide and document whether `QueueItem` receives a read-side ORM `relationship(...)` to `QueuePublishAttempt`. This is an ORM-mapping decision only — it does not add, remove, or alter any column on the `queue_items` table and does not conflict with Task 2's "no changes to `QueueItem`" constraint (which refers to the table schema, not the ORM mapping layer).
-- `QueueStatus` remains unchanged; the new model's own status field is separate and attempt-scoped.
+**Task 3.** ✅ `QueuePublishAttemptRepository` — `create_attempt()`, `list_attempts()`, `latest_attempt()`, `active_guard_lookup()`
 
-**Task 3.** `QueuePublishAttemptRepository` — assumes the Task 2.5 model already exists. Implements:
+**Task 4.** ✅ Instrument `TelegramPublishingService` to persist every attempt; batch path no longer silently drops failures without a record
 
-- `create_attempt()` — persist a new attempt row.
-- `list_attempts()` — list attempts for a `queue_id`.
-- `latest_attempt()` — most recent attempt for a `queue_id`.
-- `active_guard_lookup(queue_id, content_hash)` — find a non-expired matching attempt for the idempotency guard; required by Task 6 (idempotency guard) and aligned with the migration's `ix_queue_publish_attempts_guard_lookup` index.
+**Task 5.** ✅ Telegram retry policy: in-process 3 retries, exponential backoff + jitter, respect `retry_after` on 429; Celery `autoretry_for` / `max_retries=3` / `retry_backoff=True` on publish tasks
 
-**Task 4.** Instrument `TelegramPublishingService` to persist every attempt; remove the silent `continue` in `_publish_items`.
+**Task 6.** ✅ Idempotency guard — claim lock + `(queue_id, content_hash)` + 24h window; shared by manual and Celery paths
 
-**Task 5.** Telegram retry policy: 3 retries, exponential backoff + jitter, respect `retry_after` on 429; Celery `autoretry_for` / `max_retries=3` / `retry_backoff=True` on publish tasks.
+**Task 7.** ✅ API surface — `GET /queues/{id}/attempts`; `QueueRead` summary fields on `GET /queues/{id}` (`last_attempt`, `failure_reason`, `retry_count`)
 
-**Task 6.** Idempotency guard — resolve the decisions below in the Task 1 design doc, then implement.
+**Task 8.** ✅ Dead-letter marking after retries exhaust (`error_code=dead_letter`; queue status unchanged)
 
-**Task 7.** API surface — extend `QueueRead` or add `GET /queues/{id}/attempts`.
+**Task 9.** ✅ Pytest coverage (MVP): repository, successful/failed publish persistence, idempotency, retry/dead-letter, attempts API
 
-**Task 8.** Dead-letter marking after retries exhaust (queue status unchanged — filter by attempts, not a fake status).
+**Idempotency decisions (resolved in Task 1 design doc; implemented in Task 6):**
 
-**Task 9.** Pytest coverage: retry paths, attempt persistence, idempotency guard, previously-silent failure path.
+- Dedup key: `queue_id` + content hash (effective outbound payload)
+- Ambiguous-failure handling: persist `started` before Telegram call
+- Concurrency guard: `FOR UPDATE` claim on queue row; commit started attempt before network I/O
+- Key lifetime: 24 hours from `occurred_at` for blocking `started`/`succeeded`
+- Manual retry (`POST /queues/{id}/publish`) and automatic Celery retry share the same guard
+- Content edited between attempts invalidates the dedup key and allows a fresh publish
 
-**Idempotency decisions (resolve before Task 6):**
-
-- Dedup key: `queue_id` alone vs. `queue_id` + content hash (latter recommended — allows re-publish after edits)
-- Ambiguous-failure handling: persist a "started" attempt *before* calling Telegram so a mid-call crash is detectable on the next run
-- Concurrency guard: DB row lock or "claimed" attempt state so two workers can't publish the same item
-- Key lifetime: bounded, not indefinite
-- Manual retry (`POST /queues/{id}/publish`) and automatic Celery retry must share the same guard
-- Content edited between attempts must invalidate the dedup key and allow a fresh publish
-
-**Frontend tasks (start only after backend Task 7 ships):**
+**Frontend tasks (start only after backend Task 7 ships — still open):**
 
 1. Extend `features/queue/types/api.ts` with backend-sourced fields (`last_attempt`, `failure_reason`, `retry_count`).
-2. Update `queue.api.ts` to fetch attempt/failure data.
+2. Update `queue.api.ts` to fetch attempt/failure data (`GET /queues/{id}`, `GET /queues/{id}/attempts`).
 3. Replace the failure half of `useQueuePublishingOperations` with backend-sourced state; keep in-flight `publishing` as client state (legitimately ephemeral).
 4. `QueueHealthBadge` / `QueueOperationalStats` read backend failure reason (client message as fallback during rollout only).
 5. Wire "Retry publish" to the existing `POST /queues/{id}/publish` from `QueueDetailsDrawer` — no new endpoint.
@@ -224,23 +215,23 @@ Phase E — Platform expansion (V2)
 
 **Milestone acceptance criteria:**
 
-- Every Telegram publish attempt (manual or scheduled) persists with attempt number, status, error detail, timestamp — zero silent failures.
-- No new `QueueStatus` enum value introduced.
-- Retry behavior verified by tests (429/`retry_after` handling, Celery autoretry on transient failure).
-- Idempotency verified by tests (no duplicate send on retry; fresh publish allowed after content edit; manual and automatic retry share the guard).
-- API surface documented in `06-api-integration.md`; `QueueHealthBadge`/`QueueOperationalStats`/`QueueDetailsDrawer` read backend truth with client fallback during rollout.
-- No new UI routes/drawers/dialogs/libraries introduced.
-- Backend pytest and frontend typecheck/lint/test all pass.
-- Documentation updates below are applied before this phase is marked done.
+- Every Telegram publish attempt (manual or scheduled) persists with attempt number, status, error detail, timestamp — zero silent failures. ✅ Backend
+- No new `QueueStatus` enum value introduced. ✅
+- Retry behavior verified by tests (429/`retry_after` handling, Celery autoretry on transient failure). ✅ MVP pytest
+- Idempotency verified by tests (no duplicate send on retry; fresh publish allowed after content edit; manual and automatic retry share the guard). ✅ MVP pytest
+- API surface documented in `06-api-integration.md`; `QueueHealthBadge`/`QueueOperationalStats`/`QueueDetailsDrawer` read backend truth with client fallback during rollout. 🟡 Docs updated; FE wiring open
+- No new UI routes/drawers/dialogs/libraries introduced. ✅ (backend-only change set)
+- Backend pytest and frontend typecheck/lint/test all pass. ✅ Backend MVP suite; FE unchanged
+- Documentation updates below are applied before this phase is marked done. ✅ (this revision)
 
 **Documentation updates required on completion:**
 
-- `06-api-integration.md` — "Failed today KPI" Client-side → Connected/Partial; document the attempt endpoint/schema.
-- `03-design-system.md` — clarify publish failure is now backend-owned attempt data.
-- `10-production-readiness.md` — remove "Silent Celery publish skip" from Known Issues; move the Telegram row in §9.3 retry table to implemented.
-- `04-component-library.md` — update `QueueHealthBadge` / `QueueDetailsDrawer` notes for the attempt-history section.
-- `11-workspace-design-system.md` — update the Queue template layout note (§12).
-- This document (`08`) — flip "Publish failure tracking" to backend-tracked in §2 above.
+- `06-api-integration.md` — ✅ "Failed today KPI" → Partial; attempt endpoint/schema documented
+- `03-design-system.md` — ✅ publish failure is backend-owned attempt data
+- `10-production-readiness.md` — ✅ removed "Silent Celery publish skip"; Telegram retry row marked implemented
+- `04-component-library.md` — ✅ `QueueHealthBadge` / `QueueDetailsDrawer` notes for attempt-history (FE planned)
+- `11-workspace-design-system.md` — ✅ Queue template layout note updated
+- This document (`08`) — ✅ feature checklist + backend completeness flipped for A.1 backend deliverables
 
 ### Phase A.2 — Real-time operations (depends on Phase A.1)
 
@@ -252,7 +243,7 @@ Phase E — Platform expansion (V2)
 
 **Deliverables:** Backend SSE endpoint or WebSocket channel; frontend subscription hook; KPI cards update live
 
-**Do not start before Phase A.1 ships** — there is no trustworthy event to stream until then.
+**Do not start streaming until Phase A.1 backend attempt events exist** — they do as of 2026-08-01. Prefer completing FE Phase A.1 data-source swap first so the UI does not mix client failure maps with live attempt streams.
 
 ### Phase B — Background workers & queue execution (remainder; depends on Phase A.1 for health signal)
 
@@ -312,8 +303,8 @@ Depends on Phases A.1–B being substantially complete.
 | Refresh tokens | ⬜ Config only |
 | Rate limiting middleware | ⬜ |
 | CI/CD full lint gate | 🟡 Partial Ruff scope |
-| Publish attempt/event tracking (Telegram) | ⬜ Planned Phase A.1 |
-| Telegram retry + idempotency policy | ⬜ Planned Phase A.1 |
+| Publish attempt/event tracking (Telegram) | ✅ Phase A.1 backend |
+| Telegram retry + idempotency policy | ✅ Phase A.1 backend |
 
 ---
 
