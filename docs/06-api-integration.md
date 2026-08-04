@@ -1,7 +1,9 @@
 # API Integration Guide
 
-**Document Version:** 2.1  
-**Last Updated:** 2026-08-01
+**Document Version:** 2.2  
+**Last Updated:** 2026-08-04
+
+**2026-08-04 revision:** Phase A.1 **frontend tasks are complete** — queue KPIs, `QueueHealthBadge`, and `QueueTable` now resolve failures from backend attempt data (`resolveQueueFailure`) with the client failure map only as a short-lived gap-filler until per-item enrichment resolves; `QueueDetailsDrawer` renders read-only publish attempt history from `GET /queues/{id}/attempts` and retries via the existing `POST /queues/{id}/publish`. Statuses below for §4.6 and §5 are updated accordingly. Also reflects three post-implementation bug fixes (scheduled publishing, queue item deletion, Telegram long-message publishing) — see [10-production-readiness.md](./10-production-readiness.md) §10.
 
 **Backend source of truth:** FastAPI routers + Pydantic schemas  
 **Default API base:** `http://localhost:8000/api/v1`  
@@ -135,15 +137,15 @@ Status definitions:
 
 | Endpoint | Frontend module | Status | Types / notes |
 | --- | --- | --- | --- |
-| `GET /queues` | `queue.api.ts` | Connected | Fetches up to 200 items for workspace. List items do **not** populate attempt summary fields (defaults: `last_attempt=null`, `failure_reason=null`, `retry_count=0`) |
-| `GET /queues/{id}` | `queue.api.ts` | Connected | Returns `QueueRead` with attempt summary: `last_attempt`, `failure_reason`, `retry_count` |
-| `GET /queues/{id}/attempts` | — | Backend ready | `QueuePublishAttemptListResponse` — attempt history newest-first. Frontend Phase A.1 task still to wire |
+| `GET /queues` | `queue.api.ts` | Connected | Fetches up to 200 items for workspace. List items do **not** populate attempt summary fields (defaults: `last_attempt=null`, `failure_reason=null`, `retry_count=0`); `useQueueAttemptSummaryEnrichment` backfills non-published rows via `GET /queues/{id}` with bounded concurrency (5) |
+| `GET /queues/{id}` | `queue.api.ts` | Connected | Returns `QueueRead` with attempt summary: `last_attempt`, `failure_reason`, `retry_count`. Used both for drawer detail and list enrichment |
+| `GET /queues/{id}/attempts` | `queue.api.ts` (`getQueuePublishAttempts`) | Connected | `QueuePublishAttemptListResponse` — attempt history newest-first. Wired via `useQueuePublishAttempts`, rendered read-only in `QueueDetailsDrawer` while the drawer is open |
 | `POST /queues` | `queue.api.ts` | Connected | Draft/queued creation from AI, products, discovery |
 | `PATCH /queues/{id}` | `queue.api.ts` | Connected | Schedule, channel assign, content edit via drawer |
-| `POST /queues/{id}/publish` | `queue.api.ts` | Connected | Single + bulk via `useQueuePublishingOperations`. Idempotency guard returns **409** when an unexpired `started`/`succeeded` attempt blocks the same content hash (no attempt row created on suppression) |
-| `DELETE /queues/{id}` | `queue.api.ts` | Connected | Bulk delete with confirmation; cascade-deletes attempt history |
+| `POST /queues/{id}/publish` | `queue.api.ts` | Connected | Single + bulk via `useQueuePublishingOperations`. Idempotency guard returns **409** when an unexpired `started`/`succeeded` attempt blocks the same content hash (no attempt row created on suppression); if the blocking attempt already `succeeded` but the queue row had not reached `published` (e.g. a batch rollback), the service heals the row to `published` server-side before returning 409. `QueueDetailsDrawer`'s primary action also serves as "Retry publish" (relabelled "إعادة المحاولة") — same endpoint, no new route |
+| `DELETE /queues/{id}` | `queue.api.ts` | Connected | Bulk delete with confirmation; ORM cascade (`cascade="all, delete-orphan"` on `QueueItem.publish_attempts`) deletes attempt history — fixes a prior bug where deleting an item with attempts raised a `NOT NULL` violation instead of cascading |
 | Publishing KPI "publishing" | `useQueuePublishingOperations` | Client-side | In-flight publish IDs (legitimately ephemeral) |
-| Failed today KPI | `lib/operations.ts` | Partial | Backend owns durable failures via `queue_publish_attempts` (`error_code`, including `dead_letter`). UI still derives from client failure map until frontend Phase A.1 tasks swap the data source |
+| Failed today KPI | `lib/operations.ts` (`resolveQueueFailure`, `getQueueOperationalStats`) | Connected | Backend-owned via `queue_publish_attempts` (`error_code`, including `dead_letter`); `resolveQueueFailure` prefers `item.last_attempt` / `item.failure_reason` and falls back to the client failure map only until enrichment for that row resolves |
 | Real-time status stream | — | Pending Phase A.2 | No WebSocket/SSE yet |
 
 #### Publish attempt schemas (Phase A.1 backend)
@@ -162,6 +164,8 @@ Status definitions:
 | `provider_message_id` | `int \| null` | Set on success |
 
 **`QueuePublishAttemptListResponse`:** `{ queue_id, items: QueuePublishAttemptRead[], total }`
+
+**Long content handling (transparent to the API contract):** `TelegramPublisher` splits outbound text exceeding Telegram's limits (4096 chars per message, 1024 chars per photo caption) into sequential messages at paragraph/line/word boundaries, never truncating content. `provider_message_id` on the attempt always refers to the first outbound message (the photo, or the first text chunk); the inline button (if any) attaches only to the final chunk. No schema or endpoint changes — this only affects what is posted to Telegram for long queue items.
 
 **`QueueRead` additive fields** (populated on `GET /queues/{id}` via `QueueService.get_read`):
 
@@ -199,8 +203,8 @@ Status definitions:
 | **Products inventory** | `GET /products`, `GET /queues` | `ProductRead`, pipeline via queue join |
 | **Product details drawer** | `GET /products/{id}` (from list) | `image_url`, `gallery_images`, `score`, `affiliate_url` |
 | **AI Studio** | `POST /ai-content/generate` | `content`, `provider`, `content_type`, `tone`, `language` |
-| **Queue KPI cards** | `GET /queues` + client ops | Status counts; failed-today still client-derived until FE Phase A.1 |
-| **Queue table/drawer** | `GET /queues`, `GET /queues/{id}`, `GET /queues/{id}/attempts`, `PATCH`, `POST publish` | `content`, `scheduled_at`, `channel_id`, `status`; attempt summary/history from backend (FE wiring pending) |
+| **Queue KPI cards** | `GET /queues` + enrichment `GET /queues/{id}` + client ops | Status counts; failed-today resolves from backend attempt data first, client map as short-lived fallback |
+| **Queue table/drawer** | `GET /queues`, `GET /queues/{id}`, `GET /queues/{id}/attempts`, `PATCH`, `POST publish` | `content`, `scheduled_at`, `channel_id`, `status`; attempt summary/history read from backend truth; drawer includes read-only attempt-history list |
 | **Schedule dialog** | `PATCH /queues/{id}` | `scheduled_at`, `channel_id`, `status: scheduled` |
 | **Channels** | `GET/POST/PUT /channels` | `bot_permission_status`, `can_post_messages`, `is_active` |
 | **Dashboard** | `GET /dashboard` | Product/queue/channel aggregates |
@@ -252,4 +256,4 @@ useQuery({
 ## 9. Related Documents
 
 - [02-frontend-architecture.md](./02-frontend-architecture.md)
-- [08-implementation-roadmap.md](./08-implementation-roadmap.md) — Upcoming API work (SSE, retries)
+- [08-implementation-roadmap.md](./08-implementation-roadmap.md) — Upcoming API work (Phase A.2 SSE/WebSocket streaming)

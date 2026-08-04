@@ -113,6 +113,9 @@ class TelegramPublishingService:
             item.published_at = datetime.now(UTC)
             item.telegram_message_id = result.message_id
             await self.queue_repo.update(item)
+            # Commit success before returning so a later sibling failure in a
+            # Celery batch cannot roll back a Telegram message that already sent.
+            await self.session.commit()
 
             return PublishQueueResponse(
                 queue_id=item.id,
@@ -125,9 +128,12 @@ class TelegramPublishingService:
             # Celery autoretries only TelegramPublishError. All other failures are
             # terminal immediately. Transport failures become terminal when the
             # caller reports that Celery (or the manual path) has no retries left.
+            # Non-retryable Telegram 4xx (except 429) are also terminal so the
+            # beat loop does not recreate failed attempts forever.
             terminal = (
                 mark_transport_failure_terminal
                 or not isinstance(exc, TelegramPublishError)
+                or self._is_non_retryable_telegram_error(exc)
             )
             await self._mark_attempt_failed(attempt, exc, terminal=terminal)
             raise
@@ -174,9 +180,10 @@ class TelegramPublishingService:
                         mark_transport_failure_terminal=mark_transport_failure_terminal,
                     )
                 )
-            except (ValidationError, ForbiddenError, ConflictError):
-                # Failure may already be persisted as a terminal attempt, or the
-                # guard suppressed a duplicate without creating an attempt.
+            except (ValidationError, ForbiddenError, ConflictError, TelegramPublishError):
+                # Persist-and-continue: one item's failure must not block the rest
+                # of the due/queued batch for this beat tick. Attempt rows (and
+                # dead-letter markers) are written inside publish_queue_item.
                 continue
         return results
 
@@ -201,6 +208,17 @@ class TelegramPublishingService:
         )
         if blocking is not None:
             if blocking.status == "succeeded":
+                # Heal status drift: Telegram already accepted the message but the
+                # queue row never reached published (e.g. batch rollback). Keep the
+                # idempotency suppress, but surface the true published state.
+                if item.status != QueueStatus.PUBLISHED:
+                    item.status = QueueStatus.PUBLISHED
+                    item.published_at = item.published_at or blocking.occurred_at
+                    item.telegram_message_id = (
+                        item.telegram_message_id or blocking.provider_message_id
+                    )
+                    await self.queue_repo.update(item)
+                    await self.session.commit()
                 raise ConflictError(
                     "Publish already completed for this content; edit content to republish "
                     "or wait for the idempotency window to expire"
@@ -336,6 +354,16 @@ class TelegramPublishingService:
         if isinstance(exc, ServiceError):
             return "service_error"
         return "unexpected_error"
+
+    def _is_non_retryable_telegram_error(self, exc: TelegramPublishError) -> bool:
+        """True for permanent Telegram client failures that must not be beat-retried."""
+        if exc.http_status == 429 or exc.telegram_error_code == 429:
+            return False
+        if exc.http_status is not None and 400 <= exc.http_status < 500:
+            return True
+        if isinstance(exc.telegram_error_code, int) and 400 <= exc.telegram_error_code < 500:
+            return True
+        return False
 
     def _error_message_for(self, exc: BaseException) -> str:
         if isinstance(exc, ServiceError):

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
@@ -8,14 +8,14 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/common/states
 import { ToastOverlay } from "@/components/common/ToastOverlay";
 import { PageContainer, PageHeader } from "@/components/layout/page";
 import { Button } from "@/components/ui/primitives";
+import type { ApiError } from "@/services/api-client";
 import { useChannels } from "@/features/channels/hooks/useChannels";
 import { useProducts } from "@/features/products/hooks/useProducts";
-import {
-  getQueueOperationalStats,
-} from "../lib/operations";
+import { getQueueOperationalStats } from "../lib/operations";
 import {
   useDeleteQueueItem,
   useQueue,
+  useQueueAttemptSummaryEnrichment,
   useQueuePublishingOperations,
   useQueueWorkspaceState,
   useUpdateQueueItem,
@@ -39,6 +39,19 @@ type ToastState = {
   tone: "success" | "error";
 } | null;
 
+function getApiErrorMessage(error: unknown, fallback: string): string {
+  if (
+    error &&
+    typeof error === "object" &&
+    "message" in error &&
+    typeof (error as ApiError).message === "string" &&
+    (error as ApiError).message.length > 0
+  ) {
+    return (error as ApiError).message;
+  }
+  return fallback;
+}
+
 export function QueueView() {
   const router = useRouter();
   const queue = useQueue(undefined, 200);
@@ -47,15 +60,20 @@ export function QueueView() {
   const updateQueue = useUpdateQueueItem();
   const deleteQueue = useDeleteQueueItem();
   const publishing = useQueuePublishingOperations();
-  const items = queue.data?.items ?? [];
-  const workspace = useQueueWorkspaceState(items);
+  const listItems = queue.data?.items ?? [];
+  const { enrichedItems, enriching } = useQueueAttemptSummaryEnrichment(listItems);
+  const workspace = useQueueWorkspaceState(enrichedItems);
 
-  const [activePost, setActivePost] = useState<QueueItem | null>(null);
+  const [activePostId, setActivePostId] = useState<string | null>(null);
   const [schedulingDialog, setSchedulingDialog] = useState<SchedulingState | null>(
     null,
   );
   const [deleteTargets, setDeleteTargets] = useState<QueueItem[]>([]);
   const [toast, setToast] = useState<ToastState>(null);
+
+  useEffect(() => {
+    publishing.syncFailuresFromBackend(enrichedItems);
+  }, [enrichedItems, publishing.syncFailuresFromBackend]);
 
   const productsById = useMemo(
     () => new Map((products.data?.items ?? []).map((product) => [product.id, product])),
@@ -68,13 +86,20 @@ export function QueueView() {
   const stats = useMemo(
     () =>
       getQueueOperationalStats(
-        items,
+        enrichedItems,
         publishing.publishingIdSet,
         publishing.failures,
       ),
-    [items, publishing.publishingIdSet, publishing.failures],
+    [enrichedItems, publishing.publishingIdSet, publishing.failures],
   );
 
+  const activePost = useMemo(
+    () =>
+      activePostId
+        ? enrichedItems.find((item) => item.id === activePostId) ?? null
+        : null,
+    [activePostId, enrichedItems],
+  );
   const activeProduct =
     activePost?.product_id ? productsById.get(activePost.product_id) ?? null : null;
   const activeChannel =
@@ -102,17 +127,34 @@ export function QueueView() {
       return;
     }
     const result = await publishing.publishItems(selected.map((item) => item.id));
-    setToast(
-      result.failed > 0
-        ? {
-            tone: "error",
-            message: `نُشر ${result.published.toLocaleString("ar")} وفشل ${result.failed.toLocaleString("ar")}.`,
-          }
-        : {
-            tone: "success",
-            message: `تم نشر ${result.published.toLocaleString("ar")} منشور بنجاح.`,
-          },
-    );
+    if (result.conflicts > 0 && result.published === 0 && result.failed === 0) {
+      setToast({
+        tone: "error",
+        message: result.conflictMessage ?? "تعذر النشر بسبب تعارض.",
+      });
+    } else if (result.failed > 0 || result.conflicts > 0) {
+      const parts = [
+        result.published > 0
+          ? `نُشر ${result.published.toLocaleString("ar")}`
+          : null,
+        result.failed > 0
+          ? `فشل ${result.failed.toLocaleString("ar")}${
+              result.failureMessage ? `: ${result.failureMessage}` : ""
+            }`
+          : null,
+        result.conflicts > 0
+          ? `تعارض ${result.conflicts.toLocaleString("ar")}${
+              result.conflictMessage ? `: ${result.conflictMessage}` : ""
+            }`
+          : null,
+      ].filter(Boolean);
+      setToast({ tone: "error", message: parts.join(" · ") });
+    } else {
+      setToast({
+        tone: "success",
+        message: `تم نشر ${result.published.toLocaleString("ar")} منشور بنجاح.`,
+      });
+    }
     workspace.clearSelection();
   };
 
@@ -136,7 +178,7 @@ export function QueueView() {
     } catch (error) {
       setToast({
         tone: "error",
-        message: error instanceof Error ? error.message : "تعذر حفظ الجدولة.",
+        message: getApiErrorMessage(error, "تعذر حفظ الجدولة."),
       });
     }
   };
@@ -144,7 +186,7 @@ export function QueueView() {
   const publishFromDialog = async () => {
     if (!schedulingDialog?.channelId) return;
     try {
-      const selected = items.filter((item) =>
+      const selected = enrichedItems.filter((item) =>
         schedulingDialog.itemIds.includes(item.id),
       );
       for (const item of selected) {
@@ -161,13 +203,13 @@ export function QueueView() {
         selected.map((item) => ({
           ...item,
           channel_id: schedulingDialog.channelId,
-          status: "queued",
+          status: "queued" as const,
         })),
       );
     } catch (error) {
       setToast({
         tone: "error",
-        message: error instanceof Error ? error.message : "تعذر تجهيز النشر.",
+        message: getApiErrorMessage(error, "تعذر تجهيز النشر."),
       });
     }
   };
@@ -182,7 +224,7 @@ export function QueueView() {
     } catch (error) {
       setToast({
         tone: "error",
-        message: error instanceof Error ? error.message : "تعذر تحديث الحالة.",
+        message: getApiErrorMessage(error, "تعذر تحديث الحالة."),
       });
     }
   };
@@ -192,8 +234,8 @@ export function QueueView() {
       for (const item of deleteTargets) {
         await deleteQueue.mutateAsync(item.id);
       }
-      if (deleteTargets.some((item) => item.id === activePost?.id)) {
-        setActivePost(null);
+      if (deleteTargets.some((item) => item.id === activePostId)) {
+        setActivePostId(null);
       }
       setToast({
         tone: "success",
@@ -204,7 +246,7 @@ export function QueueView() {
     } catch (error) {
       setToast({
         tone: "error",
-        message: error instanceof Error ? error.message : "تعذر حذف المنشورات.",
+        message: getApiErrorMessage(error, "تعذر حذف المنشورات."),
       });
     }
   };
@@ -219,11 +261,11 @@ export function QueueView() {
     }
   };
 
-  const noItems = !queue.isPending && !queue.isError && items.length === 0;
+  const noItems = !queue.isPending && !queue.isError && listItems.length === 0;
   const filteredEmpty =
     !queue.isPending &&
     !queue.isError &&
-    items.length > 0 &&
+    listItems.length > 0 &&
     workspace.filteredItems.length === 0;
 
   return (
@@ -249,7 +291,12 @@ export function QueueView() {
           pageSize={workspace.pageSize}
           resultCount={workspace.filteredItems.length}
           channels={channels.data?.items ?? []}
-          refreshing={queue.isFetching || channels.isFetching || products.isFetching}
+          refreshing={
+            queue.isFetching ||
+            channels.isFetching ||
+            products.isFetching ||
+            enriching
+          }
           onSearchChange={workspace.setSearch}
           onStatusChange={workspace.setStatusFilter}
           onChannelChange={workspace.setChannelFilter}
@@ -310,7 +357,7 @@ export function QueueView() {
               failures={publishing.failures}
               onToggle={workspace.toggle}
               onToggleAll={workspace.toggleAll}
-              onView={setActivePost}
+              onView={(item) => setActivePostId(item.id)}
               onOpenProduct={(productId) => router.push(`/products/${productId}`)}
               onSchedule={(item) => openSchedule([item])}
               onPublish={(item) => void publishItems([item])}
@@ -364,9 +411,9 @@ export function QueueView() {
         product={activeProduct}
         channel={activeChannel}
         publishing={Boolean(activePost && publishing.publishingIdSet.has(activePost.id))}
-        failure={activePost ? publishing.failures[activePost.id] : undefined}
-        open={activePost != null}
-        onClose={() => setActivePost(null)}
+        clientFailure={activePost ? publishing.failures[activePost.id] : undefined}
+        open={activePostId != null}
+        onClose={() => setActivePostId(null)}
         onPublish={(item) => void publishItems([item])}
         onSchedule={(item) => openSchedule([item])}
         onOpenAi={openAi}

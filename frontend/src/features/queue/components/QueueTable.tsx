@@ -9,7 +9,11 @@ import {
 import { Badge, Button } from "@/components/ui/primitives";
 import type { Channel } from "@/features/channels/types/api";
 import type { Product } from "@/features/products/types/api";
-import { formatQueueSchedule, getQueueHealth } from "../lib/operations";
+import {
+  formatQueueSchedule,
+  getQueueHealth,
+  resolveQueueFailure,
+} from "../lib/operations";
 import type {
   QueueItem,
   QueuePublishFailure,
@@ -82,7 +86,7 @@ export function QueueTable({
             const product = item.product_id ? productsById.get(item.product_id) : undefined;
             const channel = item.channel_id ? channelsById.get(item.channel_id) : undefined;
             const publishing = publishingIds.has(item.id);
-            const failure = failures[item.id];
+            const failure = resolveQueueFailure(item, failures[item.id]);
             const health = getQueueHealth(item, { publishing, failure });
             const schedule = formatQueueSchedule(item);
             const imageUrl = item.image_url ?? product?.image_url ?? null;

@@ -6,7 +6,13 @@ import { CalendarClock, Package, Send, Sparkles } from "lucide-react";
 import { Badge, Button, Drawer } from "@/components/ui/primitives";
 import type { Channel } from "@/features/channels/types/api";
 import type { Product } from "@/features/products/types/api";
-import { formatQueueSchedule, getQueueHealth } from "../lib/operations";
+import { useQueuePublishAttempts } from "../hooks/useQueue";
+import {
+  formatAttemptStatus,
+  formatQueueSchedule,
+  getQueueHealth,
+  resolveQueueFailure,
+} from "../lib/operations";
 import type { QueueItem, QueuePublishFailure } from "../types/api";
 import { QueueHealthBadge } from "./QueueHealthBadge";
 
@@ -15,7 +21,7 @@ export function QueueDetailsDrawer({
   product,
   channel,
   publishing,
-  failure,
+  clientFailure,
   open,
   onClose,
   onPublish,
@@ -27,7 +33,8 @@ export function QueueDetailsDrawer({
   product: Product | null;
   channel: Channel | null;
   publishing: boolean;
-  failure?: QueuePublishFailure;
+  /** Short-lived client fallback until backend summary enrichment arrives. */
+  clientFailure?: QueuePublishFailure;
   open: boolean;
   onClose: () => void;
   onPublish: (item: QueueItem) => void;
@@ -36,11 +43,14 @@ export function QueueDetailsDrawer({
   /** Reserved for a future persisted Publishing Timeline. */
   timelineSlot?: ReactNode;
 }) {
+  const failure = item ? resolveQueueFailure(item, clientFailure) : undefined;
   const health = item
     ? getQueueHealth(item, { publishing, failure })
     : "missing_channel";
   const schedule = item ? formatQueueSchedule(item) : null;
   const imageUrl = item?.image_url ?? product?.image_url ?? null;
+  const canRetry = Boolean(item && item.status !== "published");
+  const attemptsQuery = useQueuePublishAttempts(item?.id ?? null, open && Boolean(item));
 
   return (
     <Drawer
@@ -52,11 +62,11 @@ export function QueueDetailsDrawer({
         item ? (
           <div className="grid gap-2 sm:grid-cols-3">
             <Button
-              disabled={item.status === "published" || publishing}
+              disabled={!canRetry || publishing}
               loading={publishing}
               onClick={() => onPublish(item)}
             >
-              نشر الآن
+              {failure ? "إعادة المحاولة" : "نشر الآن"}
             </Button>
             <Button variant="outline" onClick={() => onSchedule(item)}>
               <CalendarClock className="size-4" />
@@ -91,6 +101,11 @@ export function QueueDetailsDrawer({
               <div className="mt-2">
                 <QueueHealthBadge health={health} failure={failure} />
               </div>
+              {(item.retry_count ?? 0) > 0 ? (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  محاولات: {item.retry_count?.toLocaleString("ar")}
+                </p>
+              ) : null}
             </div>
           </div>
 
@@ -124,6 +139,62 @@ export function QueueDetailsDrawer({
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
               المحتوى للمعاينة فقط. التحرير وإعادة التوليد متاحان في AI Studio.
+            </p>
+          </section>
+
+          <section>
+            <h4 className="mb-2 text-sm font-semibold">سجل محاولات النشر</h4>
+            {attemptsQuery.isPending ? (
+              <p className="text-sm text-muted-foreground">جاري تحميل السجل…</p>
+            ) : attemptsQuery.isError ? (
+              <p className="text-sm text-destructive" role="alert">
+                تعذر تحميل سجل المحاولات.
+              </p>
+            ) : (attemptsQuery.data?.items.length ?? 0) === 0 ? (
+              <p className="rounded-md border border-dashed border-border p-3 text-sm text-muted-foreground">
+                لا توجد محاولات مسجّلة بعد.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {attemptsQuery.data?.items.map((attempt) => (
+                  <li
+                    key={`${attempt.attempt_number}-${attempt.occurred_at}`}
+                    className="rounded-md border border-border p-3 text-sm"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-medium">
+                        محاولة {attempt.attempt_number.toLocaleString("ar")}
+                      </span>
+                      <Badge
+                        tone={
+                          attempt.status === "succeeded"
+                            ? "success"
+                            : attempt.status === "failed"
+                              ? "error"
+                              : "info"
+                        }
+                      >
+                        {formatAttemptStatus(attempt.status)}
+                      </Badge>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {new Intl.DateTimeFormat("ar", {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                      }).format(new Date(attempt.occurred_at))}
+                    </p>
+                    {attempt.status === "failed" &&
+                    (attempt.error_message || attempt.error_code) ? (
+                      <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                        {attempt.error_message ?? attempt.error_code}
+                      </p>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="mt-2 text-xs text-muted-foreground">
+              السجل للقراءة فقط. إعادة المحاولة تتم عبر نشر الآن.
             </p>
           </section>
 

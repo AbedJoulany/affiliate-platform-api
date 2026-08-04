@@ -1,5 +1,7 @@
 "use client";
 
+/** Presentational KPI strip. `failedToday` is computed upstream from backend
+ * attempt summaries (client failure map as short-lived rollout fallback). */
 export function QueueOperationalStats({
   stats,
 }: {

@@ -1,7 +1,9 @@
 # Design System
 
-**Document Version:** 2.1  
-**Last Updated:** 2026-08-01
+**Document Version:** 2.2  
+**Last Updated:** 2026-08-04
+
+**2026-08-04 revision:** Phase A.1 frontend wiring is complete — "Failed today" and `QueueHealthBadge` now read backend attempt truth by default; the client failure map is a short-lived fallback only, not a rollout-in-progress state.
 
 ---
 
@@ -59,7 +61,7 @@ All components must use semantic tokens — no hardcoded hex in feature code.
 | `scheduled` | warning | Requires `scheduled_at` |
 | `published` | success | Terminal success |
 
-**Important:** `failed` is **not** a backend `QueueStatus` value. Publish failures are **backend-owned attempt data** on `queue_publish_attempts` (`status` = `started` \| `succeeded` \| `failed`; terminal exhaustion may set `error_code` = `dead_letter`). UI surfaces them via attempt history / failure reason (and toasts / `QueueHealthBadge` during frontend rollout), never by inventing a queue status.
+**Important:** `failed` is **not** a backend `QueueStatus` value. Publish failures are **backend-owned attempt data** on `queue_publish_attempts` (`status` = `started` \| `succeeded` \| `failed`; terminal exhaustion may set `error_code` = `dead_letter`). UI surfaces them via attempt history / failure reason (toasts and `QueueHealthBadge` resolve backend truth via `resolveQueueFailure`), never by inventing a queue status.
 
 ### Operational KPI tones (Queue workspace)
 
@@ -68,7 +70,7 @@ All components must use semantic tokens — no hardcoded hex in feature code.
 | Queued / Scheduled | neutral/info borders on stat cards | |
 | Publishing (in-flight) | primary accent | Ephemeral client state |
 | Published today | success (`emerald`) | |
-| Failed today | error (`red`) | Backend-owned attempt failures when FE wired; client map is rollout fallback |
+| Failed today | error (`red`) | Backend-owned attempt failures via `getQueueOperationalStats`/`resolveQueueFailure`; client map is a short-lived fallback until per-item enrichment resolves |
 
 ### AI score quality bands
 

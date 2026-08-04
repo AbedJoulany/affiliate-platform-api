@@ -4,6 +4,7 @@ import type {
   QueueCreate,
   QueueItem,
   QueueListResponse,
+  QueuePublishAttemptListResponse,
   QueueStatus,
   QueueUpdate,
 } from "../types/api";
@@ -21,6 +22,15 @@ export async function getQueue(
 
 export async function getQueueItem(id: string): Promise<QueueItem> {
   const { data } = await apiClient.get<QueueItem>(`/queues/${id}`);
+  return data;
+}
+
+export async function getQueuePublishAttempts(
+  id: string,
+): Promise<QueuePublishAttemptListResponse> {
+  const { data } = await apiClient.get<QueuePublishAttemptListResponse>(
+    `/queues/${id}/attempts`,
+  );
   return data;
 }
 

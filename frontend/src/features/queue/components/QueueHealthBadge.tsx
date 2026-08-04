@@ -21,6 +21,7 @@ export function QueueHealthBadge({
   failure,
 }: {
   health: QueueHealthStatus;
+  /** Prefer backend attempt reason; client message is rollout fallback only. */
   failure?: QueuePublishFailure;
 }) {
   const meta = HEALTH_META[health];

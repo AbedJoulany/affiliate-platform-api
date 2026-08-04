@@ -16,6 +16,52 @@ TELEGRAM_MAX_RETRIES = 3
 TELEGRAM_BASE_BACKOFF_SECONDS = 0.5
 TELEGRAM_JITTER_SECONDS = 0.25
 
+# Official Bot API limits (characters after entities parsing).
+TELEGRAM_MAX_MESSAGE_LENGTH = 4096
+TELEGRAM_MAX_CAPTION_LENGTH = 1024
+
+
+def _telegram_cut_index(text: str, max_length: int) -> int:
+    """Return an end index for the next chunk, preferring soft boundaries."""
+    if len(text) <= max_length:
+        return len(text)
+    window = text[:max_length]
+    min_soft = max_length // 2
+    for separator in ("\n\n", "\n", " "):
+        index = window.rfind(separator)
+        if index >= min_soft:
+            return index
+    return max_length
+
+
+def split_telegram_text(text: str, max_length: int) -> list[str]:
+    """Split ``text`` into chunks that fit Telegram length limits.
+
+    Prefers paragraph (``\\n\\n``), then line, then word boundaries so formatting
+    and readability are preserved when possible. Never truncates content.
+    """
+    if max_length < 1:
+        raise ValueError("max_length must be positive")
+    if not text:
+        return [""]
+    if len(text) <= max_length:
+        return [text]
+
+    chunks: list[str] = []
+    remaining = text
+    while remaining:
+        if len(remaining) <= max_length:
+            chunks.append(remaining)
+            break
+        cut = _telegram_cut_index(remaining, max_length)
+        chunk = remaining[:cut].rstrip("\n")
+        if not chunk:
+            chunk = remaining[:max_length]
+            cut = len(chunk)
+        chunks.append(chunk)
+        remaining = remaining[cut:].lstrip("\n")
+    return chunks
+
 
 class TelegramPublisher:
     def __init__(self, bot_token: str | None = None) -> None:
@@ -94,15 +140,95 @@ class TelegramPublisher:
         button: InlineUrlButton | None = None,
         parse_mode: str | None = None,
     ) -> TelegramPublishResult:
+        """Publish text (and optional photo), splitting when over Telegram limits.
+
+        ``provider_message_id`` / ``message_id`` always refers to the first
+        outbound message (the photo, or the first text chunk). Follow-up chunks
+        are sent sequentially afterward. The inline button is attached only to
+        the final message so it stays with the end of the post.
+        """
         if image_url:
-            return await self.send_photo(
+            return await self._publish_with_photo(
                 chat_id,
-                image_url,
-                caption=text,
+                text,
+                image_url=image_url,
                 button=button,
                 parse_mode=parse_mode,
             )
-        return await self.send_text(chat_id, text, button=button, parse_mode=parse_mode)
+        return await self._publish_text_chunks(
+            chat_id,
+            text,
+            button=button,
+            parse_mode=parse_mode,
+        )
+
+    async def _publish_text_chunks(
+        self,
+        chat_id: str,
+        text: str,
+        *,
+        button: InlineUrlButton | None,
+        parse_mode: str | None,
+    ) -> TelegramPublishResult:
+        chunks = split_telegram_text(text, TELEGRAM_MAX_MESSAGE_LENGTH)
+        primary: TelegramPublishResult | None = None
+        for index, chunk in enumerate(chunks):
+            is_last = index == len(chunks) - 1
+            result = await self.send_text(
+                chat_id,
+                chunk,
+                button=button if is_last else None,
+                parse_mode=parse_mode,
+            )
+            if primary is None:
+                primary = result
+        assert primary is not None
+        return primary
+
+    async def _publish_with_photo(
+        self,
+        chat_id: str,
+        text: str,
+        *,
+        image_url: str,
+        button: InlineUrlButton | None,
+        parse_mode: str | None,
+    ) -> TelegramPublishResult:
+        if len(text) <= TELEGRAM_MAX_CAPTION_LENGTH:
+            return await self.send_photo(
+                chat_id,
+                image_url,
+                caption=text or None,
+                button=button,
+                parse_mode=parse_mode,
+            )
+
+        cut = _telegram_cut_index(text, TELEGRAM_MAX_CAPTION_LENGTH)
+        caption = text[:cut].rstrip("\n")
+        if not caption:
+            caption = text[:TELEGRAM_MAX_CAPTION_LENGTH]
+            cut = len(caption)
+        remainder = text[cut:].lstrip("\n")
+        follow_ups = (
+            split_telegram_text(remainder, TELEGRAM_MAX_MESSAGE_LENGTH) if remainder else []
+        )
+
+        primary = await self.send_photo(
+            chat_id,
+            image_url,
+            caption=caption,
+            button=button if not follow_ups else None,
+            parse_mode=parse_mode,
+        )
+        for index, chunk in enumerate(follow_ups):
+            is_last = index == len(follow_ups) - 1
+            await self.send_text(
+                chat_id,
+                chunk,
+                button=button if is_last else None,
+                parse_mode=parse_mode,
+            )
+        return primary
 
     def _build_inline_keyboard(self, button: InlineUrlButton) -> str:
         keyboard = {

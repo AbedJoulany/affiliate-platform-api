@@ -40,6 +40,22 @@ def get_async_session_maker() -> async_sessionmaker[AsyncSession]:
     return _AsyncSessionLocal
 
 
+async def dispose_async_engine() -> None:
+    """Dispose the process-wide async engine so the next task can bind a new loop.
+
+    Celery tasks use ``asyncio.run()``, which creates and closes a fresh event
+    loop per invocation. Reusing an engine/pool created on a prior loop raises
+    ``RuntimeError: ... attached to a different loop`` and stops scheduled
+    publishing.
+    """
+    global _engine, _AsyncSessionLocal
+
+    if _engine is not None:
+        await _engine.dispose()
+    _engine = None
+    _AsyncSessionLocal = None
+
+
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """FastAPI Dependency that yields the session."""
     session_maker = get_async_session_maker()

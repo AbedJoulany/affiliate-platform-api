@@ -1,8 +1,10 @@
 # Workspace Design System
 
-**Document Version:** 1.1  
-**Last Updated:** 2026-08-01  
+**Document Version:** 1.2  
+**Last Updated:** 2026-08-04  
 **Status:** Canonical frontend workspace architecture guide
+
+**2026-08-04 revision:** Queue workspace template (§12) updated — Phase A.1 frontend wiring is complete; the queue layout note no longer describes a rollout-in-progress state.
 
 This document defines how every workspace in the AI Affiliate Automation Platform must be designed, structured, and extended. It complements — and does not replace — the existing suite in `/docs` (especially [03-design-system.md](../03-design-system.md), [04-component-library.md](../04-component-library.md), and [02-frontend-architecture.md](../02-frontend-architecture.md)).
 
@@ -545,7 +547,7 @@ Each workspace implements the standard layout with domain-specific content. Belo
 | **Shared components** | PageHeader, WorkspaceStats, ResultsToolbar, SelectionBar, EmptyState, LoadingState, ErrorState, StatusBadge, PipelineBadge, Drawer, ConfirmationDialog, ToastOverlay |
 | **Unique components** | Queue table, scheduling dialog, queue details drawer, queue health badge, actions menu |
 
-**Layout note:** KPI cards required. In-flight "publishing" remains ephemeral client state. "Failed" counts/reasons are **not** a `QueueStatus` — they come from backend `queue_publish_attempts` (Phase A.1). Until frontend Phase A.1 wiring lands, the UI may still show a client failure map as a rollout fallback. Drawer inspection should include read-only attempt history from `GET /queues/{id}/attempts` once FE tasks ship.
+**Layout note:** KPI cards required. In-flight "publishing" remains ephemeral client state. "Failed" counts/reasons are **not** a `QueueStatus` — they come from backend `queue_publish_attempts` (Phase A.1) and are resolved via `resolveQueueFailure`, which prefers backend attempt data over the client failure map (a short-lived fallback used only until per-item enrichment resolves, never a permanent data source). The drawer includes a read-only attempt-history section from `GET /queues/{id}/attempts`, and its primary action doubles as "Retry publish" against the existing `POST /queues/{id}/publish` — no new route.
 
 ---
 

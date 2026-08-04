@@ -1,11 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { ApiError } from "@/services/api-client";
 import {
   createQueueItem,
   deleteQueueItem,
   getQueue,
+  getQueueItem,
+  getQueuePublishAttempts,
   publishQueueItem,
   updateQueueItem,
 } from "../api/queue.api";
@@ -18,12 +21,145 @@ import type {
   QueueWorkspaceSort,
 } from "../types/api";
 
-const queueKey = ["queue"] as const;
+export const queueKey = ["queue"] as const;
+export const queueAttemptsKey = (id: string) =>
+  [...queueKey, "attempts", id] as const;
+
+const ENRICHMENT_CONCURRENCY = 5;
+
+function getApiErrorMessage(error: unknown, fallback: string): string {
+  if (
+    error &&
+    typeof error === "object" &&
+    "message" in error &&
+    typeof (error as ApiError).message === "string" &&
+    (error as ApiError).message.length > 0
+  ) {
+    return (error as ApiError).message;
+  }
+  return fallback;
+}
+
+function isConflictError(error: unknown): boolean {
+  return Boolean(
+    error &&
+      typeof error === "object" &&
+      "status" in error &&
+      (error as ApiError).status === 409,
+  );
+}
+
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  mapper: (item: T) => Promise<R>,
+): Promise<R[]> {
+  if (items.length === 0) return [];
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const current = nextIndex;
+      nextIndex += 1;
+      results[current] = await mapper(items[current]);
+    }
+  }
+
+  const workers = Array.from(
+    { length: Math.min(concurrency, items.length) },
+    () => worker(),
+  );
+  await Promise.all(workers);
+  return results;
+}
 
 export function useQueue(status?: QueueStatus, limit = 20, skip = 0) {
   return useQuery({
     queryKey: [...queueKey, status, limit, skip],
     queryFn: () => getQueue(status, limit, skip),
+  });
+}
+
+/**
+ * GET /queues does not populate attempt summary fields. Enrich non-published
+ * items via GET /queues/{id} with limited concurrency after list load/invalidate.
+ */
+export function useQueueAttemptSummaryEnrichment(items: QueueItem[]) {
+  const [summariesById, setSummariesById] = useState<
+    Record<
+      string,
+      Pick<QueueItem, "last_attempt" | "failure_reason" | "retry_count">
+    >
+  >({});
+  const [enriching, setEnriching] = useState(false);
+  const generationRef = useRef(0);
+
+  const listFingerprint = useMemo(
+    () => items.map((item) => `${item.id}:${item.updated_at}`).join("|"),
+    [items],
+  );
+
+  useEffect(() => {
+    const generation = generationRef.current + 1;
+    generationRef.current = generation;
+    setSummariesById({});
+
+    const targets = items.filter((item) => item.status !== "published");
+    if (targets.length === 0) {
+      setEnriching(false);
+      return;
+    }
+
+    let cancelled = false;
+    setEnriching(true);
+
+    void (async () => {
+      await mapWithConcurrency(targets, ENRICHMENT_CONCURRENCY, async (item) => {
+        try {
+          const detail = await getQueueItem(item.id);
+          if (cancelled || generationRef.current !== generation) return;
+          setSummariesById((previous) => ({
+            ...previous,
+            [item.id]: {
+              last_attempt: detail.last_attempt ?? null,
+              failure_reason: detail.failure_reason ?? null,
+              retry_count: detail.retry_count ?? 0,
+            },
+          }));
+        } catch {
+          // Leave list defaults; client fallback / drawer fetch still apply.
+        }
+      });
+      if (!cancelled && generationRef.current === generation) {
+        setEnriching(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // Fingerprint captures id+updated_at churn after invalidate/refetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- items via fingerprint
+  }, [listFingerprint]);
+
+  const enrichedItems = useMemo(
+    () =>
+      items.map((item) => {
+        const summary = summariesById[item.id];
+        return summary ? { ...item, ...summary } : item;
+      }),
+    [items, summariesById],
+  );
+
+  return { enrichedItems, enriching };
+}
+
+export function useQueuePublishAttempts(queueId: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: queueId ? queueAttemptsKey(queueId) : [...queueKey, "attempts", "idle"],
+    queryFn: () => getQueuePublishAttempts(queueId!),
+    enabled: enabled && Boolean(queueId),
   });
 }
 
@@ -39,7 +175,10 @@ export function usePublishQueueItem() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: publishQueueItem,
-    onSuccess: () => client.invalidateQueries({ queryKey: queueKey }),
+    onSuccess: (_data, id) => {
+      void client.invalidateQueries({ queryKey: queueKey });
+      void client.invalidateQueries({ queryKey: queueAttemptsKey(id) });
+    },
   });
 }
 
@@ -60,52 +199,97 @@ export function useDeleteQueueItem() {
   });
 }
 
+export type PublishBatchResult = {
+  published: number;
+  failed: number;
+  conflicts: number;
+  /** Server detail for the first 409 (if any). */
+  conflictMessage: string | null;
+  /** Server detail for the first non-409 failure (if any). */
+  failureMessage: string | null;
+};
+
+/**
+ * In-flight `publishingIds` stay client-ephemeral.
+ * `failures` is a short-lived fallback until attempt-summary enrichment arrives.
+ * 409 conflicts toast with server detail and do not invent a failure row.
+ */
 export function useQueuePublishingOperations() {
   const client = useQueryClient();
   const [publishingIds, setPublishingIds] = useState<string[]>([]);
   const [failures, setFailures] = useState<Record<string, QueuePublishFailure>>({});
 
   const publishItems = useCallback(
-    async (ids: string[]) => {
+    async (ids: string[]): Promise<PublishBatchResult> => {
       const uniqueIds = Array.from(new Set(ids));
       setPublishingIds((previous) => Array.from(new Set([...previous, ...uniqueIds])));
       let published = 0;
       let failed = 0;
+      let conflicts = 0;
+      let conflictMessage: string | null = null;
+      let failureMessage: string | null = null;
 
       for (const id of uniqueIds) {
         try {
           await publishQueueItem(id);
           published += 1;
           setFailures((previous) => {
+            if (!(id in previous)) return previous;
             const next = { ...previous };
             delete next[id];
             return next;
           });
+          void client.invalidateQueries({ queryKey: queueAttemptsKey(id) });
         } catch (error) {
-          failed += 1;
-          setFailures((previous) => ({
-            ...previous,
-            [id]: {
-              message: error instanceof Error ? error.message : "Publishing failed",
-              occurredAt: new Date().toISOString(),
-            },
-          }));
+          const message = getApiErrorMessage(error, "تعذر النشر.");
+          if (isConflictError(error)) {
+            conflicts += 1;
+            if (!conflictMessage) conflictMessage = message;
+            // Idempotency suppression creates no attempt row — do not invent one.
+          } else {
+            failed += 1;
+            if (!failureMessage) failureMessage = message;
+            setFailures((previous) => ({
+              ...previous,
+              [id]: {
+                message,
+                occurredAt: new Date().toISOString(),
+              },
+            }));
+          }
         } finally {
           setPublishingIds((previous) => previous.filter((value) => value !== id));
         }
       }
 
       await client.invalidateQueries({ queryKey: queueKey });
-      return { published, failed };
+      return { published, failed, conflicts, conflictMessage, failureMessage };
     },
     [client],
   );
 
   const clearFailure = useCallback((id: string) => {
     setFailures((previous) => {
+      if (!(id in previous)) return previous;
       const next = { ...previous };
       delete next[id];
       return next;
+    });
+  }, []);
+
+  /** Drop client fallback once backend summary is present for an item. */
+  const syncFailuresFromBackend = useCallback((items: QueueItem[]) => {
+    setFailures((previous) => {
+      let changed = false;
+      const next = { ...previous };
+      for (const item of items) {
+        if (!(item.id in next)) continue;
+        if (item.last_attempt != null || item.failure_reason != null) {
+          delete next[item.id];
+          changed = true;
+        }
+      }
+      return changed ? next : previous;
     });
   }, []);
 
@@ -115,6 +299,7 @@ export function useQueuePublishingOperations() {
     failures,
     publishItems,
     clearFailure,
+    syncFailuresFromBackend,
   };
 }
 

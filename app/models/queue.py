@@ -103,6 +103,10 @@ class QueueItem(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     publish_attempts: Mapped[list["QueuePublishAttempt"]] = relationship(
         "QueuePublishAttempt",
         back_populates="queue_item",
+        # Without delete cascade, SQLAlchemy nulls child queue_id on parent
+        # delete, which violates NOT NULL on queue_publish_attempts.queue_id.
+        # ORM delete of attempts matches the DB ON DELETE CASCADE policy.
+        cascade="all, delete-orphan",
     )
 
 

@@ -1,7 +1,9 @@
 # Component Library
 
-**Document Version:** 2.1  
-**Last Updated:** 2026-08-01
+**Document Version:** 2.2  
+**Last Updated:** 2026-08-04
+
+**2026-08-04 revision:** Phase A.1 frontend wiring shipped — `QueueOperationalStats`, `QueueHealthBadge`, and `QueueDetailsDrawer` notes below updated from "planned" to implemented backend-truth behavior.
 
 ---
 
@@ -158,13 +160,13 @@ Interactive score cell with:
 | Component | Status | Description |
 | --- | --- | --- |
 | `QueueView` | Implemented | Operations center shell |
-| `QueueOperationalStats` | Implemented | **KPI cards**: queued, scheduled, publishing, published today, failed today. Failed-today should read backend attempt truth after FE Phase A.1 (client map is interim) |
-| `QueueTable` | Implemented | Status, channel, schedule, content preview, actions |
+| `QueueOperationalStats` | Implemented | **KPI cards**: queued, scheduled, publishing, published today, failed today. Failed-today reads backend attempt truth via `getQueueOperationalStats`/`resolveQueueFailure`; client failure map is a short-lived fallback until per-item enrichment resolves |
+| `QueueTable` | Implemented | Status, channel, schedule, content preview, actions. Row failure state resolved via `resolveQueueFailure` (backend-first) |
 | `QueueToolbar` | Implemented | Search, status/channel filters, sort, density |
 | `QueueSelectionBar` | Implemented | Bulk publish, schedule, delete |
-| `QueueDetailsDrawer` | Implemented | Post preview, product/channel context, inline actions. **Planned (FE Phase A.1):** read-only publish attempt history from `GET /queues/{id}/attempts`; retry via existing `POST /queues/{id}/publish` |
+| `QueueDetailsDrawer` | Implemented | Post preview, product/channel context, inline actions, read-only publish attempt history section (`useQueuePublishAttempts` → `GET /queues/{id}/attempts`). Primary action relabels to "إعادة المحاولة" (retry) when a failure is present and calls the existing `POST /queues/{id}/publish` — no new endpoint |
 | `QueueSchedulingDialog` | Implemented | Channel picker, datetime, presets, publish-now |
-| `QueueHealthBadge` | Implemented | Pipeline readiness (channel missing, etc.). **Planned (FE Phase A.1):** surface backend `failure_reason` / latest failed attempt when present |
+| `QueueHealthBadge` | Implemented | Pipeline readiness (channel missing, etc.); surfaces backend `failure_reason` / latest failed attempt via `resolveQueueFailure`, with client fallback only until enrichment resolves |
 | `QueueActionsMenu` | Implemented | Row actions menu |
 | `SchedulePicker` | Partial | Inline in table + dialog; no calendar widget library |
 
