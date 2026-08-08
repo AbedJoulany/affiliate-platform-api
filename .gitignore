@@ -10,7 +10,9 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+# Python packaging build dirs at repo root only — do not ignore
+# frontend feature folders such as frontend/src/features/queue/lib/.
+/lib/
 lib64/
 parts/
 sdist/

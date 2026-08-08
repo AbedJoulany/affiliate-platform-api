@@ -12,6 +12,7 @@ import {
   publishQueueItem,
   updateQueueItem,
 } from "../api/queue.api";
+import { createQueuePollIntervalSelector } from "../lib/queue-polling";
 import type {
   QueueItem,
   QueuePublishFailure,
@@ -20,6 +21,7 @@ import type {
   QueueUpdate,
   QueueWorkspaceSort,
 } from "../types/api";
+import { useQueueRealtimePollingEnabled } from "./QueueRealtimePollingContext";
 
 export const queueKey = ["queue"] as const;
 export const queueAttemptsKey = (id: string) =>
@@ -75,9 +77,16 @@ async function mapWithConcurrency<T, R>(
 }
 
 export function useQueue(status?: QueueStatus, limit = 20, skip = 0) {
+  const pollingEnabled = useQueueRealtimePollingEnabled();
+  const refetchInterval = useMemo(
+    () => (pollingEnabled ? createQueuePollIntervalSelector() : false),
+    [pollingEnabled],
+  );
+
   return useQuery({
     queryKey: [...queueKey, status, limit, skip],
     queryFn: () => getQueue(status, limit, skip),
+    refetchInterval,
   });
 }
 
@@ -156,10 +165,17 @@ export function useQueueAttemptSummaryEnrichment(items: QueueItem[]) {
 }
 
 export function useQueuePublishAttempts(queueId: string | null, enabled: boolean) {
+  const pollingEnabled = useQueueRealtimePollingEnabled();
+  const refetchInterval = useMemo(
+    () => (pollingEnabled ? createQueuePollIntervalSelector() : false),
+    [pollingEnabled],
+  );
+
   return useQuery({
     queryKey: queueId ? queueAttemptsKey(queueId) : [...queueKey, "attempts", "idle"],
     queryFn: () => getQueuePublishAttempts(queueId!),
     enabled: enabled && Boolean(queueId),
+    refetchInterval: enabled ? refetchInterval : false,
   });
 }
 

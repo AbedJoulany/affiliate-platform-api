@@ -20,9 +20,13 @@ import {
   useQueueWorkspaceState,
   useUpdateQueueItem,
 } from "../hooks/useQueue";
+import { useQueueRealtimeInvalidation } from "../hooks/useQueueRealtimeInvalidation";
+import { QueueRealtimePollingContext } from "../hooks/QueueRealtimePollingContext";
+import type { QueueEventStreamStatus } from "../hooks/useQueueEventStream";
 import type { QueueItem, QueueStatus } from "../types/api";
 import { QueueDetailsDrawer } from "./QueueDetailsDrawer";
 import { QueueOperationalStats } from "./QueueOperationalStats";
+import { QueueRealtimeStatusBadge } from "./QueueRealtimeStatusBadge";
 import { QueueSchedulingDialog } from "./QueueSchedulingDialog";
 import { QueueSelectionBar } from "./QueueSelectionBar";
 import { QueueTable } from "./QueueTable";
@@ -53,6 +57,21 @@ function getApiErrorMessage(error: unknown, fallback: string): string {
 }
 
 export function QueueView() {
+  // Single workspace-scoped SSE → query invalidation (not in child components).
+  const realtime = useQueueRealtimeInvalidation();
+
+  return (
+    <QueueRealtimePollingContext.Provider value={realtime.pollingEnabled}>
+      <QueueViewBody realtimeStatus={realtime.status} />
+    </QueueRealtimePollingContext.Provider>
+  );
+}
+
+function QueueViewBody({
+  realtimeStatus,
+}: {
+  realtimeStatus: QueueEventStreamStatus;
+}) {
   const router = useRouter();
   const queue = useQueue(undefined, 200);
   const channels = useChannels();
@@ -60,7 +79,10 @@ export function QueueView() {
   const updateQueue = useUpdateQueueItem();
   const deleteQueue = useDeleteQueueItem();
   const publishing = useQueuePublishingOperations();
-  const listItems = queue.data?.items ?? [];
+  const listItems = useMemo(
+    () => queue.data?.items ?? [],
+    [queue.data?.items],
+  );
   const { enrichedItems, enriching } = useQueueAttemptSummaryEnrichment(listItems);
   const workspace = useQueueWorkspaceState(enrichedItems);
 
@@ -100,6 +122,16 @@ export function QueueView() {
         : null,
     [activePostId, enrichedItems],
   );
+
+  // Close inspector when the authoritative list no longer contains the item
+  // (e.g. queue.deleted → invalidate → refetch), without a separate client store.
+  useEffect(() => {
+    if (activePostId == null || queue.isPending) return;
+    if (!listItems.some((item) => item.id === activePostId)) {
+      setActivePostId(null);
+    }
+  }, [activePostId, listItems, queue.isPending]);
+
   const activeProduct =
     activePost?.product_id ? productsById.get(activePost.product_id) ?? null : null;
   const activeChannel =
@@ -308,6 +340,7 @@ export function QueueView() {
             void channels.refetch();
             void products.refetch();
           }}
+          actions={<QueueRealtimeStatusBadge status={realtimeStatus} />}
         />
 
         {queue.isPending ? (
@@ -412,7 +445,7 @@ export function QueueView() {
         channel={activeChannel}
         publishing={Boolean(activePost && publishing.publishingIdSet.has(activePost.id))}
         clientFailure={activePost ? publishing.failures[activePost.id] : undefined}
-        open={activePostId != null}
+        open={activePost != null}
         onClose={() => setActivePostId(null)}
         onPublish={(item) => void publishItems([item])}
         onSchedule={(item) => openSchedule([item])}

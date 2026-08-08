@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { WorkspaceResultsToolbar } from "@/components/common/WorkspaceResultsToolbar";
 import { Select } from "@/components/ui/primitives";
 import type { Channel } from "@/features/channels/types/api";
@@ -26,6 +27,7 @@ export function QueueToolbar({
   onDensityChange,
   onPageSizeChange,
   onRefresh,
+  actions,
 }: {
   search: string;
   status: QueueStatus | "";
@@ -43,6 +45,8 @@ export function QueueToolbar({
   onDensityChange: (value: QueueTableDensity) => void;
   onPageSizeChange: (value: number) => void;
   onRefresh: () => void;
+  /** Optional trailing slot (e.g. realtime status badge). */
+  actions?: ReactNode;
 }) {
   return (
     <WorkspaceResultsToolbar
@@ -105,6 +109,7 @@ export function QueueToolbar({
       pageSize={{ value: pageSize, options: [10, 25, 50, 100], onChange: onPageSizeChange }}
       refreshing={refreshing}
       onRefresh={onRefresh}
+      actions={actions}
     />
   );
 }
