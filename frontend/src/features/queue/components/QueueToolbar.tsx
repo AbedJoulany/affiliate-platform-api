@@ -2,8 +2,10 @@
 
 import type { ReactNode } from "react";
 import { WorkspaceResultsToolbar } from "@/components/common/WorkspaceResultsToolbar";
-import { Select } from "@/components/ui/primitives";
+import { Badge, Select } from "@/components/ui/primitives";
 import type { Channel } from "@/features/channels/types/api";
+import type { QueueEventStreamStatus } from "../hooks/useQueueEventStream";
+import { useQueueRealtimePollingEnabled } from "../hooks/QueueRealtimePollingContext";
 import type {
   QueueStatus,
   QueueTableDensity,
@@ -28,6 +30,7 @@ export function QueueToolbar({
   onPageSizeChange,
   onRefresh,
   actions,
+  realtimeStatus,
 }: {
   search: string;
   status: QueueStatus | "";
@@ -45,9 +48,21 @@ export function QueueToolbar({
   onDensityChange: (value: QueueTableDensity) => void;
   onPageSizeChange: (value: number) => void;
   onRefresh: () => void;
-  /** Optional trailing slot (e.g. realtime status badge). */
+  /** Optional trailing slot — F4 `QueueRealtimeStatusBadge` stays authoritative here. */
   actions?: ReactNode;
+  /**
+   * Optional F6 gate. When provided with active polling fallback, the toolbar
+   * shows a compact “تحديث دوري” badge. Omitted → pre-F6 default (no extra badge).
+   */
+  realtimeStatus?: QueueEventStreamStatus;
 }) {
+  const pollingEnabled = useQueueRealtimePollingEnabled();
+  // F6 only adds polling chrome. Live/connecting/error remain F4’s job via `actions`.
+  const showPollingBadge =
+    realtimeStatus != null &&
+    pollingEnabled &&
+    (realtimeStatus === "disconnected" || realtimeStatus === "connecting");
+
   return (
     <WorkspaceResultsToolbar
       search={search}
@@ -109,7 +124,26 @@ export function QueueToolbar({
       pageSize={{ value: pageSize, options: [10, 25, 50, 100], onChange: onPageSizeChange }}
       refreshing={refreshing}
       onRefresh={onRefresh}
-      actions={actions}
+      actions={
+        <>
+          {showPollingBadge ? (
+            <Badge
+              tone="warning"
+              title="البث الحي غير متصل — يتم تحديث قائمة النشر تلقائياً بشكل دوري"
+              aria-label="البث الحي غير متصل — يتم تحديث قائمة النشر تلقائياً بشكل دوري"
+              role="status"
+              className="shrink-0"
+            >
+              <span
+                className="me-1.5 inline-block size-1.5 rounded-full bg-current"
+                aria-hidden
+              />
+              تحديث دوري
+            </Badge>
+          ) : null}
+          {actions}
+        </>
+      }
     />
   );
 }

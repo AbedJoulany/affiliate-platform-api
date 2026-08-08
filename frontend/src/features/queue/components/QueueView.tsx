@@ -340,6 +340,7 @@ function QueueViewBody({
             void channels.refetch();
             void products.refetch();
           }}
+          realtimeStatus={realtimeStatus}
           actions={<QueueRealtimeStatusBadge status={realtimeStatus} />}
         />
 
