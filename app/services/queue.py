@@ -1,12 +1,30 @@
 import hashlib
 import json
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from uuid import UUID
+from typing import Protocol
+from uuid import UUID, uuid4
 
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import BotPermissionStatus, QueueStatus
+from app.events.publisher import NullEventPublisher
+from app.events.schemas import (
+    EVENT_ENVELOPE_VERSION,
+    QUEUE_ATTEMPT_FAILED,
+    QUEUE_ATTEMPT_STARTED,
+    QUEUE_ATTEMPT_SUCCEEDED,
+    QUEUE_DELETED,
+    QUEUE_STATUS_CHANGED,
+    QueueAttemptFailedData,
+    QueueAttemptStartedData,
+    QueueAttemptSucceededData,
+    QueueDeletedData,
+    QueueEventEnvelope,
+    QueueStatusChangedData,
+)
 from app.models.channel import TelegramChannel
 from app.models.queue import QueueItem, QueuePublishAttempt
 from app.repositories.channel import ChannelRepository
@@ -32,10 +50,52 @@ from app.services.exceptions import (
 from app.telegram.publisher import TelegramPublisher
 from app.telegram.types import InlineUrlButton, TelegramPublishResult
 
+logger = logging.getLogger(__name__)
+
 IDEMPOTENCY_WINDOW = timedelta(hours=24)
 # Terminal failure category after all retry paths are exhausted (or the error is
 # not Celery-retryable). QueueItem.status is never changed for this outcome.
 DEAD_LETTER_ERROR_CODE = "dead_letter"
+
+
+class SupportsQueueEventPublish(Protocol):
+    async def publish(self, event: QueueEventEnvelope) -> object: ...
+
+
+def _build_queue_event(
+    event_name: str,
+    queue_id: UUID,
+    data: BaseModel,
+) -> QueueEventEnvelope:
+    return QueueEventEnvelope(
+        event=event_name,
+        version=EVENT_ENVELOPE_VERSION,
+        id=str(uuid4()),
+        occurred_at=datetime.now(UTC),
+        workspace_id=None,
+        queue_id=queue_id,
+        data=data.model_dump(mode="json"),
+    )
+
+
+async def _publish_queue_event(
+    events: SupportsQueueEventPublish,
+    envelope: QueueEventEnvelope,
+) -> None:
+    """Publish after a durable domain commit.
+
+    Real-time delivery is an enhancement layer (Phase A.2 design §0/§5): Redis
+    failures are logged and must not undo an already-committed domain action.
+    Exceptions are never swallowed silently.
+    """
+    try:
+        await events.publish(envelope)
+    except Exception:
+        logger.exception(
+            "Failed to publish queue event %s for queue_id=%s",
+            envelope.event,
+            envelope.queue_id,
+        )
 
 
 @dataclass(frozen=True)
@@ -61,11 +121,16 @@ class _PublishClaim:
 class TelegramPublishingService:
     DEFAULT_BUTTON_TEXT = "اشتري الآن"
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        events: SupportsQueueEventPublish | None = None,
+    ) -> None:
         self.session = session
         self.queue_repo = QueueRepository(session)
         self.attempt_repo = QueuePublishAttemptRepository(session)
         self.publisher = TelegramPublisher()
+        self.events = events if events is not None else NullEventPublisher()
 
     async def publish_queue_item(
         self,
@@ -88,6 +153,7 @@ class TelegramPublishingService:
         item = claim.item
         attempt = claim.attempt
         snapshot = claim.snapshot
+        previous_status = item.status
 
         try:
             if item.status == QueueStatus.PUBLISHED:
@@ -116,6 +182,34 @@ class TelegramPublishingService:
             # Commit success before returning so a later sibling failure in a
             # Celery batch cannot roll back a Telegram message that already sent.
             await self.session.commit()
+
+            await _publish_queue_event(
+                self.events,
+                _build_queue_event(
+                    QUEUE_ATTEMPT_SUCCEEDED,
+                    item.id,
+                    QueueAttemptSucceededData(
+                        queue_id=item.id,
+                        attempt_number=attempt.attempt_number,
+                        provider_message_id=result.message_id,
+                    ),
+                ),
+            )
+            if previous_status != QueueStatus.PUBLISHED:
+                await _publish_queue_event(
+                    self.events,
+                    _build_queue_event(
+                        QUEUE_STATUS_CHANGED,
+                        item.id,
+                        QueueStatusChangedData(
+                            queue_id=item.id,
+                            status=QueueStatus.PUBLISHED,
+                            previous_status=previous_status,
+                            scheduled_at=item.scheduled_at,
+                            published_at=item.published_at,
+                        ),
+                    ),
+                )
 
             return PublishQueueResponse(
                 queue_id=item.id,
@@ -212,6 +306,7 @@ class TelegramPublishingService:
                 # queue row never reached published (e.g. batch rollback). Keep the
                 # idempotency suppress, but surface the true published state.
                 if item.status != QueueStatus.PUBLISHED:
+                    previous_status = item.status
                     item.status = QueueStatus.PUBLISHED
                     item.published_at = item.published_at or blocking.occurred_at
                     item.telegram_message_id = (
@@ -219,6 +314,20 @@ class TelegramPublishingService:
                     )
                     await self.queue_repo.update(item)
                     await self.session.commit()
+                    await _publish_queue_event(
+                        self.events,
+                        _build_queue_event(
+                            QUEUE_STATUS_CHANGED,
+                            item.id,
+                            QueueStatusChangedData(
+                                queue_id=item.id,
+                                status=QueueStatus.PUBLISHED,
+                                previous_status=previous_status,
+                                scheduled_at=item.scheduled_at,
+                                published_at=item.published_at,
+                            ),
+                        ),
+                    )
                 raise ConflictError(
                     "Publish already completed for this content; edit content to republish "
                     "or wait for the idempotency window to expire"
@@ -243,6 +352,18 @@ class TelegramPublishingService:
         # Commit releases the QueueItem row lock and makes the started marker durable
         # before Telegram is contacted.
         await self.session.commit()
+        await _publish_queue_event(
+            self.events,
+            _build_queue_event(
+                QUEUE_ATTEMPT_STARTED,
+                item.id,
+                QueueAttemptStartedData(
+                    queue_id=item.id,
+                    attempt_number=attempt.attempt_number,
+                    provider=attempt.provider,
+                ),
+            ),
+        )
         return _PublishClaim(item=item, attempt=attempt, snapshot=snapshot)
 
     def _build_publish_snapshot(self, item: QueueItem) -> _PublishSnapshot:
@@ -308,6 +429,19 @@ class TelegramPublishingService:
         attempt = await self.attempt_repo.update(attempt)
         # Persist the failure before the exception propagates and triggers rollback.
         await self.session.commit()
+        await _publish_queue_event(
+            self.events,
+            _build_queue_event(
+                QUEUE_ATTEMPT_FAILED,
+                attempt.queue_id,
+                QueueAttemptFailedData(
+                    queue_id=attempt.queue_id,
+                    attempt_number=attempt.attempt_number,
+                    error_code=attempt.error_code or underlying_code,
+                    is_terminal=terminal,
+                ),
+            ),
+        )
         return attempt
 
     def _compute_content_hash(
@@ -403,13 +537,18 @@ class TelegramPublishingService:
 
 
 class QueueService:
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        events: SupportsQueueEventPublish | None = None,
+    ) -> None:
         self.session = session
+        self.events = events if events is not None else NullEventPublisher()
         self.queue_repo = QueueRepository(session)
         self.attempt_repo = QueuePublishAttemptRepository(session)
         self.channel_repo = ChannelRepository(session)
         self.product_repo = ProductRepository(session)
-        self.publishing_service = TelegramPublishingService(session)
+        self.publishing_service = TelegramPublishingService(session, events=self.events)
 
     async def create(self, payload: QueueCreate) -> QueueItem:
         await self._validate_relations(payload.channel_id, payload.product_id)
@@ -488,6 +627,7 @@ class QueueService:
 
     async def update(self, queue_id: UUID, payload: QueueUpdate) -> QueueItem:
         item = await self.get(queue_id)
+        previous_status = item.status
         update_data = payload.model_dump(exclude_unset=True)
 
         new_status = update_data.get("status", item.status)
@@ -522,11 +662,40 @@ class QueueService:
                 item.published_at = None
                 item.telegram_message_id = None
 
-        return await self.queue_repo.update(item)
+        updated = await self.queue_repo.update(item)
+        if previous_status != updated.status:
+            # Commit before emit so the status change is durable (get_db may also
+            # commit afterward; an empty follow-up commit is harmless).
+            await self.session.commit()
+            await _publish_queue_event(
+                self.events,
+                _build_queue_event(
+                    QUEUE_STATUS_CHANGED,
+                    updated.id,
+                    QueueStatusChangedData(
+                        queue_id=updated.id,
+                        status=updated.status,
+                        previous_status=previous_status,
+                        scheduled_at=updated.scheduled_at,
+                        published_at=updated.published_at,
+                    ),
+                ),
+            )
+        return updated
 
     async def delete(self, queue_id: UUID) -> None:
         item = await self.get(queue_id)
+        deleted_id = item.id
         await self.queue_repo.delete(item)
+        await self.session.commit()
+        await _publish_queue_event(
+            self.events,
+            _build_queue_event(
+                QUEUE_DELETED,
+                deleted_id,
+                QueueDeletedData(queue_id=deleted_id),
+            ),
+        )
 
     async def publish(self, queue_id: UUID) -> PublishQueueResponse:
         # Manual publish has no Celery autoretry, so transport failures are terminal.

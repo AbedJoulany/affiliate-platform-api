@@ -1,7 +1,10 @@
 from uuid import UUID
 
+from redis import asyncio as redis
+
 from app.core.config import get_settings
 from app.core.database import get_async_session_maker
+from app.events.deps import create_event_publisher
 from app.services.exceptions import TelegramPublishError
 from app.services.queue import TelegramPublishingService
 from app.worker.async_utils import run_async
@@ -17,27 +20,30 @@ async def _process_publish_queue(
 ) -> dict:
     limit = batch_size or settings.celery_publish_batch_size
     session_maker = get_async_session_maker()
-
-    async with session_maker() as session:
-        service = TelegramPublishingService(session)
-        scheduled_results = await service.publish_due_scheduled(
-            limit=limit,
-            mark_transport_failure_terminal=mark_transport_failure_terminal,
-        )
-        queued_results = await service.publish_queued_items(
-            limit=limit,
-            mark_transport_failure_terminal=mark_transport_failure_terminal,
-        )
-        await session.commit()
-
-    return {
-        "scheduled_published": len(scheduled_results),
-        "queued_published": len(queued_results),
-        "published_queue_ids": [
-            str(result.queue_id)
-            for result in (*scheduled_results, *queued_results)
-        ],
-    }
+    redis_client = redis.from_url(settings.broker_url)
+    try:
+        events = create_event_publisher(redis_client)
+        async with session_maker() as session:
+            service = TelegramPublishingService(session, events=events)
+            scheduled_results = await service.publish_due_scheduled(
+                limit=limit,
+                mark_transport_failure_terminal=mark_transport_failure_terminal,
+            )
+            queued_results = await service.publish_queued_items(
+                limit=limit,
+                mark_transport_failure_terminal=mark_transport_failure_terminal,
+            )
+            await session.commit()
+        return {
+            "scheduled_published": len(scheduled_results),
+            "queued_published": len(queued_results),
+            "published_queue_ids": [
+                str(result.queue_id)
+                for result in (*scheduled_results, *queued_results)
+            ],
+        }
+    finally:
+        await redis_client.aclose()
 
 
 async def _publish_single_queue_item(
@@ -46,16 +52,19 @@ async def _publish_single_queue_item(
     mark_transport_failure_terminal: bool = False,
 ) -> dict:
     session_maker = get_async_session_maker()
-
-    async with session_maker() as session:
-        service = TelegramPublishingService(session)
-        result = await service.publish_queue_item(
-            queue_id,
-            mark_transport_failure_terminal=mark_transport_failure_terminal,
-        )
-        await session.commit()
-
-    return result.model_dump(mode="json")
+    redis_client = redis.from_url(settings.broker_url)
+    try:
+        events = create_event_publisher(redis_client)
+        async with session_maker() as session:
+            service = TelegramPublishingService(session, events=events)
+            result = await service.publish_queue_item(
+                queue_id,
+                mark_transport_failure_terminal=mark_transport_failure_terminal,
+            )
+            await session.commit()
+        return result.model_dump(mode="json")
+    finally:
+        await redis_client.aclose()
 
 
 def _is_final_celery_attempt(task) -> bool:
