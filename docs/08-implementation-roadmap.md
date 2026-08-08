@@ -1,7 +1,7 @@
 # Implementation Roadmap
 
-**Document Version:** 2.4  
-**Last Updated:** 2026-08-04
+**Document Version:** 2.6  
+**Last Updated:** 2026-08-08
 
 Consolidated feature tracker (replaces empty `PROJECT_STATUS.md`). See [06-api-integration.md](./06-api-integration.md) for endpoint-level status.
 
@@ -11,7 +11,11 @@ Consolidated feature tracker (replaces empty `PROJECT_STATUS.md`). See [06-api-i
 
 **2026-08-01 revision:** Phase A.1 **backend Tasks 1–9 are complete** (design, migration `008`, model, repository, service instrumentation, Telegram retry, idempotency guard, API surface, dead-letter marking, MVP pytest). Documentation files listed under Phase A.1 completion updates are synchronized to the implementation. **Frontend Phase A.1 tasks remain open** (types, hooks, KPI/drawer wiring). Next backend-facing milestone for streaming is Phase A.2 once FE consumes attempt truth.
 
-**2026-08-04 revision:** Phase A.1 is now **fully complete — backend and frontend.** All 7 frontend tasks shipped: `types/api.ts` and `queue.api.ts` extended, `useQueue.ts` wires attempt-summary enrichment (`useQueueAttemptSummaryEnrichment`) and attempt history (`useQueuePublishAttempts`), `lib/operations.ts` resolves failures backend-first (`resolveQueueFailure`) with the client map as a short-lived fallback, `QueueHealthBadge`/`QueueOperationalStats`/`QueueTable` consume backend truth, and `QueueDetailsDrawer` renders read-only attempt history and doubles its primary action as "Retry publish" against the existing publish endpoint. Three post-implementation bugs were also found and fixed during hardening: scheduled publishing (Celery async-engine/event-loop reuse), queue item deletion with existing attempts (missing ORM cascade), and Telegram long-message/caption publishing (missing 4096/1024-char splitting) — see [10-production-readiness.md](./10-production-readiness.md) §10.1. The milestone acceptance criteria in this section are now fully met. **Next milestone: Phase A.2 (real-time streaming) only.**
+**2026-08-04 revision:** Phase A.1 is now **fully complete — backend and frontend.** All 7 frontend tasks shipped: `types/api.ts` and `queue.api.ts` extended, `useQueue.ts` wires attempt-summary enrichment (`useQueueAttemptSummaryEnrichment`) and attempt history (`useQueuePublishAttempts`), `lib/operations.ts` resolves failures backend-first (`resolveQueueFailure`) with the client map as a short-lived fallback, `QueueHealthBadge`/`QueueOperationalStats`/`QueueTable` consume backend truth, and `QueueDetailsDrawer` renders read-only attempt history and doubles its primary action as "Retry publish" against the existing publish endpoint. Three post-implementation bugs were also found and fixed during hardening: scheduled publishing (Celery async-engine/event-loop reuse), queue item deletion with existing attempts (missing ORM cascade), and Telegram long-message/caption publishing (missing 4096/1024-char splitting) — see [10-production-readiness.md](./10-production-readiness.md) §10.1. The milestone acceptance criteria in this section are now fully met.
+
+**2026-08-08 revision:** Phase A.2 — Real-time Queue Updates is **COMPLETE** (backend B1–B7, frontend F1–F5, SSE end-to-end path, TanStack Query polling fallback 5s→30s, clean-clone shippability). Design record: [phase-a2-realtime-operations-design.md](./planning/phase-a2-realtime-operations-design.md). F6 is **COMPLETE** (optional/stretch badge work shipped; not required historically for A.2 completion).
+
+**2026-08-08 revision (Phase B closeout):** Phase B — Background workers & queue execution (remainder) is **COMPLETE** (Tasks 0–4). Design record: [phase-b-worker-observability-design.md](./planning/phase-b-worker-observability-design.md). Shipped: Redis pipeline heartbeat, `GET /worker/health`, optional Flower under Compose profile `observability`. **Next milestone: Phase C'** (non-Telegram retry hardening).
 
 ---
 
@@ -19,7 +23,7 @@ Consolidated feature tracker (replaces empty `PROJECT_STATUS.md`). See [06-api-i
 
 ## 1. Executive Summary
 
-The frontend has completed a **workspace UI transformation** (July 2026): drawer-based inspection, operational queue center, inventory grid controls, AI content studio overhaul, and shared score/toast components. Backend integration is **live-first** — no mock API layers in production paths. **Phase A.1 — Publishing Reliability & Status Truth** (2026-08-04) closed the last major reliability gap: Telegram publish attempts, retries, idempotency, and dead-letter handling are now backend-owned and fully consumed by the queue UI, with scheduled-publishing, delete-cascade, and long-message bugs fixed during hardening.
+The frontend has completed a **workspace UI transformation** (July 2026): drawer-based inspection, operational queue center, inventory grid controls, AI content studio overhaul, and shared score/toast components. Backend integration is **live-first** — no mock API layers in production paths. **Phase A.1 — Publishing Reliability & Status Truth** (2026-08-04) closed the last major reliability gap: Telegram publish attempts, retries, idempotency, and dead-letter handling are now backend-owned and fully consumed by the queue UI. **Phase A.2 — Real-time Queue Updates** (2026-08-08) adds SSE push + polling fallback so the queue workspace stays authoritative without redesigning REST or inventing client-owned state. **Phase B — Background workers & queue execution** (2026-08-08) adds Worker/Beat pipeline liveness (`GET /worker/health`) and optional Flower task observability without changing A.1/A.2 business behavior.
 
 ---
 
@@ -140,7 +144,7 @@ Legend: ✅ Done · 🟡 Partial · ⬜ Planned
 | Publish failure tracking                | ✅      | Backend owns `queue_publish_attempts` + dead-letter codes; UI resolves via `resolveQueueFailure` (backend-first, client map only as short-lived fallback) |
 | Publish attempt/event history            | ✅      | `GET /queues/{id}/attempts` wired in `QueueDetailsDrawer` via `useQueuePublishAttempts`; `QueueRead` summary on `GET /queues/{id}`                     |
 | Telegram retry policy                    | ✅      | In-process retries + Celery `autoretry_for` / `max_retries=3`; non-retryable 4xx marked terminal immediately |
-| Real-time status updates                | ⬜      | See Phase A.2 below                                                                                   |
+| Real-time status updates                | ✅      | Phase A.2 COMPLETE — SSE `GET /queues/stream` + TanStack Query invalidation; polling fallback 5s→30s when SSE unavailable |
 | Dedicated retry orchestration           | ✅      | Shared claim/idempotency guard; manual + Celery share path; terminal → `dead_letter`; status-drift healing on guard-suppressed success |
 
 
@@ -179,16 +183,16 @@ Legend: ✅ Done · 🟡 Partial · ⬜ Planned
 Phase A.1 — Publishing Reliability & Status Truth (Telegram)   ✅ COMPLETE (backend + frontend)
         │
         ▼
-Phase A.2 — Real-time operations (SSE/WebSocket)   ← NEXT MILESTONE
+Phase A.2 — Real-time Queue Updates (SSE)   ✅ COMPLETE
         │
         ▼
-Phase B — Background workers & queue execution (remainder)
+Phase B — Background workers & queue execution (remainder)   ✅ COMPLETE
         │
         ▼
-Phase C' — Non-Telegram retry hardening (AliExpress, AI providers)
+Phase C' — Non-Telegram retry hardening (AliExpress, AI providers)   ← NEXT MILESTONE
         │
         ▼
-Phase D — Form & schema validation standardization   (independent; may run parallel to A.2/B/C')
+Phase D — Form & schema validation standardization   (independent; may run parallel to C')
         │
         ▼
 Phase E — Platform expansion (V2)
@@ -272,44 +276,100 @@ Phase E — Platform expansion (V2)
 - `10-production-readiness.md` — ✅ Telegram retry row implemented; §10.1 records the three resolved post-implementation bugs
 - `04-component-library.md` — ✅ `QueueHealthBadge` / `QueueOperationalStats` / `QueueDetailsDrawer` notes updated from planned to implemented
 - `11-workspace-design-system.md` — ✅ Queue template layout note updated to drop rollout-fallback framing
-- This document (`08`) — ✅ feature checklist, frontend task list, and success metrics flipped to complete; Phase A.2 confirmed as the sole next milestone
+- This document (`08`) — ✅ feature checklist, frontend task list, and success metrics flipped to complete; Phase A.2 was the next milestone and is now also complete (2026-08-08)
 
 
 
-### Phase A.2 — Real-time operations (depends on Phase A.1)
+### Phase A.2 — Real-time Queue Updates ✅ COMPLETE
 
-**WebSockets / SSE for publishing queue**
+**Completed:** 2026-08-08. Design record: [phase-a2-realtime-operations-design.md](./planning/phase-a2-realtime-operations-design.md).
 
-- Stream queue item status transitions: `queued` → `scheduled` → `published`
-- Surface the Phase A.1 attempt events (`publish_started`, `publish_succeeded`, `publish_failed`) — not a client-only failure map
-- Fallback: TanStack Query polling with exponential backoff when SSE unavailable
+**Transport:** Server-Sent Events (not WebSockets). Authenticated `GET /api/v1/queues/stream`.
 
-**Deliverables:** Backend SSE endpoint or WebSocket channel; frontend subscription hook; KPI cards update live
+**Architecture (as shipped):**
 
-**Ready to start.** Phase A.1 is complete end-to-end (backend attempt events since 2026-08-01; frontend data-source swap since 2026-08-04) — the UI already reads backend attempt truth, so streaming can layer on top without mixing in a client failure map.
+```text
+Queue mutation → EventPublisher → Redis queue-events
+  → EventConsumer → EventBroadcaster → SSE clients
+  → frontend invalidation → TanStack Query refetch → Queue UI
+```
 
-### Phase B — Background workers & queue execution (remainder; depends on Phase A.1 for health signal)
+**Events (canonical):** `queue.status_changed`, `queue.deleted`, `queue.attempt_started`, `queue.attempt_succeeded`, `queue.attempt_failed`.  
+**No** `dashboard.stats_updated`. Queue KPI cards refresh from `["queue"]` invalidation. Dashboard-page live updates remain out of scope.
 
-Document and harden existing Celery setup:
+**Frontend:** Fetch-based SSE client with vendored `@microsoft/fetch-event-source` parsing core (not an npm dependency; not browser `EventSource`). Debounced invalidate-never-patch. `QueueRealtimeStatusBadge` for connection UX. Adaptive TanStack Query polling fallback **5s → 30s** while SSE is unavailable; reconnect performs one authoritative refresh and disables polling.
 
+**Task completion:**
 
-| Task                        | Schedule           | Action                               |
-| --------------------------- | ------------------ | ------------------------------------ |
-| `process_publish_queue`     | 60s (configurable) | Publish due scheduled + queued items |
-| `refresh_hot_products`      | 6h                 | Catalog sync                         |
-| `refresh_trending_products` | 6h                 | Catalog sync                         |
-| `refresh_categories`        | 24h                | Category cache                       |
+| Task | Final status |
+| ---- | ------------ |
+| B1–B7 | COMPLETE |
+| F1–F5 | COMPLETE |
+| F6 | COMPLETE |
 
+**Deliverables met:** Backend SSE + Redis fan-out; frontend subscription + invalidation; live Queue table/KPIs/drawer via authoritative refetch; polling fallback when SSE is down.
 
-**Requirements:**
+**Out of scope / post-A.2:** heartbeat 15s tuning, ULID event IDs, SSE connection cap, shared Axios 401 helper for the stream, reverse-proxy staging verification — see design doc §18.
 
-- Worker health probe independent of `/ready`
-- Flower or Prometheus metrics for task failures
-- Document Redis/Celery env in [10-production-readiness.md](./10-production-readiness.md)
+### Phase B — Background workers & queue execution (remainder) ✅ COMPLETE
 
-Publish-task idempotency for Telegram is delivered in Phase A.1; do not duplicate that work here.
+**Completed:** 2026-08-08. Design record: [phase-b-worker-observability-design.md](./planning/phase-b-worker-observability-design.md).
 
-### Phase C' — Non-Telegram retry hardening (independent; may run parallel to A.2/B/D)
+Phase B **did not rebuild** the Celery business schedules. Those tasks already existed before Phase B and remain infrastructure Phase B observes/hardens around:
+
+**Existing infrastructure (pre–Phase B; unchanged schedules):**
+
+| Task | Schedule | Role |
+| ---- | -------- | ---- |
+| `process_publish_queue` | 60s (configurable) | Publish due scheduled + queued items |
+| `refresh_hot_products` | 6h | Catalog sync |
+| `refresh_trending_products` | 6h | Catalog sync |
+| `refresh_categories` | 24h | Category cache |
+
+**Phase B deliverables (shipped):**
+
+| Concern | Shipped mechanism |
+| ------- | ----------------- |
+| Worker/Beat **pipeline liveness** | Beat schedules `worker_heartbeat` → worker SET Redis `celery:health:heartbeat` (TTL) → `GET /worker/health` |
+| Task **execution observability** | Optional Flower (`docker compose --profile observability`) reading Celery broker/events |
+
+These are separate operational concerns. Flower is **not** a health probe. `/worker/health` does **not** provide task-failure metrics. Prometheus is **deferred** (not shipped). Discovery Celery `autoretry_for` / `max_retries` remains **Phase C'** — not Phase B.
+
+**Architecture (liveness):**
+
+```text
+Celery Beat
+    ↓
+worker_heartbeat
+    ↓
+Redis key celery:health:heartbeat (+ TTL)
+    ↓
+GET /worker/health
+```
+
+**Architecture (task observability):**
+
+```text
+Celery tasks (publishing / discovery / heartbeat)
+    ↓
+Celery task events (worker_send_task_events / task_send_sent_event)
+    ↓
+Flower (optional Compose profile: observability)
+    ↓
+operator UI
+```
+
+**Completion checklist:**
+
+- [x] Task 0 — Worker/Beat health & observability architecture
+- [x] Task 1 — Redis worker/beat heartbeat
+- [x] Task 2 — Worker health API (`GET /worker/health`)
+- [x] Task 3 — Flower task failure observability
+- [x] Task 4 — Documentation closeout
+
+Publish-task idempotency for Telegram remains Phase A.1 work; Phase B does not duplicate it. A.1 and A.2 behavior is unchanged.
+
+### Phase C' — Non-Telegram retry hardening (independent; may run parallel to D)   ← NEXT MILESTONE
 
 Deferred from the original Phase C scope — Telegram retry policy ships in Phase A.1. This phase covers the remaining integrations:
 
@@ -353,12 +413,14 @@ Depends on Phases A.1–B being substantially complete.
 | Channels CRUD                             | ✅                     |
 | Dashboard + readiness                     | ✅                     |
 | Celery publishing                         | ✅                     |
+| Celery worker/Beat health + Flower ops    | ✅ Phase B             |
 | Affiliates/campaigns/conversions          | ✅ API, no UI          |
 | Refresh tokens                            | ⬜ Config only         |
 | Rate limiting middleware                  | ⬜                     |
 | CI/CD full lint gate                      | 🟡 Partial Ruff scope |
 | Publish attempt/event tracking (Telegram) | ✅ Phase A.1 backend   |
 | Telegram retry + idempotency policy       | ✅ Phase A.1 backend   |
+| Real-time queue SSE + polling fallback    | ✅ Phase A.2           |
 
 
 ---
@@ -379,4 +441,6 @@ A feature is complete when: correct folder structure · reusable components · l
 - [10-production-readiness.md](./10-production-readiness.md) — Release gates & infra
 - [09-cursor-prompts.md](./09-cursor-prompts.md) — AI development templates
 - [archive/publishing-reliability-status-truth-roadmap.md](./archive/publishing-reliability-status-truth-roadmap.md) — Original Phase A.1 milestone proposal (adopted 2026-07-29; historical record only)
+- [planning/phase-a2-realtime-operations-design.md](./planning/phase-a2-realtime-operations-design.md) — Phase A.2 design + closeout (COMPLETE 2026-08-08)
+- [planning/phase-b-worker-observability-design.md](./planning/phase-b-worker-observability-design.md) — Phase B Task 0 design + Tasks 1–4 closeout (COMPLETE 2026-08-08)
 

@@ -75,6 +75,10 @@ class Settings(BaseSettings):
     celery_discovery_hot_interval_seconds: int = 21600
     celery_discovery_trending_interval_seconds: int = 21600
     celery_discovery_categories_interval_seconds: int = 86400
+    # Phase B Task 1 — Beat→worker pipeline heartbeat (Redis TTL key).
+    # TTL defaults to 3× interval so one missed tick does not flap health.
+    celery_heartbeat_interval_seconds: int = 30
+    celery_heartbeat_ttl_seconds: int = 90
 
     @property
     def broker_url(self) -> str:

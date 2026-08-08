@@ -1,15 +1,17 @@
 # API Integration Guide
 
-**Document Version:** 2.2  
-**Last Updated:** 2026-08-04
+**Document Version:** 2.4  
+**Last Updated:** 2026-08-08
 
 **2026-08-04 revision:** Phase A.1 **frontend tasks are complete** — queue KPIs, `QueueHealthBadge`, and `QueueTable` now resolve failures from backend attempt data (`resolveQueueFailure`) with the client failure map only as a short-lived gap-filler until per-item enrichment resolves; `QueueDetailsDrawer` renders read-only publish attempt history from `GET /queues/{id}/attempts` and retries via the existing `POST /queues/{id}/publish`. Statuses below for §4.6 and §5 are updated accordingly. Also reflects three post-implementation bug fixes (scheduled publishing, queue item deletion, Telegram long-message publishing) — see [10-production-readiness.md](./10-production-readiness.md) §10.
+
+**2026-08-08 revision (Phase B closeout):** Documented root operational endpoint `GET /worker/health` (Phase B Task 2). `/ready` semantics unchanged (database + Redis only).
 
 **Backend source of truth:** FastAPI routers + Pydantic schemas  
 **Default API base:** `http://localhost:8000/api/v1`  
 **Frontend env:** `NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1`
 
-OpenAPI: `/docs` · ReDoc: `/redoc` · Health: `GET /health` · Readiness: `GET /ready`
+OpenAPI: `/docs` · ReDoc: `/redoc` · Health: `GET /health` · Readiness: `GET /ready` · Worker health: `GET /worker/health`
 
 ---
 
@@ -87,8 +89,9 @@ Status definitions:
 | Endpoint | Frontend module | Status | Types / notes |
 | --- | --- | --- | --- |
 | `GET /dashboard` | `dashboard.api.ts` | Connected | `DashboardOverview` — counts, activity, DB status |
-| `GET /ready` | `categories.api.ts` | Connected | `ReadinessResponse` — settings capability views |
-| `GET /health` | — | Backend only | Ops/monitoring |
+| `GET /ready` | `categories.api.ts` | Connected | `ReadinessResponse` — settings capability views; **database + redis only** |
+| `GET /health` | — | Backend only | API process liveness (ops) |
+| `GET /worker/health` | — | Backend only | Celery Beat→worker pipeline heartbeat (ops; root path, not under `/api/v1`) |
 
 ### 4.3 Products catalog
 
@@ -146,7 +149,7 @@ Status definitions:
 | `DELETE /queues/{id}` | `queue.api.ts` | Connected | Bulk delete with confirmation; ORM cascade (`cascade="all, delete-orphan"` on `QueueItem.publish_attempts`) deletes attempt history — fixes a prior bug where deleting an item with attempts raised a `NOT NULL` violation instead of cascading |
 | Publishing KPI "publishing" | `useQueuePublishingOperations` | Client-side | In-flight publish IDs (legitimately ephemeral) |
 | Failed today KPI | `lib/operations.ts` (`resolveQueueFailure`, `getQueueOperationalStats`) | Connected | Backend-owned via `queue_publish_attempts` (`error_code`, including `dead_letter`); `resolveQueueFailure` prefers `item.last_attempt` / `item.failure_reason` and falls back to the client failure map only until enrichment for that row resolves |
-| Real-time status stream | — | Pending Phase A.2 | No WebSocket/SSE yet |
+| Real-time status stream | `queue` feature SSE client + `useQueueRealtimeInvalidation` | Connected (Phase A.2) | Authenticated `GET /api/v1/queues/stream` (SSE). Events: `queue.status_changed`, `queue.deleted`, `queue.attempt_*`. Debounced TanStack Query invalidation (never cache patch). Adaptive polling fallback 5s→30s when SSE unavailable. No `dashboard.stats_updated`. |
 
 #### Publish attempt schemas (Phase A.1 backend)
 
@@ -234,6 +237,19 @@ Status definitions:
 - Import/delete require admin role in UI; backend enforces on routes
 - Queue and channel routes are authenticated but **not user-scoped** — do not imply tenant isolation
 - `/ready` checks PostgreSQL + Redis only — not Celery worker liveness or provider credentials
+- `/worker/health` is an **unauthenticated operational infrastructure** endpoint at the app root (sibling to `/health` and `/ready`). It is **not** part of the authenticated `/api/v1` application API surface. It reports Beat→worker pipeline heartbeat freshness only — not task-failure metrics and not Flower status.
+
+### 7.1 `GET /worker/health` (Phase B)
+
+| Item | Value |
+| --- | --- |
+| Method / path | `GET /worker/health` |
+| Auth | None |
+| Success | HTTP **200** — `{ "status": "healthy", "last_heartbeat_at": "<ISO UTC>" }` |
+| Pipeline stopped / stale | HTTP **503** — `{ "status": "degraded", "last_heartbeat_at": "<ISO UTC>" \| null }` |
+| Cannot check Redis / invalid value | HTTP **503** — `{ "status": "unknown", "last_heartbeat_at": null }` |
+
+Semantics: fresh Redis key `celery:health:heartbeat` (within `celery_heartbeat_ttl_seconds`, default 90s) → `healthy`; missing or older than TTL → `degraded`; Redis read failure or malformed timestamp → `unknown`.
 
 ---
 
@@ -256,4 +272,5 @@ useQuery({
 ## 9. Related Documents
 
 - [02-frontend-architecture.md](./02-frontend-architecture.md)
-- [08-implementation-roadmap.md](./08-implementation-roadmap.md) — Upcoming API work (Phase A.2 SSE/WebSocket streaming)
+- [08-implementation-roadmap.md](./08-implementation-roadmap.md) — Phase roadmap (A.1, A.2, and B complete; next is Phase C')
+- [planning/phase-a2-realtime-operations-design.md](./planning/phase-a2-realtime-operations-design.md) — Phase A.2 SSE design + closeout

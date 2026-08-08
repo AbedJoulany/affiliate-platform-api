@@ -14,9 +14,10 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.events.consumer import EventConsumer
 from app.events.deps import get_event_broadcaster
-from app.schemas.health import ReadinessResponse
+from app.schemas.health import ReadinessResponse, WorkerHealthResponse
 from app.services.exceptions import ServiceError
 from app.services.health import ReadinessService
+from app.services.worker_health import WorkerHealthService
 
 settings = get_settings()
 
@@ -109,6 +110,15 @@ async def readiness_check(
     if readiness.status == "not_ready":
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     return readiness
+
+
+@app.get("/worker/health", response_model=WorkerHealthResponse, tags=["Health"])
+async def worker_health_check(response: Response) -> WorkerHealthResponse:
+    """Celery Beat/worker pipeline liveness from the Task 1 Redis heartbeat."""
+    result = await WorkerHealthService().check()
+    if result.status != "healthy":
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    return result
 
 
 app.include_router(api_router, prefix=settings.api_v1_prefix)

@@ -1,11 +1,15 @@
 # Production Readiness and Release Runbook
 
-**Document Version:** 2.2  
-**Last Updated:** 2026-08-04
+**Document Version:** 2.4  
+**Last Updated:** 2026-08-08
 
-Release gate supplement to documents 01–09. Defines security boundaries, environment configuration, CI/CD, deployment checklists, and **upcoming architectural requirements**.
+Release gate supplement to documents 01–09. Defines security boundaries, environment configuration, CI/CD, deployment checklists, and architectural requirements.
 
 **2026-08-04 revision:** Phase A.1 is now complete end-to-end (backend Tasks 1–9 + frontend data-source swap). Three post-implementation bugs surfaced and were fixed during hardening — see §10 for details: scheduled publishing (Celery event-loop reuse), queue item deletion (attempt cascade), and Telegram long-message publishing (4096/1024-char limits).
+
+**2026-08-08 revision:** Phase A.2 realtime queue streaming is COMPLETE. §9.1 updated to the shipped SSE + Redis EventConsumer/EventBroadcaster architecture, polling fallback, and ops notes. This does **not** claim the entire application is production-ready.
+
+**2026-08-08 revision (Phase B closeout):** Phase B worker/Beat health + Flower observability is COMPLETE. §2 Docker services and §9.2 updated to the shipped heartbeat, `GET /worker/health`, and optional Flower profile. Automated paging/alerts remain future ops work.
 
 ---
 
@@ -40,11 +44,20 @@ See `.env.example` for full variable list (migrated from legacy handoff doc).
 | --- | --- | --- |
 | `api` | 8000 | FastAPI + migrate on start |
 | `db` | 5432 | PostgreSQL 16 |
-| `redis` | 6379 | Celery broker |
+| `redis` | 6379 | Celery broker + A.2/Phase B Redis keys |
 | `celery-worker` | — | Background tasks |
-| `celery-beat` | — | Periodic publish + discovery refresh |
+| `celery-beat` | — | Periodic publish + discovery refresh + worker heartbeat |
+| `flower` | `127.0.0.1:5555` | Optional Celery task UI (Compose profile `observability` only) |
 
-Startup: DB/Redis healthy → migrate → Uvicorn → worker/beat connect.
+Startup (default stack): DB/Redis healthy → migrate → Uvicorn → worker/beat connect.
+
+Flower is **not** part of the default stack. Enable with:
+
+```text
+docker compose --profile observability up
+```
+
+Flower binds **localhost-only** (`127.0.0.1:5555:5555`), uses basic auth via `FLOWER_BASIC_AUTH` (`username:password`), and is not a dependency of `api` / worker / beat.
 
 ---
 
@@ -69,7 +82,8 @@ Do not release from failing required checks.
 4. Start PostgreSQL, Redis, API, Celery worker, Celery beat
 5. `GET /health` → 200
 6. `GET /ready` → 200 (database + redis `up`)
-7. **Separately** verify Celery worker consumes a test task
+7. `GET /worker/health` → 200 once Beat+worker have refreshed Redis heartbeat (or 503 degraded until then)
+8. Optionally start Flower: `docker compose --profile observability up` and open `http://127.0.0.1:5555` with `FLOWER_BASIC_AUTH`
 8. Frontend login → dashboard redirect
 9. Security headers present; logs contain no secrets
 
@@ -98,7 +112,8 @@ Execute with staging admin:
 | Admin operations | Import, delete — backend + UI role check |
 | Tenancy | Queue/channel data **not user-scoped** — not multi-tenant safe |
 | Public endpoints | Discovery read, product list, `/conversions` POST |
-| `/ready` | Dependency state only — no secrets |
+| `/ready` | Dependency state only (database + redis) — no secrets; not Celery liveness |
+| `/worker/health` | Celery Beat→worker pipeline heartbeat only — no secrets; not task-failure metrics |
 | Auth service | No password/credential logging in `app/auth/service.py` or `app/auth/security.py` (verified 2026-07-29) |
 
 ---
@@ -122,38 +137,94 @@ Execute with staging admin:
 
 ---
 
-## 9. Upcoming Architectural Requirements
+## 9. Architectural Requirements
 
-### 9.1 Real-time status streaming (Phase A)
+### 9.1 Real-time status streaming (Phase A.2) ✅ COMPLETE
 
-**Problem:** Queue KPIs and row status rely on manual refresh and client publish state.
+**Problem (historical):** Queue KPIs and row status relied on manual refresh and client publish state for cross-actor updates (Celery / other tabs).
 
-**Target architecture:**
+**Shipped architecture (2026-08-08):**
 
 ```text
-Celery publish task → emit status event → Redis pub/sub or SSE endpoint → frontend subscription
+Queue mutation (API or Celery)
+  → EventPublisher → Redis Pub/Sub channel `queue-events`
+  → EventConsumer (one per API process) → EventBroadcaster
+  → Authenticated SSE `GET /api/v1/queues/stream`
+  → Frontend fetch-based SSE client → debounced TanStack Query invalidation
+  → Authoritative REST refetch → Queue UI
 ```
 
-**Requirements:**
+**Implemented:**
 
-- SSE endpoint `GET /queues/stream` or WebSocket `/ws/queue` (auth required)
-- Events: `status_changed`, `publish_started`, `publish_succeeded`, `publish_failed`
-- Frontend: `useQueueEventStream` hook; fallback polling 5s → 30s backoff
-- Do not add `failed` to `QueueStatus` enum — use event payload + audit log
+- SSE endpoint `GET /api/v1/queues/stream` (Bearer JWT via `CurrentUser`; `text/event-stream`; `X-Accel-Buffering: no`; idle heartbeat comment every 30s; per-client queue bound 64)
+- Canonical events: `queue.status_changed`, `queue.deleted`, `queue.attempt_started`, `queue.attempt_succeeded`, `queue.attempt_failed` — **no** `dashboard.stats_updated`
+- Frontend: `useQueueEventStream` / `useQueueRealtimeInvalidation`; invalidate-never-patch; `QueueRealtimeStatusBadge`
+- Fallback: TanStack Query `refetchInterval` while SSE unavailable (5s → 30s adaptive); reconnect disables polling and performs one authoritative `["queue"]` refresh
+- Streaming-safe security headers middleware (pure ASGI; does not buffer SSE bodies)
+- Redis publish failure does not roll back committed domain mutations (logged only)
 
-### 9.2 Background workers & queue execution
+**Ops note (post-A.2):** Verify reverse proxies in front of the API disable response buffering for the stream path (response already sends `X-Accel-Buffering: no`). Optional later: SSE connection cap, heartbeat/settings tuning — see design doc §18. Does **not** claim the whole application is production-ready.
 
-**Current:** Celery Beat + `process_publish_queue` every 60s.
+### 9.2 Background workers & queue execution (Phase B) ✅ COMPLETE
 
-**Enhancements:**
+**Existing Celery business schedules (pre–Phase B; unchanged):** Beat + `process_publish_queue` (default 60s), discovery refresh hot/trending (6h), categories (24h).
 
-- ~~Dead-letter queue for exhausted Telegram retries~~ **Done (Phase A.1):** terminal attempts use `error_code=dead_letter` on `queue_publish_attempts`; `QueueStatus` unchanged
-- ~~Publish task idempotency key (`queue_id` + content hash)~~ **Done (Phase A.1):** shared claim/guard in `TelegramPublishingService`
-- Worker health endpoint or heartbeat key in Redis
-- Separate queues: `publishing`, `discovery_refresh`, `ai_batch` (future)
-- Monitor with Flower/Prometheus; alert on beat/worker absence
+**Phase A.1 items already delivered (unchanged by Phase B):**
 
-**Env vars:** `CELERY_PUBLISH_INTERVAL_SECONDS`, `CELERY_PUBLISH_BATCH_SIZE`, discovery refresh intervals (see `.env.example`)
+- Terminal Telegram attempts: `error_code=dead_letter` on `queue_publish_attempts`; `QueueStatus` unchanged
+- Publish idempotency: shared claim/guard in `TelegramPublishingService`
+
+**Phase B shipped:**
+
+#### Worker/Beat pipeline heartbeat
+
+- Task: `app.worker.tasks.health.worker_heartbeat` (Beat entry `worker-heartbeat`)
+- Redis key: `celery:health:heartbeat` (string UTC ISO timestamp; not Pub/Sub; not `queue-events`)
+- Default interval: **30s** (`celery_heartbeat_interval_seconds` → env `CELERY_HEARTBEAT_INTERVAL_SECONDS`)
+- Default TTL: **90s** (`celery_heartbeat_ttl_seconds` → env `CELERY_HEARTBEAT_TTL_SECONDS`)
+- Semantics: a fresh key means Beat recently scheduled the heartbeat task **and** a worker executed it **and** Redis accepted the write. If Beat stops scheduling **or** the worker stops consuming, the key expires and health degrades. The key alone does **not** isolate which half failed.
+- No database writes; no A.2 queue events.
+
+#### Worker health endpoint
+
+- `GET /worker/health` (root app; unauthenticated; not under `/api/v1`)
+- Response: `{ "status": "healthy" | "degraded" | "unknown", "last_heartbeat_at": <ISO UTC> | null }`
+- HTTP: **200** healthy · **503** degraded/unknown
+- Fresh (within TTL) → healthy; missing/stale → degraded; Redis unreadability / invalid timestamp → unknown
+- Distinct from:
+  - `/health` — API process liveness
+  - `/ready` — PostgreSQL + Redis reachability only (unchanged; no `worker` check)
+
+#### Flower (task failure observability)
+
+- Package: Flower **2.0.1** (Celery 5.x compatible)
+- Compose service: `affiliate-flower`, profile **`observability`** (not started by default `docker compose up`)
+- Port: `127.0.0.1:5555:5555` (localhost-only; not `0.0.0.0`)
+- Auth: `FLOWER_BASIC_AUTH` (`username:password`); basic-auth always configured in Compose
+- Broker: same `CELERY_BROKER_URL` / Redis service as worker
+- Celery events enabled for visibility: `worker_send_task_events=True`, `task_send_sent_event=True`
+- Observes publishing, discovery, and heartbeat tasks; does **not** change retries or business logic
+- **Prometheus:** deferred — no Prometheus service and no application `/metrics` endpoint
+- **Automated alerting/paging:** not implemented; operators use `/worker/health` + Flower UI manually
+
+**Still future (not Phase B):**
+
+- Separate Celery queues: `publishing`, `discovery_refresh`, `ai_batch`
+- Automated alert wiring on beat/worker absence
+- Discovery Celery `autoretry_for` / `max_retries` → **Phase C'**
+
+**Env vars (Phase B–relevant):**
+
+| Settings field | Environment variable | Notes |
+| --- | --- | --- |
+| `celery_publish_interval_seconds` | `CELERY_PUBLISH_INTERVAL_SECONDS` | Existing; documented in `.env.example` |
+| `celery_publish_batch_size` | `CELERY_PUBLISH_BATCH_SIZE` | Existing |
+| discovery intervals | `CELERY_DISCOVERY_*_INTERVAL_SECONDS` | Existing |
+| `celery_heartbeat_interval_seconds` | `CELERY_HEARTBEAT_INTERVAL_SECONDS` | Default **30**; Settings default if unset |
+| `celery_heartbeat_ttl_seconds` | `CELERY_HEARTBEAT_TTL_SECONDS` | Default **90**; Settings default if unset |
+| — | `FLOWER_BASIC_AUTH` | Compose/Flower only; placeholder in `.env.example` |
+
+Also: `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`, `REDIS_HOST` / `REDIS_PORT` / `REDIS_DB` as already used by API/worker.
 
 ### 9.3 Error handling & retries
 

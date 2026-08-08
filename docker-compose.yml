@@ -120,5 +120,38 @@ services:
     command: celery -A app.worker.celery_app beat --loglevel=info
     restart: unless-stopped
 
+  # Optional Celery task observability (Phase B Task 3).
+  # Start with: docker compose --profile observability up
+  flower:
+    profiles:
+      - observability
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: affiliate-flower
+    env_file:
+      - .env
+    environment:
+      REDIS_HOST: redis
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      FLOWER_BASIC_AUTH: ${FLOWER_BASIC_AUTH:-flower:replace-with-a-local-flower-password}
+    ports:
+      # Localhost-only — not bound on 0.0.0.0
+      - "127.0.0.1:5555:5555"
+    depends_on:
+      redis:
+        condition: service_healthy
+      celery-worker:
+        condition: service_started
+    volumes:
+      - ./app:/app/app
+    command: >
+      celery -A app.worker.celery_app flower
+      --address=0.0.0.0
+      --port=5555
+      --basic-auth=$$FLOWER_BASIC_AUTH
+    restart: unless-stopped
+
 volumes:
   postgres_data:
