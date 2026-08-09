@@ -1,6 +1,7 @@
 import httpx
 
 from app.ai.base import AIProvider
+from app.ai.retry import execute_with_retries
 from app.core.config import get_settings
 from app.services.exceptions import AIProviderError
 
@@ -50,19 +51,23 @@ class GeminiProvider(AIProvider):
             },
         }
 
+        # Path only — never log the full URL (API key is a query param).
         url = f"{self.base_url}/models/{self.model}:generateContent"
         params = {"key": self.api_key}
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            try:
+        async def _request_once() -> dict:
+            async with httpx.AsyncClient(timeout=60.0) as client:
                 response = await client.post(url, params=params, json=payload)
                 response.raise_for_status()
-                data = response.json()
-            except httpx.HTTPStatusError as exc:
-                detail = exc.response.text
-                raise AIProviderError(f"Gemini request failed: {detail}") from exc
-            except httpx.HTTPError as exc:
-                raise AIProviderError(f"Gemini request failed: {exc}") from exc
+                return response.json()
+
+        try:
+            data = await execute_with_retries(_request_once, provider=self.name)
+        except httpx.HTTPStatusError as exc:
+            detail = exc.response.text
+            raise AIProviderError(f"Gemini request failed: {detail}") from exc
+        except httpx.HTTPError as exc:
+            raise AIProviderError(f"Gemini request failed: {exc}") from exc
 
         try:
             return data["candidates"][0]["content"]["parts"][0]["text"].strip()

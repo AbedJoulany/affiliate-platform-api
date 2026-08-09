@@ -1,6 +1,7 @@
 import httpx
 
 from app.ai.base import AIProvider
+from app.ai.retry import execute_with_retries
 from app.core.config import get_settings
 from app.services.exceptions import AIProviderError
 
@@ -50,20 +51,23 @@ class OpenAIProvider(AIProvider):
             "Content-Type": "application/json",
         }
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            try:
+        async def _request_once() -> dict:
+            async with httpx.AsyncClient(timeout=60.0) as client:
                 response = await client.post(
                     f"{self.base_url}/chat/completions",
                     json=payload,
                     headers=headers,
                 )
                 response.raise_for_status()
-                data = response.json()
-            except httpx.HTTPStatusError as exc:
-                detail = exc.response.text
-                raise AIProviderError(f"OpenAI request failed: {detail}") from exc
-            except httpx.HTTPError as exc:
-                raise AIProviderError(f"OpenAI request failed: {exc}") from exc
+                return response.json()
+
+        try:
+            data = await execute_with_retries(_request_once, provider=self.name)
+        except httpx.HTTPStatusError as exc:
+            detail = exc.response.text
+            raise AIProviderError(f"OpenAI request failed: {detail}") from exc
+        except httpx.HTTPError as exc:
+            raise AIProviderError(f"OpenAI request failed: {exc}") from exc
 
         try:
             return data["choices"][0]["message"]["content"].strip()

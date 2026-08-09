@@ -211,8 +211,8 @@ Queue mutation (API or Celery)
 
 - Separate Celery queues: `publishing`, `discovery_refresh`, `ai_batch`
 - Automated alert wiring on beat/worker absence
-- Discovery Celery `autoretry_for` / `max_retries` → **Phase C'**
 
+**Phase C' (COMPLETE 2026-08-09):** AliExpress HTTP retries remain client-owned (`_execute_with_retries`); discovery tasks do **not** add Celery HTTP `autoretry_for` for those failures. OpenAI/Gemini retries are provider-owned (`app/ai/retry.py`). See §9.3.
 **Env vars (Phase B–relevant):**
 
 | Settings field | Environment variable | Notes |
@@ -231,11 +231,14 @@ Also: `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`, `REDIS_HOST` / `REDIS_PORT` 
 | Integration | Policy | Status |
 | --- | --- | --- |
 | **Telegram Bot API** | In-process: up to 3 retries (1 initial + 3 = ≤4 HTTP attempts), exponential backoff from `0.5s` + jitter; honor 429 `parameters.retry_after`. Celery publish tasks: `autoretry_for=(TelegramPublishError,)`, `max_retries=3`, `retry_backoff=True`, `retry_jitter=True`. Non-retryable 4xx Telegram errors (excluding 429) are marked terminal immediately so the beat loop does not recreate failed attempts forever. Failures persist on `queue_publish_attempts`; terminal → `error_code=dead_letter` | ✅ Implemented (Phase A.1) |
-| **AliExpress IOP** | Existing client rate limit + `ALIEXPRESS_MAX_RETRIES` | ⬜ Phase C' |
-| **OpenAI / Gemini** | 2 retries on 502/503; timeout 60s; user-facing `AIProviderError` message | ⬜ Phase C' |
-| **Celery publish tasks** | As above for Telegram publishing; discovery tasks unchanged | ✅ Publish path (Phase A.1) |
+| **AliExpress IOP** | Client-owned only: `_execute_with_retries` in `app/aliexpress/api_client.py`. Budget `aliexpress_max_retries + 1` (default **4**). Retryable: rate-limit errors; codes `{408,429,500,502,503,504}` or message `timeout`/`temporarily`. Credentials errors re-raise immediately. Backoff `0.5s * 2^attempt` + jitter `[0,0.25)`; inter-request gate default **0.2s**. Discovery Celery tasks: **no** AliExpress HTTP `autoretry_for` (nesting would multiply outbound calls). Canonical discovery exception: `app.aliexpress.exceptions.AliExpressAPIError` | ✅ Implemented (Phase C') |
+| **OpenAI / Gemini** | Provider-owned via `app/ai/retry.py` (max **2** total attempts). Retryable: `httpx.TransportError`, HTTP 429, HTTP 5xx. Non-retryable: 400/401/403/404 and unexpected non-httpx errors. Malformed response parsing is **outside** the retry loop (1 call). Backoff base **1.0s** × `2^attempt` + jitter `[0,0.5)`; honor numeric `Retry-After` (cap **60s**). Timeout **60s**/attempt. Exhaustion → existing `AIProviderError` contract. **No** Celery path | ✅ Implemented (Phase C') |
+| **Celery publish tasks** | As above for Telegram publishing | ✅ Publish path (Phase A.1) |
+| **Celery discovery tasks** | No AliExpress HTTP autoretry; client budget is the sole HTTP retry owner | ✅ Confirmed (Phase C') |
 
-Log structured failure records (queue_id, provider, attempt, error_code) — no token leakage. Attempt rows are the durable audit source for Telegram publishes.
+Log structured failure records (queue_id, provider, attempt, error_code) — no token leakage. Attempt rows are the durable audit source for Telegram publishes. AI retry schedule logs (when emitted) include only provider/attempt/reason/delay — never API keys, prompts, or credential-bearing URLs.
+
+**Phase C' validation:** offline pytest coverage for AliExpress client retries, discovery exception identity, no-nested-Celery guards, AI provider retries, and API regression (`tests/test_aliexpress_api_client_retries.py`, `tests/test_discovery_task_exceptions.py`, `tests/test_aliexpress_no_nested_retry.py`, `tests/test_ai_provider_retry.py`, `tests/test_phase_c_prime_api_regression.py`). Full backend suite after Task 4: **244** passed. No DB migration, no new API endpoints, no frontend/SSE changes.
 
 **Batch resilience:** `_publish_items` (used by the Celery beat path) catches `TelegramPublishError` in addition to `ValidationError`/`ForbiddenError`/`ConflictError` per item and continues the batch — one item's failure (and its persisted attempt/dead-letter row) never blocks the rest of the due/queued batch for that tick. On success, the service commits immediately before returning so a later sibling failure in the same batch cannot roll back a Telegram message that already sent.
 
