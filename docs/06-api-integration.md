@@ -109,10 +109,10 @@ Status definitions:
 
 | Endpoint | Frontend module | Status | Types / notes |
 | --- | --- | --- | --- |
-| `GET /products/discover` | `discovery.api.ts` | Connected | General mode |
-| `GET /products/discover/hot` | `discovery.api.ts` | Connected | |
+| `GET /products/discover` | `discovery.api.ts` | Connected | General mode. Transient AliExpress HTTP failures are retried only inside `api_client._execute_with_retries`; API maps domain `AliExpressAPIError` → **502** (existing contract; Phase C' did not change the surface) |
+| `GET /products/discover/hot` | `discovery.api.ts` | Connected | Same client-owned retry boundary |
 | `GET /products/discover/deals` | `discovery.api.ts` | Connected | |
-| `GET /products/discover/trending` | `discovery.api.ts` | Connected | |
+| `GET /products/discover/trending` | `discovery.api.ts` | Connected | Same client-owned retry boundary |
 | `GET /products/discover/category/{id}` | `discovery.api.ts` | Connected | Requires `category_id` |
 | `GET /products/search` | — | Backend only | Keyword mode uses discover paths |
 | `POST /products/search/image` | — | Backend only | DS image search; env-gated |
@@ -129,13 +129,14 @@ Status definitions:
 
 | Endpoint | Frontend module | Status | Types / notes |
 | --- | --- | --- | --- |
-| `POST /ai-content/generate` | `ai.api.ts` | Connected | Extended request: `content_type`, `tone`, `language`, `length`, `instruction_modifiers` |
+| `POST /ai-content/generate` | `ai.api.ts` | Connected | Extended request: `content_type`, `tone`, `language`, `length`, `instruction_modifiers`. Provider-owned retries (OpenAI/Gemini via `app/ai/retry.py`, max **2** attempts) are transparent to the HTTP contract. Exhaustion / permanent failures still surface as existing `AIProviderError` → **502** `detail` string. Malformed provider JSON shape does **not** retry. No Celery involvement. Phase C' added **no** new fields/endpoints |
 | Variant session | `useContentSession` | Client-side | Variants, edits in `sessionStorage` — not persisted server-side |
 | Content quality scores | `ai/lib/scores.ts` | Client-side | Heuristic scoring for UI badges |
 | Prompt profiles / history API | — | Pending backend | No save/list endpoints |
 
 **GenerateContentInput** (frontend) ↔ **GenerateContentRequest** (Pydantic) — keep enums in sync via `features/ai/types/api.ts` and `app/schemas/ai_content.py`.
 
+**Provider selection:** request `provider` (`openai` \| `gemini`) selects exactly one configured provider — no cross-provider fallback (Phase C' preserved).
 ### 4.6 Publishing queue
 
 | Endpoint | Frontend module | Status | Types / notes |
@@ -272,5 +273,6 @@ useQuery({
 ## 9. Related Documents
 
 - [02-frontend-architecture.md](./02-frontend-architecture.md)
-- [08-implementation-roadmap.md](./08-implementation-roadmap.md) — Phase roadmap (A.1, A.2, and B complete; next is Phase C')
+- [08-implementation-roadmap.md](./08-implementation-roadmap.md) — Phase roadmap (A.1, A.2, B, and C' complete; next is Phase D)
 - [planning/phase-a2-realtime-operations-design.md](./planning/phase-a2-realtime-operations-design.md) — Phase A.2 SSE design + closeout
+- [planning/phase-c-prime-retry-hardening-design.md](./planning/phase-c-prime-retry-hardening-design.md) — Phase C' retry ownership + closeout

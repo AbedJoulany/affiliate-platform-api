@@ -3,13 +3,11 @@ from datetime import UTC, datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.aliexpress.client import AliExpressAffiliateClient
-from app.aliexpress.exceptions import AliExpressAPIError
 from app.aliexpress.types import DiscoveryMode, ProductSortOption
 from app.core.config import Settings, get_settings
 from app.models.aliexpress_category import AliExpressCategory
 from app.repositories.product import AliExpressCategoryRepository
 from app.schemas.discovery import ProductDiscoveryQuery
-from app.services.exceptions import AliExpressAPIError as ServiceAliExpressAPIError
 from app.services.product_discovery import ProductDiscoveryService
 from app.services.product_importer import ProductImporter
 
@@ -34,10 +32,7 @@ class ProductDiscoveryPersistenceService:
         return await self._refresh_discovery_mode(DiscoveryMode.TRENDING)
 
     async def refresh_categories(self) -> dict:
-        try:
-            categories = await self.client.get_categories()
-        except AliExpressAPIError as exc:
-            raise ServiceAliExpressAPIError(exc.message, code=exc.code) from exc
+        categories = await self.client.get_categories()
 
         models = [
             AliExpressCategory(

@@ -1,7 +1,7 @@
 # Implementation Roadmap
 
-**Document Version:** 2.6  
-**Last Updated:** 2026-08-08
+**Document Version:** 2.7  
+**Last Updated:** 2026-08-09
 
 Consolidated feature tracker (replaces empty `PROJECT_STATUS.md`). See [06-api-integration.md](./06-api-integration.md) for endpoint-level status.
 
@@ -15,7 +15,9 @@ Consolidated feature tracker (replaces empty `PROJECT_STATUS.md`). See [06-api-i
 
 **2026-08-08 revision:** Phase A.2 — Real-time Queue Updates is **COMPLETE** (backend B1–B7, frontend F1–F5, SSE end-to-end path, TanStack Query polling fallback 5s→30s, clean-clone shippability). Design record: [phase-a2-realtime-operations-design.md](./planning/phase-a2-realtime-operations-design.md). F6 is **COMPLETE** (optional/stretch badge work shipped; not required historically for A.2 completion).
 
-**2026-08-08 revision (Phase B closeout):** Phase B — Background workers & queue execution (remainder) is **COMPLETE** (Tasks 0–4). Design record: [phase-b-worker-observability-design.md](./planning/phase-b-worker-observability-design.md). Shipped: Redis pipeline heartbeat, `GET /worker/health`, optional Flower under Compose profile `observability`. **Next milestone: Phase C'** (non-Telegram retry hardening).
+**2026-08-08 revision (Phase B closeout):** Phase B — Background workers & queue execution (remainder) is **COMPLETE** (Tasks 0–4). Design record: [phase-b-worker-observability-design.md](./planning/phase-b-worker-observability-design.md). Shipped: Redis pipeline heartbeat, `GET /worker/health`, optional Flower under Compose profile `observability`.
+
+**2026-08-09 revision (Phase C' closeout):** Phase C' — Non-Telegram retry hardening is **COMPLETE** (Tasks 0–5). Design record: [phase-c-prime-retry-hardening-design.md](./planning/phase-c-prime-retry-hardening-design.md). Shipped: AliExpress client-retry coverage + discovery exception hygiene; OpenAI/Gemini provider-layer retry (`app/ai/retry.py`); no-nested-Celery-HTTP-retry regression guards; API/integration regression validation. **No** Celery HTTP autoretry for AliExpress discovery, **no** Celery path for AI generation, **no** DB/SSE/frontend changes. **Next milestone: Phase D** (form & schema validation standardization).
 
 ---
 
@@ -23,7 +25,7 @@ Consolidated feature tracker (replaces empty `PROJECT_STATUS.md`). See [06-api-i
 
 ## 1. Executive Summary
 
-The frontend has completed a **workspace UI transformation** (July 2026): drawer-based inspection, operational queue center, inventory grid controls, AI content studio overhaul, and shared score/toast components. Backend integration is **live-first** — no mock API layers in production paths. **Phase A.1 — Publishing Reliability & Status Truth** (2026-08-04) closed the last major reliability gap: Telegram publish attempts, retries, idempotency, and dead-letter handling are now backend-owned and fully consumed by the queue UI. **Phase A.2 — Real-time Queue Updates** (2026-08-08) adds SSE push + polling fallback so the queue workspace stays authoritative without redesigning REST or inventing client-owned state. **Phase B — Background workers & queue execution** (2026-08-08) adds Worker/Beat pipeline liveness (`GET /worker/health`) and optional Flower task observability without changing A.1/A.2 business behavior.
+The frontend has completed a **workspace UI transformation** (July 2026): drawer-based inspection, operational queue center, inventory grid controls, AI content studio overhaul, and shared score/toast components. Backend integration is **live-first** — no mock API layers in production paths. **Phase A.1 — Publishing Reliability & Status Truth** (2026-08-04) closed the last major reliability gap: Telegram publish attempts, retries, idempotency, and dead-letter handling are now backend-owned and fully consumed by the queue UI. **Phase A.2 — Real-time Queue Updates** (2026-08-08) adds SSE push + polling fallback so the queue workspace stays authoritative without redesigning REST or inventing client-owned state. **Phase B — Background workers & queue execution** (2026-08-08) adds Worker/Beat pipeline liveness (`GET /worker/health`) and optional Flower task observability without changing A.1/A.2 business behavior. **Phase C' — Non-Telegram retry hardening** (2026-08-09) preserves AliExpress client-owned HTTP retries, adds provider-owned OpenAI/Gemini retries, and explicitly forbids nested Celery HTTP retries for those same failures — without new APIs, migrations, or frontend work.
 
 ---
 
@@ -189,10 +191,10 @@ Phase A.2 — Real-time Queue Updates (SSE)   ✅ COMPLETE
 Phase B — Background workers & queue execution (remainder)   ✅ COMPLETE
         │
         ▼
-Phase C' — Non-Telegram retry hardening (AliExpress, AI providers)   ← NEXT MILESTONE
+Phase C' — Non-Telegram retry hardening (AliExpress, AI providers)   ✅ COMPLETE
         │
         ▼
-Phase D — Form & schema validation standardization   (independent; may run parallel to C')
+Phase D — Form & schema validation standardization   ← NEXT MILESTONE
         │
         ▼
 Phase E — Platform expansion (V2)
@@ -333,7 +335,7 @@ Phase B **did not rebuild** the Celery business schedules. Those tasks already e
 | Worker/Beat **pipeline liveness** | Beat schedules `worker_heartbeat` → worker SET Redis `celery:health:heartbeat` (TTL) → `GET /worker/health` |
 | Task **execution observability** | Optional Flower (`docker compose --profile observability`) reading Celery broker/events |
 
-These are separate operational concerns. Flower is **not** a health probe. `/worker/health` does **not** provide task-failure metrics. Prometheus is **deferred** (not shipped). Discovery Celery `autoretry_for` / `max_retries` remains **Phase C'** — not Phase B.
+These are separate operational concerns. Flower is **not** a health probe. `/worker/health` does **not** provide task-failure metrics. Prometheus is **deferred** (not shipped). Discovery Celery HTTP `autoretry_for` for AliExpress failures was **not** added in Phase B; Phase C' confirmed client-owned AliExpress HTTP retries and explicitly forbids nesting Celery HTTP retries on the same failures (see Phase C' below).
 
 **Architecture (liveness):**
 
@@ -369,20 +371,83 @@ operator UI
 
 Publish-task idempotency for Telegram remains Phase A.1 work; Phase B does not duplicate it. A.1 and A.2 behavior is unchanged.
 
-### Phase C' — Non-Telegram retry hardening (independent; may run parallel to D)   ← NEXT MILESTONE
+### Phase C' — Non-Telegram retry hardening ✅ COMPLETE
 
-Deferred from the original Phase C scope — Telegram retry policy ships in Phase A.1. This phase covers the remaining integrations:
+**Completed:** 2026-08-09. Design record: [phase-c-prime-retry-hardening-design.md](./planning/phase-c-prime-retry-hardening-design.md).
 
+**Scope — AliExpress + OpenAI/Gemini only.** Telegram retry/idempotency remains Phase A.1 and was not reimplemented. A.1 publishing reliability, A.2 SSE/`queue-events`, Flower, heartbeat, and `/worker/health` were not modified.
 
-| Provider                     | Strategy                                                                                                      |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| AliExpress IOP               | Existing rate limit + exponential backoff in `api_client.py`; add `ALIEXPRESS_MAX_RETRIES` enforcement review |
-| AI providers (OpenAI/Gemini) | Retry transient 502/503; surface `AIProviderError` to UI                                                      |
+**Retry ownership (authoritative):**
 
+```text
+AliExpress HTTP failures
+        ↓
+app/aliexpress/api_client.py::_execute_with_retries
+        ↓
+client-owned retry (budget / backoff / jitter / rate-limit gate)
+        ↓
+discovery task or discovery API
+        ↓
+existing error/response contract
 
+AI provider failures
+        ↓
+OpenAIProvider / GeminiProvider → app/ai/retry.py
+        ↓
+provider-owned retry (max 2 attempts)
+        ↓
+AIProviderError
+        ↓
+existing POST /ai-content/generate contract
+```
 
+```text
+Celery HTTP retry for AliExpress: NOT USED
+Celery retry for AI generation: NOT USED
+```
 
-### Phase D — Form & schema validation standardization
+**AliExpress (preserved client policy + hygiene/tests):**
+
+| Property | Shipped behavior |
+| --- | --- |
+| Owner | `AliExpressAPIClient._execute_with_retries` only |
+| Attempt budget | `aliexpress_max_retries + 1` (default **4** total; Settings `aliexpress_max_retries=3`) |
+| Retryable | `AliExpressRateLimitError`; `AliExpressAPIError` when `code ∈ {408,429,500,502,503,504}` or message contains `timeout`/`temporarily` |
+| Non-retryable | `AliExpressCredentialsError` (immediate re-raise); other unclassified `AliExpressAPIError` (e.g. 400/401/403/404) |
+| Backoff | `aliexpress_retry_backoff_seconds * (2 ** attempt)` (default base **0.5s**) + `random.uniform(0, 0.25)` jitter |
+| Rate-limit gate | `_apply_rate_limit` enforces `aliexpress_rate_limit_interval_seconds` (default **0.2s**) before every attempt |
+| Celery | Discovery tasks (`refresh_hot_products`, `refresh_trending_products`, `refresh_categories`) have **no** AliExpress HTTP `autoretry_for` — nesting would multiply outbound calls |
+| Exception hygiene | Discovery refresh path propagates canonical `app.aliexpress.exceptions.AliExpressAPIError`; service-layer `app.services.exceptions.AliExpressAPIError` remains for existing API/import contracts |
+
+**AI providers (new provider-layer policy):**
+
+| Property | Shipped behavior |
+| --- | --- |
+| Owner | Shared helper `app/ai/retry.py`, used by `OpenAIProvider` and `GeminiProvider` |
+| Attempt budget | **2** total attempts (1 initial + 1 retry) — not Settings-driven |
+| Retryable | `httpx.TransportError`; HTTP **429**; HTTP **5xx** (`500 ≤ status < 600`) |
+| Non-retryable | HTTP **400/401/403/404**; other non-transport errors; unexpected non-httpx errors |
+| Malformed response | Parsed **outside** the retry loop → **no retry** (1 provider call) |
+| Backoff | Base **1.0s** × `2 ** attempt` + `uniform(0, 0.5)` jitter |
+| Retry-After | Honored when a valid non-negative numeric header is present; capped at **60s**; malformed/missing → normal backoff |
+| Timeout | Existing **60s** per attempt unchanged |
+| Logging | Concise retry schedule logs (provider, attempt, reason, delay) — no API keys, prompts, or credential-bearing URLs |
+| API contract | Exhaustion still raises `AIProviderError` → existing `ServiceError` → HTTP mapping; no new endpoints/fields |
+
+**Tasks completed:**
+
+- [x] Task 0 — Architecture decision (retry ownership; no nested AliExpress Celery HTTP retry; AI provider-layer retry; no DB/SSE/FE)
+- [x] Task 1 — AliExpress retry test coverage + discovery exception hygiene
+- [x] Task 2 — AI provider retry hardening (OpenAI + Gemini via shared helper)
+- [x] Task 3 — AliExpress no-nested-retry regression protection
+- [x] Task 4 — Integration/API regression validation
+- [x] Task 5 — Documentation closeout
+
+**Validation (backend):** Task 1 full suite **154** passed; Task 3 focused **14** passed; Task 4 focused **28** passed; full suite after Task 4 **244** passed. Ruff passed on changed files. No backend typecheck is configured. Tests are offline (no real AliExpress/OpenAI/Gemini calls; retry sleeps mocked).
+
+**Explicit non-goals (verified):** no database migration/tables; no new queue/SSE events; no frontend changes; no Telegram retry changes; no Prometheus; no new API endpoints; no Celery task for AI generation. Future Celery retry for AliExpress, if ever considered, may only target failures **outside** the HTTP client budget (e.g. DB/session) and is **not** part of this completed phase.
+
+### Phase D — Form & schema validation standardization   ← NEXT MILESTONE
 
 - Shared Zod schemas in `features/*/lib/schemas.ts` mirroring Pydantic
 - Drawer inline edits: product status, queue schedule, channel assignment
@@ -421,6 +486,8 @@ Depends on Phases A.1–B being substantially complete.
 | Publish attempt/event tracking (Telegram) | ✅ Phase A.1 backend   |
 | Telegram retry + idempotency policy       | ✅ Phase A.1 backend   |
 | Real-time queue SSE + polling fallback    | ✅ Phase A.2           |
+| AliExpress client retry + discovery hygiene | ✅ Phase C'          |
+| OpenAI/Gemini provider retry              | ✅ Phase C'            |
 
 
 ---
@@ -443,4 +510,5 @@ A feature is complete when: correct folder structure · reusable components · l
 - [archive/publishing-reliability-status-truth-roadmap.md](./archive/publishing-reliability-status-truth-roadmap.md) — Original Phase A.1 milestone proposal (adopted 2026-07-29; historical record only)
 - [planning/phase-a2-realtime-operations-design.md](./planning/phase-a2-realtime-operations-design.md) — Phase A.2 design + closeout (COMPLETE 2026-08-08)
 - [planning/phase-b-worker-observability-design.md](./planning/phase-b-worker-observability-design.md) — Phase B Task 0 design + Tasks 1–4 closeout (COMPLETE 2026-08-08)
+- [planning/phase-c-prime-retry-hardening-design.md](./planning/phase-c-prime-retry-hardening-design.md) — Phase C' design + Tasks 0–5 closeout (COMPLETE 2026-08-09)
 

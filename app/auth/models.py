@@ -9,6 +9,7 @@ from app.core.model_mixins import TimestampMixin, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
     from app.models.affiliate import Affiliate
+    from app.models.refresh_token import RefreshToken
 
 
 class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
@@ -29,4 +30,10 @@ class User(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         back_populates="user",
         uselist=False,
         cascade="all, delete-orphan",
+    )
+    refresh_tokens: Mapped[list["RefreshToken"]] = relationship(
+        "RefreshToken",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        foreign_keys="RefreshToken.user_id",
     )

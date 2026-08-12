@@ -1,4 +1,6 @@
+import secrets
 from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 from typing import Any
 from uuid import UUID
 
@@ -20,6 +22,16 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return bcrypt.checkpw(
         plain_password.encode("utf-8"), hashed_password.encode("utf-8")
     )
+
+
+def generate_refresh_token() -> str:
+    """Generate a high-entropy opaque refresh token for the client."""
+    return secrets.token_urlsafe(32)
+
+
+def hash_refresh_token(raw_token: str) -> str:
+    """Return a deterministic SHA-256 hex digest for database lookup."""
+    return sha256(raw_token.encode("utf-8")).hexdigest()
 
 
 def create_access_token(
