@@ -15,6 +15,7 @@ from app.models import (  # noqa: F401
     Campaign,
     Conversion,
     Product,
+    RefreshToken,
     TelegramChannel,
     QueueItem,
 )

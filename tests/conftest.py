@@ -11,6 +11,7 @@ from app.auth.security import hash_password
 from app.core.database import Base, get_db
 from app.core.enums import BotPermissionStatus, UserRole
 from app.main import app as fastapi_app
+from app.models.refresh_token import RefreshToken  # noqa: F401 — register metadata
 from app.schemas.queue import PublishQueueResponse
 from app.telegram.client import BotPermissionsResult
 
@@ -57,6 +58,29 @@ async def override_get_db() -> AsyncSession:
 
 def init_app_dependency_overrides() -> None:
     fastapi_app.dependency_overrides[get_db] = override_get_db
+
+
+class _AllowAllRateLimitRedis:
+    """Default test Redis: counters never exceed any Task 0 limit."""
+
+    async def incr(self, key: str) -> int:
+        return 1
+
+    async def expire(self, key: str, seconds: int) -> bool:
+        return True
+
+    async def ttl(self, key: str) -> int:
+        return 300
+
+
+@pytest.fixture(autouse=True)
+def allow_all_rate_limit_redis(monkeypatch):
+    """Keep existing API tests independent of a live Redis rate-limit counter."""
+
+    async def _get_allow_all():
+        return _AllowAllRateLimitRedis()
+
+    monkeypatch.setattr("app.core.rate_limit.get_rate_limit_redis", _get_allow_all)
 
 
 @pytest.fixture(scope="session", autouse=True)

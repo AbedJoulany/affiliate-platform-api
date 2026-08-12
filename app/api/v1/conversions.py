@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user, require_roles
 from app.core.database import get_db
 from app.core.enums import UserRole
+from app.core.rate_limit import limit_conversions
 from app.models.user import User
 from app.schemas.conversion import ConversionCreate, ConversionRead, ConversionUpdate
 from app.services.conversion import ConversionService
@@ -15,7 +16,12 @@ from app.services.exceptions import ServiceError
 router = APIRouter()
 
 
-@router.post("", response_model=ConversionRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=ConversionRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(limit_conversions)],
+)
 async def record_conversion(
     payload: ConversionCreate,
     db: Annotated[AsyncSession, Depends(get_db)],

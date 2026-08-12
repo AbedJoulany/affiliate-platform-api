@@ -5,6 +5,7 @@ from app.models.channel import TelegramChannel
 from app.models.conversion import Conversion
 from app.models.product import Product
 from app.models.queue import QueueItem, QueuePublishAttempt
+from app.models.refresh_token import RefreshToken
 from app.models.user import User
 
 __all__ = [
@@ -17,5 +18,6 @@ __all__ = [
     "TelegramChannel",
     "QueueItem",
     "QueuePublishAttempt",
+    "RefreshToken",
     "User",
 ]
