@@ -1,9 +1,16 @@
+from __future__ import annotations
+
 from functools import lru_cache
 
-from pydantic import Field, PostgresDsn, field_validator
+from pydantic import Field, PostgresDsn, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.enums import AIProviderType
+
+# Known insecure default from this repository — rejected when app_env != "development".
+DEFAULT_JWT_SECRET_KEY = "change-me-to-a-long-random-secret-in-production"
+# Defense-in-depth length floor for non-development (Phase D Decision 10).
+JWT_SECRET_MIN_LENGTH = 32
 
 
 class Settings(BaseSettings):
@@ -12,6 +19,7 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
+        hide_input_in_errors=True,
     )
 
     app_name: str = "Affiliate Platform API"
@@ -31,7 +39,7 @@ class Settings(BaseSettings):
         default="postgresql+asyncpg://affiliate:affiliate_secret@localhost:5432/affiliate_db"
     )
 
-    jwt_secret_key: str = "change-me-to-a-long-random-secret-in-production"
+    jwt_secret_key: str = DEFAULT_JWT_SECRET_KEY
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
@@ -103,6 +111,24 @@ class Settings(BaseSettings):
             f"{data.get('postgres_password')}@{data.get('postgres_host')}:"
             f"{data.get('postgres_port')}/{data.get('postgres_db')}"
         )
+
+    @model_validator(mode="after")
+    def validate_jwt_secret_for_environment(self) -> Settings:
+        # Development retains the existing developer/default-secret workflow.
+        if self.is_development:
+            return self
+
+        if self.jwt_secret_key == DEFAULT_JWT_SECRET_KEY:
+            raise ValueError(
+                "JWT_SECRET_KEY must not use the repository default secret "
+                f"when app_env is '{self.app_env}'"
+            )
+        if len(self.jwt_secret_key) < JWT_SECRET_MIN_LENGTH:
+            raise ValueError(
+                "JWT_SECRET_KEY must be at least "
+                f"{JWT_SECRET_MIN_LENGTH} characters when app_env is '{self.app_env}'"
+            )
+        return self
 
     @property
     def is_development(self) -> bool:
