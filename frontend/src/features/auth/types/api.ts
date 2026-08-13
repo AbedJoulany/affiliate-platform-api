@@ -12,7 +12,8 @@ export interface User {
 
 export interface TokenResponse {
   access_token: string;
-  token_type: "bearer";
+  token_type: string;
+  refresh_token: string;
 }
 
 export interface LoginInput {

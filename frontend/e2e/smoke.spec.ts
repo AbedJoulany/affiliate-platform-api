@@ -2,7 +2,13 @@ import { expect, test } from "@playwright/test";
 
 test("logs in and renders typed dashboard fixture", async ({ page }) => {
   await page.route("**/api/v1/auth/login", async (route) => {
-    await route.fulfill({ json: { access_token: "fixture-token", token_type: "bearer" } });
+    await route.fulfill({
+      json: {
+        access_token: "fixture-token",
+        token_type: "bearer",
+        refresh_token: "fixture-refresh-token",
+      },
+    });
   });
   await page.route("**/api/v1/auth/me", async (route) => {
     await route.fulfill({

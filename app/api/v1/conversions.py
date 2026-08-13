@@ -24,10 +24,11 @@ router = APIRouter()
 )
 async def record_conversion(
     payload: ConversionCreate,
+    current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ConversionRead:
     try:
-        return await ConversionService(db).record_conversion(payload)
+        return await ConversionService(db).record_conversion(current_user, payload)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 

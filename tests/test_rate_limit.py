@@ -296,7 +296,7 @@ async def test_conversion_allows_up_to_limit_then_returns_429(client, fake_redis
             f"{API_PREFIX}/conversions",
             json=_conversion_payload(),
         )
-        assert response.status_code == 404
+        assert response.status_code == 401
 
     blocked = await client.post(
         f"{API_PREFIX}/conversions",
@@ -454,7 +454,24 @@ async def test_successful_login_and_refresh_contract_unchanged(client, fake_redi
 
 @pytest.mark.asyncio
 async def test_conversion_validation_unchanged_under_limiter(client, fake_redis):
-    response = await client.post(f"{API_PREFIX}/conversions", json={"amount": 1})
+    email = f"rl-{uuid4().hex[:10]}@example.com"
+    await provision_test_user(
+        email=email,
+        password=PASSWORD,
+        full_name="Rate Limit User",
+        role="affiliate",
+    )
+    login = await client.post(
+        f"{API_PREFIX}/auth/login",
+        data={"username": email, "password": PASSWORD},
+    )
+    assert login.status_code == 200
+    token = login.json()["access_token"]
+    response = await client.post(
+        f"{API_PREFIX}/conversions",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"amount": 1},
+    )
     assert response.status_code == 422
 
 

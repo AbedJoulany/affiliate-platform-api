@@ -314,6 +314,7 @@ async def test_conversion_endpoints_and_admin_status_update(client):
 
     conversion_resp = await client.post(
         f"{API_PREFIX}/conversions",
+        headers=auth_headers(affiliate_token),
         json={
             "affiliate_id": affiliate_profile["id"],
             "campaign_id": campaign["id"],
@@ -329,6 +330,7 @@ async def test_conversion_endpoints_and_admin_status_update(client):
 
     duplicate_resp = await client.post(
         f"{API_PREFIX}/conversions",
+        headers=auth_headers(affiliate_token),
         json={
             "affiliate_id": affiliate_profile["id"],
             "campaign_id": campaign["id"],

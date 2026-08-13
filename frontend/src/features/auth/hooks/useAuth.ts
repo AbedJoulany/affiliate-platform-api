@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
-import { getCurrentUser, login } from "../api/auth.api";
+import { getCurrentUser, login, logout } from "../api/auth.api";
 import type { LoginInput, TokenResponse } from "../types/api";
 import { session } from "@/services/session";
 import type { ApiError } from "@/services/api-client";
@@ -19,8 +19,8 @@ export function useLogin() {
   const queryClient = useQueryClient();
   return useMutation<TokenResponse, ApiError, LoginInput>({
     mutationFn: (input: LoginInput) => login(input),
-    onSuccess: ({ access_token }) => {
-      session.setAccessToken(access_token);
+    onSuccess: ({ access_token, refresh_token }) => {
+      session.setTokens(access_token, refresh_token);
       void queryClient.invalidateQueries({ queryKey: authKeys.me });
       const next = searchParams.get("next");
       router.replace(next?.startsWith("/") && !next.startsWith("//") ? next : "/dashboard");
@@ -32,8 +32,16 @@ export function useLogout() {
   const router = useRouter();
   const queryClient = useQueryClient();
   return () => {
-    session.clear();
-    queryClient.clear();
-    router.replace("/login");
+    const refreshToken = session.getRefreshToken();
+    const finish = () => {
+      session.clear();
+      queryClient.clear();
+      router.replace("/login");
+    };
+    if (!refreshToken) {
+      finish();
+      return;
+    }
+    void logout(refreshToken).catch(() => undefined).finally(finish);
   };
 }

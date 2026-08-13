@@ -21,7 +21,7 @@ class ConversionService:
         self.campaign_repo = CampaignRepository(session)
         self.link_repo = AffiliateCampaignRepository(session)
 
-    async def record_conversion(self, payload: ConversionCreate) -> Conversion:
+    async def record_conversion(self, user: User, payload: ConversionCreate) -> Conversion:
         existing = await self.conversion_repo.get_by_external_order_id(payload.external_order_id)
         if existing:
             raise ConflictError("Conversion with this order ID already exists")
@@ -29,6 +29,9 @@ class ConversionService:
         affiliate = await self.affiliate_repo.get_by_id(payload.affiliate_id)
         if not affiliate:
             raise NotFoundError("Affiliate not found")
+
+        if user.role != UserRole.ADMIN and affiliate.user_id != user.id:
+            raise ForbiddenError("Insufficient permissions")
 
         campaign = await self.campaign_repo.get_by_id(payload.campaign_id)
         if not campaign:
