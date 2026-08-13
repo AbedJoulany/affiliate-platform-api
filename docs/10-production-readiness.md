@@ -1,7 +1,7 @@
 # Production Readiness and Release Runbook
 
-**Document Version:** 2.4  
-**Last Updated:** 2026-08-08
+**Document Version:** 2.5  
+**Last Updated:** 2026-08-13
 
 Release gate supplement to documents 01–09. Defines security boundaries, environment configuration, CI/CD, deployment checklists, and architectural requirements.
 
@@ -11,6 +11,8 @@ Release gate supplement to documents 01–09. Defines security boundaries, envir
 
 **2026-08-08 revision (Phase B closeout):** Phase B worker/Beat health + Flower observability is COMPLETE. §2 Docker services and §9.2 updated to the shipped heartbeat, `GET /worker/health`, and optional Flower profile. Automated paging/alerts remain future ops work.
 
+**2026-08-13 revision (Phase D closeout):** Authentication & public-endpoint security COMPLETE. §6 / §9.6 / §10 updated for JWT validation, refresh tokens, route rate limits, and conversion authorization. Design: [planning/phase-d-auth-security-design.md](./planning/phase-d-auth-security-design.md).
+
 ---
 
 ## 1. Required Environment
@@ -18,12 +20,13 @@ Release gate supplement to documents 01–09. Defines security boundaries, envir
 ### Backend
 
 - PostgreSQL 16 and Redis 7 reachable from API and workers
-- `JWT_SECRET_KEY` — generated production secret (never default)
+- `JWT_SECRET_KEY` — production/non-development secret must not be the repository default and must be at least **32** characters (`JWT_SECRET_MIN_LENGTH`); validation fails fast on Settings construction and does not echo the secret
+- `refresh_token_expire_days` — refresh token TTL in days (default **7**)
 - `CORS_ORIGINS` — deployed frontend origins only
 - `TELEGRAM_BOT_TOKEN` — live bot for permission checks
 - `ALIEXPRESS_APP_KEY` / `ALIEXPRESS_APP_SECRET` — discovery/import
 - `OPENAI_API_KEY` or `GEMINI_API_KEY` — AI generation
-- Celery broker/backend URLs
+- Celery broker/backend URLs (Redis also backs Phase D route rate-limit counters)
 
 ### Frontend
 
@@ -99,7 +102,7 @@ Execute with staging admin:
 4. **Channels** — Register Telegram channel; verify permission badges
 5. **Queue** — Verify KPI cards read backend attempt truth; schedule via dialog and confirm Celery beat actually publishes at the scheduled time (regression check for the event-loop bug below); bulk publish; confirm Telegram message, including a long post (>4096 chars, or >1024-char caption with an image) publishes as multiple sequential messages without truncation; on simulated Telegram failure verify a durable attempt via `GET /queues/{id}/attempts` and drawer attempt-history section (and toast); confirm `QueueStatus` stays without a `failed` value; duplicate publish of unchanged content returns 409; delete a queue item that has publish attempts and confirm it (and its attempt history) is removed without error
 6. **Settings** — Readiness shows DB + Redis
-7. Expired JWT clears session → login
+7. Expired access JWT triggers one single-flight refresh when a refresh token exists; refresh failure clears session → login
 
 ---
 
@@ -107,14 +110,29 @@ Execute with staging admin:
 
 | Topic | Rule |
 | --- | --- |
-| JWT storage | `sessionStorage` only; cookie is presence marker |
+| JWT storage | Access + refresh in `sessionStorage`; cookie is presence marker only |
+| Access vs refresh | Bearer carries access JWT only; refresh sent as JSON to `/auth/refresh` and `/auth/logout` |
 | Session validation | `AuthGuard` → `GET /auth/me` |
+| JWT secret (non-dev) | Reject repository default; reject length &lt; 32; fail-fast; no secret in error text |
+| Refresh tokens | Opaque; SHA-256 hash in PostgreSQL; rotate; single-use; reuse revocation; logout revoke; migration `009` |
+| Rate limiting | Redis fixed-window via FastAPI route dependencies (not middleware); fail-open; policies below |
+| Conversion create | Authenticated + affiliate ownership (or ADMIN); 401/403; amount integrity still client/PENDING review |
 | Admin operations | Import, delete — backend + UI role check |
 | Tenancy | Queue/channel data **not user-scoped** — not multi-tenant safe |
-| Public endpoints | Discovery read, product list, `/conversions` POST |
+| Public / unauthenticated | Discovery read, product list remain public; `POST /conversions` is **no longer** anonymous |
 | `/ready` | Dependency state only (database + redis) — no secrets; not Celery liveness |
 | `/worker/health` | Celery Beat→worker pipeline heartbeat only — no secrets; not task-failure metrics |
 | Auth service | No password/credential logging in `app/auth/service.py` or `app/auth/security.py` (verified 2026-07-29) |
+
+**Rate-limit policies (configuration/code constants — not a global platform):**
+
+| Route | Limit | Window | Identity |
+| --- | --- | --- | --- |
+| `POST /auth/login` | 10 | 5 minutes | client IP (`request.client.host`) |
+| `POST /auth/refresh` | 20 | 5 minutes | client IP |
+| `POST /conversions` | 30 | 1 minute | user id when valid access Bearer present; else IP |
+
+429 includes `Retry-After`. No claim of `X-Forwarded-For` / trusted-proxy IP handling.
 
 ---
 
@@ -256,16 +274,32 @@ Log structured failure records (queue_id, provider, attempt, error_code) — no 
 - Secret management: Vault/AWS Secrets Manager for production
 - HTTPS termination, HSTS, CSP headers on frontend
 
+### 9.6 Authentication & public-endpoint security (Phase D) ✅ COMPLETE
+
+Shipped 2026-08-13. Design: [planning/phase-d-auth-security-design.md](./planning/phase-d-auth-security-design.md).
+
+| Area | Shipped behavior | Explicit non-claims |
+| --- | --- | --- |
+| JWT | Non-dev rejects default/short secrets; fail-fast; no secret in errors | No vault integration; no automated rotation infrastructure |
+| Refresh tokens | Opaque; SHA-256 in DB; rotate; single-use; reuse revoke; logout; TTL default 7 days | No device dashboards; no HttpOnly cookie storage; no MFA |
+| Rate limiting | Redis fixed-window; route `Depends` only; fail-open; policies in §6 | Not global middleware; not a distributed rate-limit platform; no XFF IP |
+| Conversions | Auth + ownership (ADMIN bypass) | Amount not verified against external network; PENDING review remains residual control |
+| Frontend | Single-flight refresh; retry-once; refresh never Bearer; logout clears local state | No CSRF beyond existing app behavior |
+
+**Regression boundaries preserved:** A.1 publishing, A.2 SSE, Phase B `/worker/health`, Phase C' retry ownership — unchanged.
+
 ---
 
 ## 10. Known Issues (Production Blockers)
 
 | Issue | Severity | Action |
 | --- | --- | --- |
-| Default JWT secret | Critical | Rotate in all non-dev envs |
-| No refresh token | Medium | Document session expiry UX |
-| Conversion POST public | Info | Rate limit when adding middleware |
+| Operators must still set a strong `JWT_SECRET_KEY` in every non-dev deploy | Critical (ops) | Fail-fast validation rejects default/short secrets; rotate/set before promote |
+| Rate-limit identity uses `request.client.host` only | Info | Document reverse-proxy topology if shared egress IP collapses limits |
+| Conversion amount integrity | Residual | PENDING + admin review; not Phase D Task 4 scope |
 | Single Celery beat instance | Info | Document ops constraint |
+
+**Closed by Phase D (historical):** “No refresh token”, anonymous `POST /conversions`, absence of auth route rate limits, unvalidated default JWT in non-dev (now rejected at startup).
 
 ---
 

@@ -1,7 +1,9 @@
 # Frontend Architecture
 
-**Document Version:** 2.0  
-**Last Updated:** 2026-07-29
+**Document Version:** 2.1  
+**Last Updated:** 2026-08-13
+
+**2026-08-13 revision (Phase D):** Authentication lifecycle updated for opaque refresh tokens and single-flight 401 refresh. See §6 and [planning/phase-d-auth-security-design.md](./planning/phase-d-auth-security-design.md).
 
 ---
 
@@ -147,6 +149,7 @@ Query keys include all server-side filter parameters. Mutations invalidate the s
 | State | Storage | Examples |
 | --- | --- | --- |
 | Auth token | `sessionStorage` | JWT access token |
+| Refresh token | `sessionStorage` | Opaque refresh (never Bearer) |
 | Session marker | Cookie (`1`) | Middleware redirect only |
 | Discovery session | `sessionStorage` | Filters, UI prefs, last response |
 | AI content session | `sessionStorage` | Variants, config, active variant |
@@ -159,12 +162,16 @@ No global Zustand/Context auth provider — `AuthGuard` validates via `GET /auth
 ## 6. Authentication
 
 ```text
-Login → POST /auth/login (form) → store JWT
+Login → POST /auth/login (form) → store access_token + refresh_token in sessionStorage
 Protected route → middleware cookie check → AuthGuard → GET /auth/me
-401 response → clear session → redirect /login
+Protected API → Authorization: Bearer <access_token>
+401 (non-auth-session) → single-flight POST /auth/refresh → store rotated pair → retry once
+Refresh failure / missing refresh → clear session → redirect /login
+403 → surface forbidden; no refresh; no auto-logout
+Logout → best-effort POST /auth/logout { refresh_token } → clear session + query cache → /login
 ```
 
-Refresh tokens are **not implemented**. Sessions expire when the access JWT expires.
+Phase D Task 5 (COMPLETE): refresh tokens are stored in `sessionStorage` only, sent only as JSON to `/auth/refresh` and `/auth/logout`, and never used as Bearer. Auth session paths (`/auth/login`, `/auth/refresh`, `/auth/logout`) are excluded from the refresh interceptor. A.2 SSE continues to use the access token from the existing session mechanism — unchanged by Phase D.
 
 ---
 

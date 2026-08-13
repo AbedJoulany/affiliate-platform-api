@@ -1,7 +1,8 @@
 # Phase D — Project Analysis & Next-Phase Definition
 
-**Status:** Analysis-only. No implementation performed.
-**Branch inspected:** `cursor/phase-c-prime-retry-hardening` (contains completed Phase C' Tasks 0–5, verified against source, not just documentation).
+**Status:** Analysis complete (historical). Phase D — Authentication & Public-Endpoint Security was selected as recommended and is now **COMPLETE** (Tasks 0–6, 2026-08-13). Shipped design/closeout: [phase-d-auth-security-design.md](./phase-d-auth-security-design.md). This document remains the charter/evidence record for *why* Phase D was chosen; do not treat gap descriptions in §1 as current unresolved defects.
+
+**Branch inspected (at analysis time):** `cursor/phase-c-prime-retry-hardening` (contains completed Phase C' Tasks 0–5, verified against source, not just documentation).
 **Method:** Every completion claim below was cross-checked against source code, not assumed from documentation.
 
 ---
