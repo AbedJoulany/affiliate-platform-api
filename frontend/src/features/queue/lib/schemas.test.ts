@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { QUEUE_STATUSES } from "../types/api";
 import {
+  channelAssignmentSchema,
   queueSchedulingSchema,
   queueStatusSchema,
 } from "./schemas";
@@ -8,6 +9,42 @@ import {
 const VALID_CHANNEL_ID = "550e8400-e29b-41d4-a716-446655440000";
 const FUTURE_LOCAL = "2099-06-15T14:30";
 const PAST_LOCAL = "2020-01-15T09:00";
+
+describe("channelAssignmentSchema", () => {
+  it("accepts a valid channel UUID", () => {
+    const result = channelAssignmentSchema.safeParse(VALID_CHANNEL_ID);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toBe(VALID_CHANNEL_ID);
+    }
+  });
+
+  it("rejects an empty selection (placeholder must not become an API value)", () => {
+    const result = channelAssignmentSchema.safeParse("");
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.message).toBe("القناة المستهدفة مطلوبة");
+    }
+  });
+
+  it("rejects null and undefined", () => {
+    expect(channelAssignmentSchema.safeParse(null).success).toBe(false);
+    expect(channelAssignmentSchema.safeParse(undefined).success).toBe(false);
+  });
+
+  it("rejects a malformed channel ID", () => {
+    const result = channelAssignmentSchema.safeParse("not-a-uuid");
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.message).toBe("معرّف القناة غير صالح");
+    }
+  });
+
+  it("rejects a telegram handle that is not a Channel.id", () => {
+    expect(channelAssignmentSchema.safeParse("@mychannel").success).toBe(false);
+    expect(channelAssignmentSchema.safeParse("-100123").success).toBe(false);
+  });
+});
 
 describe("queueSchedulingSchema", () => {
   it("accepts a valid schedule payload", () => {

@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  invalidDateTime,
+  invalidUuid,
+  requiredField,
+} from "@/lib/validation/messages";
 import { QUEUE_STATUSES } from "../types/api";
 
 export const QUEUE_SCHEDULE_INTENTS = ["schedule", "publish_now"] as const;
@@ -20,16 +25,24 @@ function parseDateTimeLocal(value: string): Date | null {
   return parsed;
 }
 
-const channelIdSchema = z
+/**
+ * Queue item → channel assignment at schedule/publish time.
+ * Required UUID string. Empty placeholder ("اختر قناة Telegram") is invalid.
+ * QueueItem.channel_id remains nullable at rest; this schema covers the
+ * existing editable assignment field only.
+ */
+export const channelAssignmentSchema = z
   .string()
-  .min(1, "القناة المستهدفة مطلوبة")
-  .uuid("معرّف القناة غير صالح");
+  .min(1, requiredField("القناة المستهدفة", { feminine: true }))
+  .uuid(invalidUuid("معرّف القناة"));
+
+export type ChannelAssignment = z.infer<typeof channelAssignmentSchema>;
 
 const scheduledAtSchema = z
   .string()
-  .min(1, "تاريخ ووقت الجدولة مطلوب")
+  .min(1, requiredField("تاريخ ووقت الجدولة"))
   .refine((value) => parseDateTimeLocal(value) !== null, {
-    message: "أدخل تاريخًا ووقتًا صحيحين",
+    message: invalidDateTime,
   })
   .refine(
     (value) => {
@@ -46,12 +59,12 @@ const scheduledAtSchema = z
 export const queueSchedulingSchema = z.discriminatedUnion("intent", [
   z.object({
     intent: z.literal("schedule"),
-    channelId: channelIdSchema,
+    channelId: channelAssignmentSchema,
     scheduledAt: scheduledAtSchema,
   }),
   z.object({
     intent: z.literal("publish_now"),
-    channelId: channelIdSchema,
+    channelId: channelAssignmentSchema,
   }),
 ]);
 
