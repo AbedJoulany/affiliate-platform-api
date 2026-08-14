@@ -27,7 +27,11 @@ import type { QueueItem, QueueStatus } from "../types/api";
 import { QueueDetailsDrawer } from "./QueueDetailsDrawer";
 import { QueueOperationalStats } from "./QueueOperationalStats";
 import { QueueRealtimeStatusBadge } from "./QueueRealtimeStatusBadge";
-import { QueueSchedulingDialog } from "./QueueSchedulingDialog";
+import {
+  QueueSchedulingDialog,
+  type QueuePublishNowSubmitValues,
+  type QueueScheduleSubmitValues,
+} from "./QueueSchedulingDialog";
 import { QueueSelectionBar } from "./QueueSelectionBar";
 import { QueueTable } from "./QueueTable";
 import { QueueToolbar } from "./QueueToolbar";
@@ -190,15 +194,15 @@ function QueueViewBody({
     workspace.clearSelection();
   };
 
-  const saveSchedule = async () => {
-    if (!schedulingDialog?.channelId || !schedulingDialog.scheduledAt) return;
+  const saveSchedule = async (values: QueueScheduleSubmitValues) => {
+    if (!schedulingDialog) return;
     try {
-      const scheduledAt = new Date(schedulingDialog.scheduledAt).toISOString();
+      const scheduledAt = new Date(values.scheduledAt).toISOString();
       for (const id of schedulingDialog.itemIds) {
         await updateQueue.mutateAsync({
           id,
           input: {
-            channel_id: schedulingDialog.channelId,
+            channel_id: values.channelId,
             status: "scheduled",
             scheduled_at: scheduledAt,
           },
@@ -215,8 +219,8 @@ function QueueViewBody({
     }
   };
 
-  const publishFromDialog = async () => {
-    if (!schedulingDialog?.channelId) return;
+  const publishFromDialog = async (values: QueuePublishNowSubmitValues) => {
+    if (!schedulingDialog) return;
     try {
       const selected = enrichedItems.filter((item) =>
         schedulingDialog.itemIds.includes(item.id),
@@ -225,7 +229,7 @@ function QueueViewBody({
         await updateQueue.mutateAsync({
           id: item.id,
           input: {
-            channel_id: schedulingDialog.channelId,
+            channel_id: values.channelId,
             status: "queued",
           },
         });
@@ -234,7 +238,7 @@ function QueueViewBody({
       await publishItems(
         selected.map((item) => ({
           ...item,
-          channel_id: schedulingDialog.channelId,
+          channel_id: values.channelId,
           status: "queued" as const,
         })),
       );
@@ -456,22 +460,14 @@ function QueueViewBody({
       <QueueSchedulingDialog
         open={schedulingDialog != null}
         itemCount={schedulingDialog?.itemIds.length ?? 0}
-        channelId={schedulingDialog?.channelId ?? ""}
-        scheduledAt={schedulingDialog?.scheduledAt ?? ""}
+        defaultValues={{
+          channelId: schedulingDialog?.channelId ?? "",
+          scheduledAt: schedulingDialog?.scheduledAt ?? "",
+        }}
         channels={channels.data?.items ?? []}
         busy={updateQueue.isPending || publishing.publishingIds.length > 0}
-        onChannelChange={(channelId) =>
-          setSchedulingDialog((previous) =>
-            previous ? { ...previous, channelId } : previous,
-          )
-        }
-        onScheduledAtChange={(scheduledAt) =>
-          setSchedulingDialog((previous) =>
-            previous ? { ...previous, scheduledAt } : previous,
-          )
-        }
-        onPublishNow={() => void publishFromDialog()}
-        onApply={() => void saveSchedule()}
+        onSchedule={(values) => void saveSchedule(values)}
+        onPublishNow={(values) => void publishFromDialog(values)}
         onClose={() => setSchedulingDialog(null)}
       />
 
