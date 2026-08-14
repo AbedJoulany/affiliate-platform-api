@@ -1,8 +1,27 @@
 # Form & Schema Validation Standardization
 ## Task 0 — Analysis & Architecture Decision
 
-**Status:** Analysis only. No implementation performed.
+**Status:** COMPLETE (Tasks 0–6, 2026-08-14)  
 **Independent of:** Phase D (Authentication & Public-Endpoint Security) — no overlapping files, confirmed in §15.
+
+```text
+Form & Schema Validation Standardization
+Status: COMPLETE
+```
+
+| Task | Scope | Final status |
+| ---- | ----- | ------------ |
+| 0 | Architecture / analysis / planning | COMPLETE |
+| 1 | Queue Scheduling Zod schema foundation | COMPLETE |
+| 2 | React Hook Form + Zod for `QueueSchedulingDialog` | COMPLETE |
+| 3 | Product Status schema / label consolidation | COMPLETE |
+| 4 | Channel Assignment schema standardization | COMPLETE |
+| 5 | Shared Arabic Zod validation message helper | COMPLETE |
+| 6 | Documentation closeout | COMPLETE — documentation closeout |
+
+**Executed numbering vs Task 0 proposal:** this closeout uses the milestone charter’s Tasks 0–6. Task 0 originally sketched a 7-task breakdown (Task 4 = verification-only, Task 6 = integration suite, Task 7 = docs). Implementation kept Tasks 1–3, shipped a named `channelAssignmentSchema` as Task 4 (still no standalone assignment UI), landed the Arabic helper as Task 5 at `frontend/src/lib/validation/messages.ts`, and used Task 6 for documentation closeout. Per-task test/typecheck/lint/build runs covered integration validation; there was no separate numbered integration task.
+
+**As-shipped record:** §20. Sections §1–§19 remain the Task 0 historical analysis and must not be read as unresolved defects.
 
 ---
 
@@ -265,7 +284,7 @@ This is the milestone's primary, evidence-justified target. See Task 1 (schema) 
 
 Derived strictly from the repository findings above — **not** a blind copy of the roadmap's illustrative structure. Three of the roadmap's four originally-implied surfaces collapse into fewer, more precisely-scoped tasks once the actual UI is accounted for (§1's three scope corrections).
 
-#### Task 1 — Queue Scheduling Zod Schema Foundation
+#### Task 1 — Queue Scheduling Zod Schema Foundation — COMPLETE
 
 - **Objective:** create `features/queue/lib/schemas.ts` with the discriminated-union scheduling schema described in §7/§9, plus an exported `QUEUE_STATUSES`-style reuse of existing constants where applicable.
 - **Scope:** one new file; no changes to any existing component in this task (schema only, unit-testable in isolation before any UI wiring).
@@ -275,7 +294,7 @@ Derived strictly from the repository findings above — **not** a blind copy of 
 - **Out of scope:** no component changes; no `button_text`/`button_url` schema (§3's cross-field rule 2 — not used by any current UI).
 - **Acceptance criteria:** all new schema unit tests pass; `zod@4.4.3` API usage (e.g. `z.discriminatedUnion` availability) verified against the installed version during implementation, not assumed.
 
-#### Task 2 — Queue Scheduling Dialog: React Hook Form Migration
+#### Task 2 — Queue Scheduling Dialog: React Hook Form Migration — COMPLETE
 
 - **Objective:** migrate `QueueSchedulingDialog.tsx` to `useForm` + `zodResolver(queueSchedulingSchema)` per §10's architecture, with `QueueView.tsx` updated to supply `defaultValues` and receive validated submit payloads instead of owning raw field state.
 - **Scope:** the dialog component's internals + the specific `schedulingDialog` state/handlers in `QueueView.tsx` (`openSchedule`, `saveSchedule`, `publishFromDialog`, and the `<QueueSchedulingDialog>` JSX props). No other `QueueView.tsx` logic (publishing batch results, realtime invalidation, toasts) is touched.
@@ -285,7 +304,7 @@ Derived strictly from the repository findings above — **not** a blind copy of 
 - **Out of scope:** no visual/layout redesign of the dialog; no change to the shared `Drawer`/`Dialog` primitives; no change to `useUpdateQueueItem`/publish mutation hooks themselves.
 - **Acceptance criteria:** new dialog tests pass; full existing frontend suite (16 files) passes unmodified; manual behavior parity confirmed for both the "Apply" (schedule) and "Publish Now" flows against the currently-documented MVP acceptance flow (`docs/10-production-readiness.md` §5, item 5).
 
-#### Task 3 — Product Status Shared Schema & Label Consolidation
+#### Task 3 — Product Status Shared Schema & Label Consolidation — COMPLETE
 
 - **Objective:** create `features/products/lib/schemas.ts` exporting a `PRODUCT_STATUSES` const array (mirroring the existing `QUEUE_STATUSES` pattern), a `z.enum(PRODUCT_STATUSES)` schema, and a single shared Arabic label map; update `ProductsToolbar.tsx`, `ProductsSelectionBar.tsx`, and `ProductDetailsDrawer.tsx` to import the shared label map instead of each maintaining its own copy.
 - **Scope:** consolidation only — **no new interactive validation UX is added**, per §6's finding that no invalid state is reachable through the existing `<select>` inputs. The `<select>` markup itself is unchanged; only the source of its `<option>` list/labels changes.
@@ -295,7 +314,7 @@ Derived strictly from the repository findings above — **not** a blind copy of 
 - **Out of scope:** no status-transition rule (none exists to add, §6); no change to `ProductDetailsDrawer.tsx`'s read-only presentation (adding an inline editable status control there would be new UI, explicitly out of this task's scope per §1's finding).
 - **Acceptance criteria:** all three consuming components render identical labels/options to before the change (behavior-preserving refactor); new schema unit tests pass; no duplicate label object remains in the three files.
 
-#### Task 4 — Channel Assignment: Scope Confirmation (no new code)
+#### Task 4 — Channel Assignment: Scope Confirmation (no new code) — COMPLETE (named schema shipped; no standalone UI)
 
 - **Objective:** formally confirm, as a documentation/verification step, that "channel assignment" validation is fully satisfied by Task 2's scheduling schema (§8) and that no separate UI or schema is needed.
 - **Scope:** verification only — read `QueueDetailsDrawer.tsx` and `QueueSchedulingDialog.tsx` after Task 2 lands, confirm the channel `<Select>`'s active/postable filter (§8) was preserved unchanged, and record the confirmation in the milestone's closeout notes (Task 7).
@@ -305,7 +324,7 @@ Derived strictly from the repository findings above — **not** a blind copy of 
 - **Out of scope:** any new "reassign channel" UI in `QueueDetailsDrawer` — not evidenced as needed, would be new product scope beyond this milestone's charter.
 - **Acceptance criteria:** a short confirmation note (not a code change) is added to the Task 7 documentation closeout stating this was verified.
 
-#### Task 5 — Arabic Validation Message Helper (optional, low-risk)
+#### Task 5 — Arabic Validation Message Helper (optional, low-risk) — COMPLETE
 
 - **Objective:** add the small, optional `frontend/src/lib/validation-messages.ts` helper described in §11, and use it in Task 1's and Task 3's new schemas only (existing `LoginForm`/`ChannelsView` schemas are not retrofitted).
 - **Scope:** one new small utility file + its use in the two new schema files from Tasks 1/3.
@@ -317,6 +336,8 @@ Derived strictly from the repository findings above — **not** a blind copy of 
 
 #### Task 6 — Integration & Regression Validation
 
+*(Task 0 proposal. Executed milestone: per-task validation in Tasks 1–5; charter Task 6 is documentation closeout — see header and §20.)*
+
 - **Objective:** run the full verification surface once Tasks 1–5 are complete: `npm run typecheck`, `npm run lint`, `npm test` (full Vitest suite, all 16 existing files + new ones), `npm run build`, and the backend's full `pytest` suite (to confirm, per §2/§15, that nothing on the backend was touched or regressed, since this milestone is frontend-only).
 - **Scope:** verification only, no new source files.
 - **Files/components:** none.
@@ -325,7 +346,7 @@ Derived strictly from the repository findings above — **not** a blind copy of 
 - **Out of scope:** fixing any *unrelated* pre-existing failing test discovered during this pass (document and report only, per the analysis-only discipline this project has consistently applied in every prior phase's closeout).
 - **Acceptance criteria:** all of `typecheck`, `lint`, `test`, `build` (frontend) and `pytest` (backend) pass; the specific Playwright smoke scenario touching scheduling (if any exists in `frontend/e2e/smoke.spec.ts` — to be checked at Task 6 time, not assumed here) is confirmed unaffected.
 
-#### Task 7 — Documentation Closeout
+#### Task 7 — Documentation Closeout — COMPLETE as executed Task 6
 
 - **Objective:** update the authoritative docs to reflect the shipped state, and correct the pre-existing `docs/07-development-guidelines.md` §4 inaccuracy about Discovery's validation (§1/§2).
 - **Scope:** documentation only.
@@ -455,6 +476,94 @@ The single most important framing correction this analysis makes: **this is a sm
 
 - [phase-d-analysis-and-roadmap.md](./phase-d-analysis-and-roadmap.md) — prior milestone analysis (independent, no file overlap, §15)
 - [phase-d-auth-security-design.md](./phase-d-auth-security-design.md) — prior milestone design (independent, no file overlap, §15)
-- [../08-implementation-roadmap.md](../08-implementation-roadmap.md) — this milestone's charter (§3)
+- [../08-implementation-roadmap.md](../08-implementation-roadmap.md) — this milestone's charter (§3); marked COMPLETE 2026-08-14
 - [../02-frontend-architecture.md](../02-frontend-architecture.md), [../07-development-guidelines.md](../07-development-guidelines.md) §4, §4.3 — existing frontend conventions this design extends
 - [../frontend/11-workspace-design-system.md](../frontend/11-workspace-design-system.md) §5 — component/schema extraction rules applied in §9
+
+---
+
+## 20. As-shipped summary (Task 6 closeout)
+
+Authoritative record of what this milestone implemented. Prefer this section over Task 0 “proposed” wording where they differ (helper path, Task 4 producing a named schema, executed task numbers).
+
+### Original proposal vs Task 0 vs shipped
+
+| Source | Claim |
+| --- | --- |
+| Original roadmap | Shared Zod mirroring Pydantic; drawer inline edits (product status, queue schedule, channel assignment); RHF + zodResolver for scheduling; Arabic validation copy — framed as if RHF/Zod were new |
+| Task 0 | RHF + Zod + `@hookform/resolvers` already installed and used in `LoginForm` / ChannelsView add-channel; `Input`/`Select` already `forwardRef`; no independent Channel Assignment drawer; product status is bulk `<select>` + read-only drawer badge, not a drawer editor; scheduling dialog is the real validation gap |
+| Shipped | Feature-local Zod schemas + scheduling dialog RHF migration + status label consolidation + named `channelAssignmentSchema` + shared Arabic message helpers. **Schema standardization, not new business mutations.** |
+
+### Task 1 — `queueSchedulingSchema`
+
+Location: `frontend/src/features/queue/lib/schemas.ts`
+
+- Discriminated union on `intent`: `schedule` \| `publish_now`
+- Fields: `intent`, `channelId`, `scheduledAt`
+- `channelId` required for both paths (`channelAssignmentSchema`)
+- `scheduledAt` required only for `schedule`; `publish_now` does not require it
+- `scheduledAt` remains a `datetime-local` form-domain string (`YYYY-MM-DDTHH:mm`); no Zod transforms
+- API conversion (`scheduledAt` → `scheduled_at`, `channelId` → `channel_id`) stays in `QueueView` submit handlers
+- Past-date copy stays local: `"لا يمكن جدولة وقت في الماضي"`
+- Backend / `PATCH /queues/{id}` unchanged
+
+### Task 2 — `QueueSchedulingDialog`
+
+- `useForm` + `zodResolver(queueSchedulingSchema)`
+- `register()` on existing ref-forwarding `Input` / `Select`
+- Presets: `setValue(..., { shouldValidate: true })`
+- Submit: `handleSubmit` after `setValue("intent", ...)`
+- `mode: "onTouched"`; Apply still gated by `disabled={!channelId \|\| !scheduledAt \|\| busy}`
+- RHF was **not** newly introduced to the project; this extends the existing Login/Channels pattern
+- No scheduling endpoint or backend change
+
+### Task 3 — Product Status
+
+Locations: `frontend/src/features/products/types/api.ts`, `frontend/src/features/products/lib/schemas.ts`
+
+- Canonical values: `draft`, `active`, `inactive`, `archived`
+- `PRODUCT_STATUSES` is the canonical array; `ProductStatus` is derived from it
+- `productStatusSchema` = `z.enum(PRODUCT_STATUSES)`
+- Arabic labels/options centralized (`productStatusLabels`, `productStatusOptions`); consumers: toolbar, selection bar, table, details drawer
+- **No** product status editor, **no** new product mutation, **no** Product API / backend enum change
+
+### Task 4 — Channel Assignment
+
+- Canonical schema: `channelAssignmentSchema` in `features/queue/lib/schemas.ts`
+- **No** standalone Channel Assignment drawer/editor
+- Assignment belongs to queue item `channel_id`; the editable UI is `QueueSchedulingDialog`
+- UUID string required; empty string / null / undefined invalid **for the form**
+- Queue items may still have `channel_id: null` at rest; schedule/publish requires a channel
+- Telegram identifiers (`@channel`, `-100…`) are **not** assignment UUIDs
+- Not mixed with channel creation, `telegram_channel_id`, ChannelsView, or queue toolbar filtering
+- No new UI; no API contract change
+
+### Task 5 — Arabic validation helper
+
+Location: `frontend/src/lib/validation/messages.ts` (not the Task 0 sketch `validation-messages.ts`)
+
+Exports: `requiredField`, `invalidUuid`, `invalidDateTime`
+
+- Queue schemas adopted the helper
+- Product Status schemas did not need it
+- `LoginForm` and `ChannelsView` were **not** retrofitted
+- Not an i18n/translation/localization/global validation framework
+- No new dependency
+
+### Task 5 validation (as reported by that task)
+
+- Focused tests: **36** passed
+- Full frontend tests: **136** passed
+- Typecheck: PASS
+- Lint: PASS with pre-existing warnings only
+- Build: PASS
+
+### NOT implemented
+
+Independent Channel Assignment drawer/editor · Product Status editing/mutation · backend validation framework · Pydantic/API/DB changes · new dependencies · global i18n · frontend validation state-management architecture · auth / rate limiting / SSE / F4 / F6 / Phase B / Phase C' changes · `useValidatedMutation`
+
+Frontend Zod is **UX/input validation**, not a security boundary. Backend Pydantic remains authoritative.
+
+### Regression boundaries (verified)
+
+A.1 publishing, A.2 SSE/F4/F6, Phase B, Phase C', Phase D auth/refresh/rate-limit/conversions — unchanged. `QueueStatus` unchanged.

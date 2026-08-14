@@ -1,7 +1,9 @@
 # Development Guidelines
 
-**Document Version:** 2.0  
-**Last Updated:** 2026-07-29
+**Document Version:** 2.1  
+**Last Updated:** 2026-08-14
+
+**2026-08-14 revision:** §4 updated for Form & Schema Validation Standardization (COMPLETE). Discovery filter drafts are **not** Zod; queue scheduling and product status now have feature-local schemas.
 
 ---
 
@@ -84,13 +86,17 @@ Scheduling and delete flows use centered dialogs (`QueueSchedulingDialog`, `Dele
 
 # 4. Form & Schema Validation
 
-Inline edits in drawers and filter panels must use Zod schemas colocated with the feature:
+Use feature-local Zod schemas in `features/*/lib/schemas.ts` when a surface is a real form or a shared enum/label source. Do not invent a global validation framework.
 
-- Discovery: `validateDiscoveryDraft` in `DiscoveryFilterPanel`
-- Queue schedule: validate `scheduled_at` + `channel_id` before `PATCH /queues/{id}`
-- AI generation: build payload via `useContentSession.buildGeneratePayload()` — enums must match `app/schemas/ai_content.py`
+- **Queue schedule:** `queueSchedulingSchema` + `channelAssignmentSchema` in `features/queue/lib/schemas.ts`; `QueueSchedulingDialog` uses React Hook Form + `zodResolver`. Form-domain `channelId` / `scheduledAt` map to existing `channel_id` / `scheduled_at` on `PATCH /queues/{id}` in the submit path.
+- **Product status:** `productStatusSchema` + shared Arabic labels in `features/products/lib/schemas.ts`. Canonical values `draft` / `active` / `inactive` / `archived`. This is label/enum consolidation — not a status editor.
+- **Discovery:** `validateDiscoveryDraft` in `DiscoveryFilterPanel` is a **hand-written** `string | null` check, **not** Zod.
+- **AI generation:** build payload via `useContentSession.buildGeneratePayload()` — enums must match `app/schemas/ai_content.py`
+- **Existing forms:** `LoginForm` and ChannelsView add-channel keep inline Zod schemas; they were not retrofitted onto `lib/validation/messages.ts`.
 
-Synchronize frontend unions in `features/*/types/api.ts` when backend enums change.
+Shared generic Arabic Zod copy lives in `frontend/src/lib/validation/messages.ts` (`requiredField`, `invalidUuid`, `invalidDateTime`). Domain-specific copy (e.g. past-date scheduling) stays local to the schema. This is not i18n.
+
+Synchronize frontend unions in `features/*/types/api.ts` when backend enums change. Frontend Zod is UX/input validation; backend Pydantic remains authoritative.
 
 Use React Hook Form for multi-field forms; Zod `.safeParse` for toolbar/filter drafts.
 

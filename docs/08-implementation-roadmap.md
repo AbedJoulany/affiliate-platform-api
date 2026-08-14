@@ -1,7 +1,7 @@
 # Implementation Roadmap
 
-**Document Version:** 2.8  
-**Last Updated:** 2026-08-13
+**Document Version:** 2.9  
+**Last Updated:** 2026-08-14
 
 Consolidated feature tracker (replaces empty `PROJECT_STATUS.md`). See [06-api-integration.md](./06-api-integration.md) for endpoint-level status.
 
@@ -19,7 +19,9 @@ Consolidated feature tracker (replaces empty `PROJECT_STATUS.md`). See [06-api-i
 
 **2026-08-09 revision (Phase C' closeout):** Phase C' — Non-Telegram retry hardening is **COMPLETE** (Tasks 0–5). Design record: [phase-c-prime-retry-hardening-design.md](./planning/phase-c-prime-retry-hardening-design.md). Shipped: AliExpress client-retry coverage + discovery exception hygiene; OpenAI/Gemini provider-layer retry (`app/ai/retry.py`); no-nested-Celery-HTTP-retry regression guards; API/integration regression validation. **No** Celery HTTP autoretry for AliExpress discovery, **no** Celery path for AI generation, **no** DB/SSE/frontend changes.
 
-**2026-08-13 revision (Phase D closeout):** Phase D — Authentication & Public-Endpoint Security is **COMPLETE** (Tasks 0–6). Design record: [phase-d-auth-security-design.md](./planning/phase-d-auth-security-design.md). Shipped: JWT secret validation (non-dev), refresh tokens (`refresh_tokens` / migration `009`), route-scoped Redis rate limits (login/refresh/conversions; fail-open; not middleware), `POST /conversions` ownership authorization, frontend refresh + single-flight 401 handling. **No** A.1/A.2/B/C' behavior changes. **Next milestone:** Form & schema validation standardization (formerly listed as Phase D before the auth-security phase was selected).
+**2026-08-13 revision (Phase D closeout):** Phase D — Authentication & Public-Endpoint Security is **COMPLETE** (Tasks 0–6). Design record: [phase-d-auth-security-design.md](./planning/phase-d-auth-security-design.md). Shipped: JWT secret validation (non-dev), refresh tokens (`refresh_tokens` / migration `009`), route-scoped Redis rate limits (login/refresh/conversions; fail-open; not middleware), `POST /conversions` ownership authorization, frontend refresh + single-flight 401 handling. **No** A.1/A.2/B/C' behavior changes.
+
+**2026-08-14 revision (Form & schema validation closeout):** Form & Schema Validation Standardization is **COMPLETE** (Tasks 0–6). Design record: [form-schema-validation-standardization-design.md](./planning/form-schema-validation-standardization-design.md). Shipped: queue scheduling Zod discriminated union + RHF dialog; product status schema/label consolidation; `channelAssignmentSchema` (no standalone assignment UI); shared Arabic Zod message helpers. **No** API/backend/DB/dependency changes. **Next milestone: Phase E — Platform expansion (V2).**
 
 ---
 
@@ -27,7 +29,7 @@ Consolidated feature tracker (replaces empty `PROJECT_STATUS.md`). See [06-api-i
 
 ## 1. Executive Summary
 
-The frontend has completed a **workspace UI transformation** (July 2026): drawer-based inspection, operational queue center, inventory grid controls, AI content studio overhaul, and shared score/toast components. Backend integration is **live-first** — no mock API layers in production paths. **Phase A.1 — Publishing Reliability & Status Truth** (2026-08-04) closed the last major reliability gap: Telegram publish attempts, retries, idempotency, and dead-letter handling are now backend-owned and fully consumed by the queue UI. **Phase A.2 — Real-time Queue Updates** (2026-08-08) adds SSE push + polling fallback so the queue workspace stays authoritative without redesigning REST or inventing client-owned state. **Phase B — Background workers & queue execution** (2026-08-08) adds Worker/Beat pipeline liveness (`GET /worker/health`) and optional Flower task observability without changing A.1/A.2 business behavior. **Phase C' — Non-Telegram retry hardening** (2026-08-09) preserves AliExpress client-owned HTTP retries, adds provider-owned OpenAI/Gemini retries, and explicitly forbids nested Celery HTTP retries for those same failures — without new APIs, migrations, or frontend work. **Phase D — Authentication & Public-Endpoint Security** (2026-08-13) hardens JWT configuration, adds opaque refresh tokens, route-scoped rate limits, and conversion ownership checks — without disrupting A.1/A.2/B/C'.
+The frontend has completed a **workspace UI transformation** (July 2026): drawer-based inspection, operational queue center, inventory grid controls, AI content studio overhaul, and shared score/toast components. Backend integration is **live-first** — no mock API layers in production paths. **Phase A.1 — Publishing Reliability & Status Truth** (2026-08-04) closed the last major reliability gap: Telegram publish attempts, retries, idempotency, and dead-letter handling are now backend-owned and fully consumed by the queue UI. **Phase A.2 — Real-time Queue Updates** (2026-08-08) adds SSE push + polling fallback so the queue workspace stays authoritative without redesigning REST or inventing client-owned state. **Phase B — Background workers & queue execution** (2026-08-08) adds Worker/Beat pipeline liveness (`GET /worker/health`) and optional Flower task observability without changing A.1/A.2 business behavior. **Phase C' — Non-Telegram retry hardening** (2026-08-09) preserves AliExpress client-owned HTTP retries, adds provider-owned OpenAI/Gemini retries, and explicitly forbids nested Celery HTTP retries for those same failures — without new APIs, migrations, or frontend work. **Phase D — Authentication & Public-Endpoint Security** (2026-08-13) hardens JWT configuration, adds opaque refresh tokens, route-scoped rate limits, and conversion ownership checks — without disrupting A.1/A.2/B/C'. **Form & Schema Validation Standardization** (2026-08-14) extends the existing React Hook Form + Zod pattern to queue scheduling and consolidates product-status / channel-assignment schemas — frontend UX validation only; backend contracts unchanged.
 
 ---
 
@@ -199,10 +201,10 @@ Phase C' — Non-Telegram retry hardening (AliExpress, AI providers)   ✅ COMPL
 Phase D — Authentication & Public-Endpoint Security   ✅ COMPLETE
         │
         ▼
-Form & schema validation standardization   ← NEXT MILESTONE
+Form & schema validation standardization   ✅ COMPLETE
         │
         ▼
-Phase E — Platform expansion (V2)
+Phase E — Platform expansion (V2)   ← NEXT MILESTONE
 ```
 
 
@@ -489,18 +491,42 @@ Hardens authentication and public endpoints without disrupting A.1 publishing re
 
 **Explicit non-goals:** MFA, password reset, device dashboards, HttpOnly refresh cookies, proxy-aware client IP, conversion amount fraud verification, global rate-limit middleware.
 
-### Form & schema validation standardization   ← NEXT MILESTONE
+### Form & Schema Validation Standardization ✅ COMPLETE
 
-(Previously labeled “Phase D” on the mechanical roadmap before auth-security Phase D was selected and completed.)
+**Status:** COMPLETE  
+**Completed:** 2026-08-14 (Tasks 0–6). Design record: [form-schema-validation-standardization-design.md](./planning/form-schema-validation-standardization-design.md).
 
-- Shared Zod schemas in `features/*/lib/schemas.ts` mirroring Pydantic
-- Drawer inline edits: product status, queue schedule, channel assignment
-- React Hook Form + zodResolver for scheduling dialog
-- Validation error copy in Arabic
+This is **not** Phase D and **not** Phase E. It sits between completed Phase D (auth/security) and Phase E (platform expansion). Formerly listed as the mechanical “Phase D” before auth-security Phase D was selected.
 
+React Hook Form, Zod, and `@hookform/resolvers` were **already** in the project (`LoginForm`, ChannelsView add-channel). This milestone extended that pattern; it did not introduce a new form stack.
 
+| Task | Scope | Status |
+| ---- | ----- | ------ |
+| 0 | Architecture / analysis / planning | ✅ COMPLETE |
+| 1 | Queue Scheduling Zod schema (`queueSchedulingSchema`) | ✅ COMPLETE |
+| 2 | React Hook Form + `zodResolver` for `QueueSchedulingDialog` | ✅ COMPLETE |
+| 3 | Product Status schema / label consolidation | ✅ COMPLETE |
+| 4 | Channel Assignment schema (`channelAssignmentSchema`; no standalone UI) | ✅ COMPLETE |
+| 5 | Shared Arabic Zod validation message helper | ✅ COMPLETE |
+| 6 | Documentation closeout | ✅ COMPLETE |
 
-### Phase E — Platform expansion (V2)
+**Shipped (schema standardization, not new business capabilities):**
+
+| Area | Behavior |
+| --- | --- |
+| Queue scheduling | Discriminated union `schedule` / `publish_now`; `channelId` always required; `scheduledAt` only for `schedule`; form-domain `datetime-local` string; API map in existing submit path |
+| Scheduling dialog | RHF + `zodResolver`; `register()`; presets `setValue(..., { shouldValidate: true })`; `handleSubmit`; `scheduledAt` → `scheduled_at`, `channelId` → `channel_id` |
+| Product status | Canonical `PRODUCT_STATUSES` (`draft`/`active`/`inactive`/`archived`); `productStatusSchema`; centralized Arabic labels. **No status editor.** |
+| Channel assignment | UUID schema used by the scheduling dialog. **No assignment drawer.** Queue items may still have `channel_id: null` at rest. Telegram `@handle` is not an assignment UUID. |
+| Arabic messages | `frontend/src/lib/validation/messages.ts`: `requiredField`, `invalidUuid`, `invalidDateTime`. Queue schemas adopted it; product status did not need it; Login/Channels not retrofitted. Not i18n. |
+
+**UNCHANGED:** `PATCH /queues/{id}` and `PATCH /products/{id}` contracts; Pydantic; database; dependencies; authentication; rate limiting; A.2 SSE / F4 / F6; Phase B; Phase C'.
+
+**Explicit non-goals:** independent Channel Assignment UI; product status mutation UI; backend validation framework; global i18n; `useValidatedMutation`. Frontend Zod is UX/input validation, not a security control.
+
+**Task 5 validation (that task’s run):** focused tests **36** passed; full frontend tests **136** passed; typecheck PASS; lint PASS (pre-existing warnings only); build PASS.
+
+### Phase E — Platform expansion (V2)   ← NEXT MILESTONE
 
 Multi-workspace tenancy · Analytics `/analytics` · Editable settings · Image search UI · Admin bootstrap CLI · Click tracking · Payout module
 
@@ -556,4 +582,5 @@ A feature is complete when: correct folder structure · reusable components · l
 - [planning/phase-b-worker-observability-design.md](./planning/phase-b-worker-observability-design.md) — Phase B Task 0 design + Tasks 1–4 closeout (COMPLETE 2026-08-08)
 - [planning/phase-c-prime-retry-hardening-design.md](./planning/phase-c-prime-retry-hardening-design.md) — Phase C' design + Tasks 0–5 closeout (COMPLETE 2026-08-09)
 - [planning/phase-d-auth-security-design.md](./planning/phase-d-auth-security-design.md) — Phase D auth/security design + Tasks 0–6 closeout (COMPLETE 2026-08-13)
+- [planning/form-schema-validation-standardization-design.md](./planning/form-schema-validation-standardization-design.md) — Form & schema validation design + Tasks 0–6 closeout (COMPLETE 2026-08-14)
 

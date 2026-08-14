@@ -1,7 +1,7 @@
 # Production Readiness and Release Runbook
 
-**Document Version:** 2.5  
-**Last Updated:** 2026-08-13
+**Document Version:** 2.6  
+**Last Updated:** 2026-08-14
 
 Release gate supplement to documents 01–09. Defines security boundaries, environment configuration, CI/CD, deployment checklists, and architectural requirements.
 
@@ -12,6 +12,8 @@ Release gate supplement to documents 01–09. Defines security boundaries, envir
 **2026-08-08 revision (Phase B closeout):** Phase B worker/Beat health + Flower observability is COMPLETE. §2 Docker services and §9.2 updated to the shipped heartbeat, `GET /worker/health`, and optional Flower profile. Automated paging/alerts remain future ops work.
 
 **2026-08-13 revision (Phase D closeout):** Authentication & public-endpoint security COMPLETE. §6 / §9.6 / §10 updated for JWT validation, refresh tokens, route rate limits, and conversion authorization. Design: [planning/phase-d-auth-security-design.md](./planning/phase-d-auth-security-design.md).
+
+**2026-08-14 revision (Form & schema validation closeout):** §9.4 updated to the shipped frontend Zod/RHF standardization. UX/input validation only — not a security boundary; backend contracts unchanged.
 
 ---
 
@@ -260,12 +262,18 @@ Log structured failure records (queue_id, provider, attempt, error_code) — no 
 
 **Batch resilience:** `_publish_items` (used by the Celery beat path) catches `TelegramPublishError` in addition to `ValidationError`/`ForbiddenError`/`ConflictError` per item and continues the batch — one item's failure (and its persisted attempt/dead-letter row) never blocks the rest of the due/queued batch for that tick. On success, the service commits immediately before returning so a later sibling failure in the same batch cannot roll back a Telegram message that already sent.
 
-### 9.4 Form & schema validation
+### 9.4 Form & schema validation ✅ COMPLETE
 
-- Zod schemas generated or manually synced with Pydantic (`features/*/lib/schemas.ts`)
-- Drawer inline edits validated before mutation
-- Shared `useValidatedMutation` pattern: parse → API call → toast on success/error
-- Arabic validation messages
+Frontend UX/input validation only. Does **not** replace backend Pydantic, authorization, or API behavior. Design: [planning/form-schema-validation-standardization-design.md](./planning/form-schema-validation-standardization-design.md).
+
+- Feature-local Zod schemas: `features/queue/lib/schemas.ts` (`queueSchedulingSchema`, `channelAssignmentSchema`), `features/products/lib/schemas.ts` (`productStatusSchema`)
+- `QueueSchedulingDialog` uses existing React Hook Form + `zodResolver` (already used by `LoginForm` / ChannelsView; not a new stack)
+- Product status labels/options centralized; **no** status editor and **no** drawer inline-edit mutation
+- Channel assignment is the scheduling dialog’s `channelId` UUID — **no** standalone assignment drawer
+- Shared Arabic helpers in `lib/validation/messages.ts` — not an i18n system
+- **Not shipped:** `useValidatedMutation`, Pydantic/API/DB changes, new dependencies
+
+Frontend Zod must not be treated as a security control.
 
 ### 9.5 Observability & CI/CD (Phase 4)
 
