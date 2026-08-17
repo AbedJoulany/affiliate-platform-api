@@ -18,6 +18,8 @@ from app.models import (  # noqa: F401
     RefreshToken,
     TelegramChannel,
     QueueItem,
+    Workspace,
+    WorkspaceMembership,
 )
 
 config = context.config

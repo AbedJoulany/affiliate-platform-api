@@ -83,7 +83,9 @@ Do not release from failing required checks.
 
 1. Build immutable backend + frontend images
 2. Apply Alembic migrations
-3. Provision staging admin (DB/trusted process — not public register)
+3. Provision staging admin with the trusted operator CLI (not public register):
+   `docker compose exec -e BOOTSTRAP_ADMIN_PASSWORD api python -m scripts.bootstrap_admin --email <admin-email> --workspace-name "Default Workspace"`
+   Creates one `ADMIN` user, one workspace, and one `OWNER` membership atomically. Safe to re-run; does not promote an existing non-admin account.
 4. Start PostgreSQL, Redis, API, Celery worker, Celery beat
 5. `GET /health` → 200
 6. `GET /ready` → 200 (database + redis `up`)

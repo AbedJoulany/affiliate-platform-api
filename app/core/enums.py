@@ -86,3 +86,8 @@ class QueueStatus(StrEnum):
     QUEUED = "queued"
     SCHEDULED = "scheduled"
     PUBLISHED = "published"
+
+
+class WorkspaceMembershipRole(StrEnum):
+    OWNER = "owner"
+    MEMBER = "member"

@@ -7,6 +7,7 @@ from app.models.product import Product
 from app.models.queue import QueueItem, QueuePublishAttempt
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
+from app.models.workspace import Workspace, WorkspaceMembership
 
 __all__ = [
     "Affiliate",
@@ -20,4 +21,6 @@ __all__ = [
     "QueuePublishAttempt",
     "RefreshToken",
     "User",
+    "Workspace",
+    "WorkspaceMembership",
 ]
