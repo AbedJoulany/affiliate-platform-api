@@ -1,11 +1,13 @@
 # API Integration Guide
 
-**Document Version:** 2.4  
-**Last Updated:** 2026-08-08
+**Document Version:** 2.5  
+**Last Updated:** 2026-08-13
 
 **2026-08-04 revision:** Phase A.1 **frontend tasks are complete** — queue KPIs, `QueueHealthBadge`, and `QueueTable` now resolve failures from backend attempt data (`resolveQueueFailure`) with the client failure map only as a short-lived gap-filler until per-item enrichment resolves; `QueueDetailsDrawer` renders read-only publish attempt history from `GET /queues/{id}/attempts` and retries via the existing `POST /queues/{id}/publish`. Statuses below for §4.6 and §5 are updated accordingly. Also reflects three post-implementation bug fixes (scheduled publishing, queue item deletion, Telegram long-message publishing) — see [10-production-readiness.md](./10-production-readiness.md) §10.
 
 **2026-08-08 revision (Phase B closeout):** Documented root operational endpoint `GET /worker/health` (Phase B Task 2). `/ready` semantics unchanged (database + Redis only).
+
+**2026-08-13 revision (Phase D closeout):** Auth refresh tokens, route rate limits, and `POST /conversions` authorization. See §1 and §4.8. Design: [planning/phase-d-auth-security-design.md](./planning/phase-d-auth-security-design.md).
 
 **Backend source of truth:** FastAPI routers + Pydantic schemas  
 **Default API base:** `http://localhost:8000/api/v1`  
@@ -26,11 +28,44 @@ OpenAPI: `/docs` · ReDoc: `/redoc` · Health: `GET /health` · Readiness: `GET 
 | `username` | Email address |
 | `password` | Password |
 
-Response: `{ "access_token", "token_type": "bearer" }`
+Response (additive `refresh_token`):
 
-Protected requests: `Authorization: Bearer <jwt>`
+```json
+{
+  "access_token": "<jwt>",
+  "token_type": "bearer",
+  "refresh_token": "<opaque-token>"
+}
+```
 
-No refresh token endpoint. On `401`, clear session and redirect to login.
+Protected requests: `Authorization: Bearer <access_token>` only. Refresh tokens must **not** be sent as Bearer.
+
+Rate limit (policy): **10** requests / **5 minutes** per client IP (`request.client.host`). HTTP **429** + `Retry-After` when exceeded. Redis failure **fail-open**.
+
+### Refresh
+
+`POST /auth/refresh` — JSON
+
+```json
+{ "refresh_token": "<opaque-token>" }
+```
+
+Response: `{ "access_token", "token_type": "bearer", "refresh_token" }` (rotated pair).
+
+- Refresh tokens expire per `refresh_token_expire_days` (default **7**).
+- Each refresh token is single-use; successful refresh rotates.
+- Reuse of a consumed/revoked token revokes the user’s active refresh tokens.
+- Rate limit (policy): **20** / **5 minutes** per client IP.
+
+### Logout
+
+`POST /auth/logout` — JSON `{ "refresh_token": "<opaque-token>" }` → HTTP **204**. Idempotent revocation of the supplied refresh token.
+
+### Frontend session behavior
+
+- Access + refresh tokens stored in `sessionStorage`; middleware cookie remains presence-only.
+- On **401** (excluding `/auth/login`, `/auth/refresh`, `/auth/logout`): one single-flight refresh, then retry the original request once; refresh failure clears session → `/login`.
+- **403** does not trigger refresh or auto-logout.
 
 ### Register
 
@@ -80,7 +115,9 @@ Status definitions:
 
 | Endpoint | Frontend module | Status | Types / notes |
 | --- | --- | --- | --- |
-| `POST /auth/login` | `auth.api.ts` | Connected | `LoginInput` → `TokenResponse` |
+| `POST /auth/login` | `auth.api.ts` | Connected | `LoginInput` → `TokenResponse` (includes `refresh_token`) |
+| `POST /auth/refresh` | `api-client.ts` | Connected | Rotates access + refresh; not called from UI hooks directly |
+| `POST /auth/logout` | `useAuth.ts` | Connected | Best-effort revoke; local clear always |
 | `GET /auth/me` | `auth.api.ts` | Connected | `User` — role gating for admin import/delete |
 | `POST /auth/register` | — | Backend only | Public registration not in UI |
 
@@ -194,7 +231,8 @@ Status definitions:
 | --- | --- | --- |
 | `GET/POST/PATCH /affiliates/*` | Backend only | No MVP screens |
 | `GET/POST/PATCH /campaigns/*` | Backend only | No MVP screens |
-| `GET/POST/PATCH /conversions/*` | Backend only | No MVP screens |
+| `POST /conversions` | Backend only | **Requires** `Authorization: Bearer <access_token>`. Owner of `affiliate_id` or `ADMIN`. Non-owner **403**; anonymous **401**. Rate limit (policy): **30** / **1 minute** per user id (when valid access Bearer present) else client IP. Amount remains client-supplied; commission and `PENDING` status unchanged (access control only — not amount fraud verification). |
+| `GET/PATCH /conversions/*` | Backend only | Existing admin / affiliate list & status update routes; no MVP screens |
 
 ---
 
@@ -234,7 +272,11 @@ Status definitions:
 
 ## 7. Security & Tenancy Notes
 
-- JWT in `sessionStorage`; middleware cookie is presence-only
+- JWT **access** token in `sessionStorage`; opaque **refresh** token also in `sessionStorage` (never as Bearer); middleware cookie is presence-only
+- Non-development environments reject the repository default JWT secret and secrets shorter than 32 characters (`JWT_SECRET_MIN_LENGTH`)
+- Refresh tokens: SHA-256 hashes in PostgreSQL `refresh_tokens` (migration `009`); rotate on refresh; single-use; reuse detection; logout revocation
+- Rate limits: Redis fixed-window on login / refresh / conversions via route dependencies (not global middleware); fail-open on Redis errors; IP from `request.client.host` only (no `X-Forwarded-For` claim)
+- `POST /conversions` requires authentication + affiliate ownership (ADMIN bypass); request-body identity is not an authorization source
 - Import/delete require admin role in UI; backend enforces on routes
 - Queue and channel routes are authenticated but **not user-scoped** — do not imply tenant isolation
 - `/ready` checks PostgreSQL + Redis only — not Celery worker liveness or provider credentials

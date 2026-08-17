@@ -9,6 +9,7 @@ import type {
   ProductTableColumn,
   ProductTableDensity,
 } from "../types/api";
+import { productStatusOptions } from "../lib/schemas";
 
 const COLUMN_LABELS: Record<ProductTableColumn, string> = {
   product: "المنتج",
@@ -61,10 +62,11 @@ export function ProductsToolbar({
       onChange={(event) => onStatusChange(event.target.value as ProductStatus | "")}
     >
       <option value="">كل الحالات</option>
-      <option value="draft">مسودة</option>
-      <option value="active">نشط</option>
-      <option value="inactive">غير نشط</option>
-      <option value="archived">مؤرشف</option>
+      {productStatusOptions.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
     </Select>
   );
 

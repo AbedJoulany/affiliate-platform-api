@@ -1,7 +1,11 @@
 # Frontend Architecture
 
-**Document Version:** 2.0  
-**Last Updated:** 2026-07-29
+**Document Version:** 2.2  
+**Last Updated:** 2026-08-14
+
+**2026-08-13 revision (Phase D):** Authentication lifecycle updated for opaque refresh tokens and single-flight 401 refresh. See §6 and [planning/phase-d-auth-security-design.md](./planning/phase-d-auth-security-design.md).
+
+**2026-08-14 revision (Form & schema validation):** Feature-local Zod schemas and scheduling-dialog React Hook Form wiring. See §4.5. Milestone design: [planning/form-schema-validation-standardization-design.md](./planning/form-schema-validation-standardization-design.md).
 
 ---
 
@@ -72,6 +76,7 @@ services/
 lib/
   utils.ts
   product-score.ts
+  validation/messages.ts  # Shared Arabic Zod message helpers (not i18n)
 ```
 
 Hooks and API types are **feature-local**. There is no top-level `hooks/` or `types/` directory.
@@ -101,6 +106,7 @@ Data flow: user edits draft → commits search → API fetch → results rendere
 | `useProducts` | Server list via `GET /products` (skip/limit/status) |
 | `useProductInventoryState` | Client density, columns, search, sort, bulk selection |
 | `ProductDetailsDrawer` | Row-click slide-over with image preview, score, pipeline badges |
+| `products/lib/schemas.ts` | Shared `productStatusSchema` + Arabic labels/options (no status editor) |
 | `DeleteProductsDialog` | Admin bulk/single delete confirmation |
 
 Server pagination + client-side search/sort on the current page set. Queue index derived from `useQueue` for pipeline state badges.
@@ -129,8 +135,24 @@ Generation payload includes `content_type`, `tone`, `language`, `length`, `instr
 | `QueueOperationalStats` | Queued / scheduled / publishing / published today / failed today |
 | `QueueDetailsDrawer` | Post preview, channel, schedule, actions |
 | `QueueSchedulingDialog` | Channel picker + datetime + presets → `PATCH /queues/{id}` |
+| `queue/lib/schemas.ts` | Form-domain Zod: `queueSchedulingSchema`, `channelAssignmentSchema` |
 
 `publishing` and `failedToday` KPIs are **client-derived** during publish operations; they are not backend queue statuses.
+
+### 4.5 Form & schema validation
+
+Extends the existing React Hook Form + Zod + `zodResolver` pattern (`LoginForm`, ChannelsView add-channel). Design-system `Input`/`Select` already forward refs. This is not a new form stack.
+
+| Schema | Owner | Role |
+| --- | --- | --- |
+| `queueSchedulingSchema` | `features/queue/lib/schemas.ts` | Discriminated union `schedule` / `publish_now`; `channelId` required both paths; `scheduledAt` only for `schedule` |
+| `channelAssignmentSchema` | same file | UUID string for the scheduling dialog’s `channelId`. No standalone assignment editor. |
+| `productStatusSchema` | `features/products/lib/schemas.ts` | Canonical `draft`/`active`/`inactive`/`archived` + shared Arabic labels/options. No status editor. |
+| Message helpers | `lib/validation/messages.ts` | `requiredField`, `invalidUuid`, `invalidDateTime` — not i18n. Queue schemas use them; Login/Channels not retrofitted. |
+
+`QueueSchedulingDialog` uses `register()`, preset `setValue(..., { shouldValidate: true })`, and `handleSubmit`. Submit mapping remains `channelId` → `channel_id`, `scheduledAt` → `scheduled_at` in `QueueView`. Frontend Zod is UX/input validation; backend Pydantic remains authoritative.
+
+Discovery filter drafts still use the hand-written `validateDiscoveryDraft` (not Zod).
 
 ---
 
@@ -147,6 +169,7 @@ Query keys include all server-side filter parameters. Mutations invalidate the s
 | State | Storage | Examples |
 | --- | --- | --- |
 | Auth token | `sessionStorage` | JWT access token |
+| Refresh token | `sessionStorage` | Opaque refresh (never Bearer) |
 | Session marker | Cookie (`1`) | Middleware redirect only |
 | Discovery session | `sessionStorage` | Filters, UI prefs, last response |
 | AI content session | `sessionStorage` | Variants, config, active variant |
@@ -159,12 +182,16 @@ No global Zustand/Context auth provider — `AuthGuard` validates via `GET /auth
 ## 6. Authentication
 
 ```text
-Login → POST /auth/login (form) → store JWT
+Login → POST /auth/login (form) → store access_token + refresh_token in sessionStorage
 Protected route → middleware cookie check → AuthGuard → GET /auth/me
-401 response → clear session → redirect /login
+Protected API → Authorization: Bearer <access_token>
+401 (non-auth-session) → single-flight POST /auth/refresh → store rotated pair → retry once
+Refresh failure / missing refresh → clear session → redirect /login
+403 → surface forbidden; no refresh; no auto-logout
+Logout → best-effort POST /auth/logout { refresh_token } → clear session + query cache → /login
 ```
 
-Refresh tokens are **not implemented**. Sessions expire when the access JWT expires.
+Phase D Task 5 (COMPLETE): refresh tokens are stored in `sessionStorage` only, sent only as JSON to `/auth/refresh` and `/auth/logout`, and never used as Bearer. Auth session paths (`/auth/login`, `/auth/refresh`, `/auth/logout`) are excluded from the refresh interceptor. A.2 SSE continues to use the access token from the existing session mechanism — unchanged by Phase D.
 
 ---
 
@@ -215,3 +242,4 @@ Shared `Drawer` primitive (`components/ui/primitives.tsx`):
 - [04-component-library.md](./04-component-library.md) — Component registry
 - [05-routing-and-navigation.md](./05-routing-and-navigation.md) — Route map
 - [06-api-integration.md](./06-api-integration.md) — API contracts
+- [planning/form-schema-validation-standardization-design.md](./planning/form-schema-validation-standardization-design.md) — Form & schema validation closeout

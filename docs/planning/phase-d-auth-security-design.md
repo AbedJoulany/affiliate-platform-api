@@ -1,8 +1,28 @@
 # Phase D — Authentication & Public-Endpoint Security Design
 
-**Status:** Task 0 — Architecture decision. Design only. No implementation performed.
-**Precedes:** [phase-d-analysis-and-roadmap.md](./phase-d-analysis-and-roadmap.md) (Phase D selection/charter — read first for *why* Phase D exists).
-**This document answers:** *how* Phase D's four charter gaps should be closed, in a form Tasks 1–6 can implement directly without further architectural discovery.
+**Status:** COMPLETE  
+**Completed:** 2026-08-13  
+**Precedes:** [phase-d-analysis-and-roadmap.md](./phase-d-analysis-and-roadmap.md) (Phase D selection/charter — *why* Phase D exists).  
+**This document:** Task 0 architecture decisions plus Task 6 closeout of the **shipped** implementation (Tasks 1–5).
+
+```text
+Phase D — Authentication & Public-Endpoint Security
+Status: COMPLETE
+```
+
+| Task | Scope | Final status |
+| ---- | ----- | ------------ |
+| D.0 | Architecture decision | COMPLETE |
+| D.1 | JWT secret validation | COMPLETE |
+| D.2 | Refresh token infrastructure | COMPLETE |
+| D.3 | Rate limiting | COMPLETE |
+| D.4 | Conversion authorization | COMPLETE |
+| D.5 | Frontend authentication integration | COMPLETE |
+| D.6 | Documentation closeout | COMPLETE |
+
+**Dependency sequence (as executed):** Task 0 → Tasks 1 / 3 / 4 → Task 2 → Task 5 → Task 6.
+
+**Revision (2026-08-13 — Task 6 closeout):** Marked Phase D COMPLETE. Sections below that still describe “design-only” intent are historical Task 0 wording; **§23 As-shipped summary** is the source of truth for what landed in code.
 
 ---
 
@@ -478,15 +498,114 @@ Open questions:
    repository's own evidence.
 ```
 
-Neither open question blocks Task 0's completion or Tasks 1/2/3's start — both are scoped narrowly to refinements Task 4 (and, for question 2, Task 3's exact key derivation) should confirm before shipping, not before beginning implementation.
+Neither open question blocked Tasks 1–5. As shipped: Task 4 used JWT + affiliate ownership + ADMIN bypass (no service-credential path). Task 3 keys identity from `request.client.host` only (no `X-Forwarded-For` / `X-Real-IP`).
+
+---
+
+## 23. As-shipped summary (Task 6 closeout)
+
+Authoritative record of what Phase D implemented. Prefer this section over Task 0 “proposed” wording where they differ (e.g. refresh-token hashing is **SHA-256**, not a salted scheme).
+
+### Scope boundaries (unchanged by Phase D)
+
+| Prior phase | Boundary |
+| --- | --- |
+| A.1 | No publishing-reliability changes |
+| A.2 | No SSE redesign; no queue-event / F4 / F6 / polling-fallback changes |
+| B | No worker heartbeat or `/worker/health` changes; no Flower changes |
+| C' | No AliExpress / AI / Celery retry-ownership changes |
+| Phase D only | Auth, refresh tokens, route rate limits, conversion access control, frontend auth lifecycle, documentation |
+
+### ADDITIVE changes
+
+- Login response adds `refresh_token` (existing `access_token` / `token_type` retained)
+- `POST /auth/refresh`, `POST /auth/logout`
+- Table `refresh_tokens` via migration `009_add_refresh_tokens.py` (revises `008`)
+
+### SECURITY-BEHAVIOR changes
+
+- Non-development JWT secret validation (reject default secret; reject length &lt; 32)
+- Redis fixed-window rate limits on login / refresh / conversions (route dependencies; fail-open)
+- `POST /conversions` requires access JWT; affiliate ownership (or ADMIN); 401 / 403 as specified
+
+### UNCHANGED
+
+Access-token JWT mechanism (`type=access`); `/health`, `/ready`, `/worker/health`, `/queues/stream`; A.1 / A.2 / B / C' architectures; `QueueStatus`; Telegram publishing; conversion amount / commission / PENDING persistence and response contract (Task 4 is access control only).
+
+### Task 1 — JWT secret validation
+
+- `DEFAULT_JWT_SECRET_KEY` and `JWT_SECRET_MIN_LENGTH = 32` in `app/core/config.py`
+- Development (`app_env == "development"`) may use the repository default / short secret
+- Non-development: reject exact default; reject secrets shorter than 32 characters
+- Fail-fast on `Settings` construction; no secret mutation / fallback; errors do not echo the secret value
+- Does **not** implement vault storage or automated rotation
+
+### Task 2 — Refresh tokens
+
+| Concern | Behavior |
+| --- | --- |
+| Storage | PostgreSQL `refresh_tokens`; raw token never persisted; SHA-256 hex in `token_hash` (unique) |
+| Columns | `id`, `user_id` → `users`, `token_hash`, `expires_at`, `revoked_at`, `replaced_by_id` (lineage), `created_at`, `updated_at` |
+| Login | Issues access JWT + opaque refresh; TTL `refresh_token_expire_days` (default **7**) |
+| Refresh | Rotate every success; single-use; row lock / atomic consume; reuse → revoke user’s active refresh tokens and **commit** before rejecting |
+| Logout | Revoke supplied refresh token; idempotent; HTTP **204** |
+| Boundary | Access JWT ≠ opaque refresh; `get_current_user` accepts access tokens only |
+
+Endpoints: `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`.
+
+### Task 3 — Rate limiting
+
+- Redis fixed-window (`INCR`; `EXPIRE` only when counter is first created)
+- FastAPI route `Depends` — **not** global middleware (SSE-safe)
+- Fail-open on Redis errors (request continues; no 429 solely from Redis unavailability)
+- Client IP: `request.client.host` only
+- Policy values (code constants, not a global platform):
+
+| Route | Limit | Window | Identity |
+| --- | --- | --- | --- |
+| `POST /auth/login` | 10 | 5 minutes | client IP |
+| `POST /auth/refresh` | 20 | 5 minutes | client IP |
+| `POST /conversions` | 30 | 1 minute | authenticated user id when valid access Bearer present; else client IP |
+
+429 responses include `Retry-After`.
+
+### Task 4 — Conversion authorization
+
+- `POST /conversions` uses `get_current_user` + ownership via `affiliate.user_id`
+- Owner → allowed; `ADMIN` → any existing affiliate; non-owner → **403**; anonymous → **401**
+- Do not trust request-body identity for authorization
+- Unchanged: client-supplied `amount`, commission formula, `PENDING` status, persistence, response contract
+- Residual business control: PENDING + admin review — **not** external amount verification / complete fraud prevention
+
+### Task 5 — Frontend authentication
+
+- Reuses Axios `apiClient` + `session` (`sessionStorage` for access + refresh; cookie remains presence-only)
+- Access token: `Authorization: Bearer <access_token>` only
+- Refresh token: JSON body to `/auth/refresh` and `/auth/logout` only — never Bearer
+- 401: one refresh attempt per eligible cycle; single-flight shared promise; retry original once; refresh failure clears auth → `/login`
+- Excluded from refresh loop: `/auth/login`, `/auth/refresh`, `/auth/logout`
+- 403: no refresh, no auto-logout
+- Logout: best-effort `POST /auth/logout`, always clear local state + TanStack Query cache → `/login`
+- SSE: unchanged A.2 path; still uses access token from session
+
+### Configuration (verified names)
+
+- `jwt_secret_key` / `JWT_SECRET_KEY`
+- `refresh_token_expire_days` (default 7) — reused, not newly invented for Phase D
+- Rate limits use existing Redis via `broker_url` (same Redis family as Celery)
+
+### Explicit non-claims
+
+No MFA, password reset, device/session dashboards, HttpOnly refresh cookies, proxy-aware IP extraction, centralized security gateway, enterprise IdP, or conversion amount fraud verification.
 
 ---
 
 ## Related Documents
 
-- [phase-d-analysis-and-roadmap.md](./phase-d-analysis-and-roadmap.md) — Phase D charter/selection (read first)
-- [phase-c-prime-retry-hardening-design.md](./phase-c-prime-retry-hardening-design.md) — precedent for this project's Task-0-first pattern
-- [phase-b-worker-observability-design.md](./phase-b-worker-observability-design.md) — precedent for this project's Redis-degrades-gracefully failure philosophy
-- [../10-production-readiness.md](../10-production-readiness.md) §6, §10 — source of the Critical/Medium severity markers this design closes
-- [../06-api-integration.md](../06-api-integration.md) §1, §4.8, §7 — current API contracts this design extends without breaking
-- [../02-frontend-architecture.md](../02-frontend-architecture.md) §6 — current frontend auth flow Task 5 extends
+- [phase-d-analysis-and-roadmap.md](./phase-d-analysis-and-roadmap.md) — Phase D charter/selection (historical)
+- [phase-c-prime-retry-hardening-design.md](./phase-c-prime-retry-hardening-design.md) — Task-0-first pattern precedent
+- [phase-b-worker-observability-design.md](./phase-b-worker-observability-design.md) — Redis fail-open precedent
+- [../08-implementation-roadmap.md](../08-implementation-roadmap.md) — Phase D marked COMPLETE
+- [../10-production-readiness.md](../10-production-readiness.md) — security / production implications
+- [../06-api-integration.md](../06-api-integration.md) — auth + conversions API contracts
+- [../02-frontend-architecture.md](../02-frontend-architecture.md) — frontend auth lifecycle

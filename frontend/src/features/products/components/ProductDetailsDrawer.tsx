@@ -8,15 +8,9 @@ import { formatMoney } from "@/lib/utils";
 import { getProductScoreBreakdown } from "@/lib/product-score";
 import type { ProductPipelineState } from "../lib/inventory";
 import type { Product } from "../types/api";
+import { productStatusLabels } from "../lib/schemas";
 import { ProductHealthBadges } from "./ProductHealthBadges";
 import { ProductScoreCell } from "./ProductScoreCell";
-
-const STATUS_LABELS = {
-  draft: "مسودة",
-  active: "نشط",
-  inactive: "غير نشط",
-  archived: "مؤرشف",
-} as const;
 
 export function ProductDetailsDrawer({
   product,
@@ -75,7 +69,7 @@ export function ProductDetailsDrawer({
             <div className="flex flex-wrap items-start justify-between gap-3">
               <h3 className="max-w-md text-lg font-semibold leading-8">{product.title}</h3>
               <Badge tone={product.status === "active" ? "success" : "neutral"}>
-                {STATUS_LABELS[product.status]}
+                {productStatusLabels[product.status]}
               </Badge>
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
