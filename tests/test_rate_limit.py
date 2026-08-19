@@ -26,6 +26,7 @@ from app.core.rate_limit import (
 )
 from app.main import app as fastapi_app
 from tests.conftest import provision_test_user
+from tests.test_api_endpoints import workspace_auth_headers
 
 API_PREFIX = "/api/v1"
 PASSWORD = "StrongP@ssw0rd"
@@ -327,7 +328,7 @@ async def test_conversion_uses_user_id_when_access_token_present(client, fake_re
 
     response = await client.post(
         f"{API_PREFIX}/conversions",
-        headers={"Authorization": f"Bearer {access_token}"},
+        headers=await workspace_auth_headers(access_token),
         json=_conversion_payload(),
     )
     assert response.status_code == 404
@@ -361,7 +362,7 @@ async def test_conversion_user_buckets_are_isolated(client, fake_redis):
     for token in tokens:
         response = await client.post(
             f"{API_PREFIX}/conversions",
-            headers={"Authorization": f"Bearer {token}"},
+            headers=await workspace_auth_headers(token),
             json=_conversion_payload(),
         )
         assert response.status_code == 404
@@ -469,7 +470,7 @@ async def test_conversion_validation_unchanged_under_limiter(client, fake_redis)
     token = login.json()["access_token"]
     response = await client.post(
         f"{API_PREFIX}/conversions",
-        headers={"Authorization": f"Bearer {token}"},
+        headers=await workspace_auth_headers(token),
         json={"amount": 1},
     )
     assert response.status_code == 422

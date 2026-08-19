@@ -8,14 +8,17 @@ from uuid import uuid4
 import pytest
 
 from app.core.rate_limit import limit_conversions
+from app.core.workspace import WORKSPACE_ID_HEADER
 from app.main import app as fastapi_app
 from tests.test_api_endpoints import (
     API_PREFIX,
     activate_campaign,
     auth_headers,
+    conversion_auth_headers,
     create_affiliate_profile,
     create_campaign,
     register_and_login,
+    workspace_auth_headers,
 )
 from tests.test_rate_limit import _rate_limit_routes_on
 
@@ -35,7 +38,7 @@ def _conversion_body(affiliate_id: str, campaign_id: str, **extra) -> dict:
     return body
 
 
-async def _enrolled_affiliate_and_campaign(client) -> tuple[str, dict, dict]:
+async def _enrolled_affiliate_and_campaign(client) -> tuple[str, dict, dict, dict]:
     _, token = await register_and_login(client, role="affiliate")
     _, admin_token = await register_and_login(client, role="admin")
     profile = await create_affiliate_profile(client, token)
@@ -47,7 +50,8 @@ async def _enrolled_affiliate_and_campaign(client) -> tuple[str, dict, dict]:
         json={"campaign_id": campaign["id"]},
     )
     assert join.status_code == 201
-    return token, profile, campaign
+    headers = await conversion_auth_headers(token, campaign["id"])
+    return token, profile, campaign, headers
 
 
 @pytest.mark.asyncio
@@ -72,10 +76,10 @@ async def test_invalid_access_token_cannot_create_conversion(client):
 
 @pytest.mark.asyncio
 async def test_owner_can_create_conversion_for_own_affiliate(client):
-    token, profile, campaign = await _enrolled_affiliate_and_campaign(client)
+    token, profile, campaign, headers = await _enrolled_affiliate_and_campaign(client)
     response = await client.post(
         f"{API_PREFIX}/conversions",
-        headers=auth_headers(token),
+        headers=headers,
         json=_conversion_body(profile["id"], campaign["id"]),
     )
     assert response.status_code == 201
@@ -92,8 +96,10 @@ async def test_owner_can_create_conversion_for_own_affiliate(client):
 
 @pytest.mark.asyncio
 async def test_user_cannot_create_conversion_for_another_affiliate(client):
-    token_a, profile_a, campaign = await _enrolled_affiliate_and_campaign(client)
-    token_b, profile_b, _ = await _enrolled_affiliate_and_campaign(client)
+    token_a, profile_a, campaign, headers_a = await _enrolled_affiliate_and_campaign(client)
+    token_b, profile_b, _unused_campaign, _unused_headers = (
+        await _enrolled_affiliate_and_campaign(client)
+    )
     assert profile_a["id"] != profile_b["id"]
 
     join_b = await client.post(
@@ -105,7 +111,7 @@ async def test_user_cannot_create_conversion_for_another_affiliate(client):
 
     response = await client.post(
         f"{API_PREFIX}/conversions",
-        headers=auth_headers(token_a),
+        headers=headers_a,
         json=_conversion_body(profile_b["id"], campaign["id"]),
     )
     assert response.status_code == 403
@@ -114,8 +120,10 @@ async def test_user_cannot_create_conversion_for_another_affiliate(client):
 
 @pytest.mark.asyncio
 async def test_request_body_user_id_cannot_spoof_ownership(client):
-    token_a, _, campaign = await _enrolled_affiliate_and_campaign(client)
-    token_b, profile_b, _ = await _enrolled_affiliate_and_campaign(client)
+    token_a, _, campaign, headers_a = await _enrolled_affiliate_and_campaign(client)
+    token_b, profile_b, _unused_campaign, _unused_headers = (
+        await _enrolled_affiliate_and_campaign(client)
+    )
     me_b = await client.get(f"{API_PREFIX}/auth/me", headers=auth_headers(token_b))
     assert me_b.status_code == 200
     user_b_id = me_b.json()["id"]
@@ -129,7 +137,7 @@ async def test_request_body_user_id_cannot_spoof_ownership(client):
 
     response = await client.post(
         f"{API_PREFIX}/conversions",
-        headers=auth_headers(token_a),
+        headers=headers_a,
         json=_conversion_body(
             profile_b["id"],
             campaign["id"],
@@ -144,7 +152,9 @@ async def test_request_body_user_id_cannot_spoof_ownership(client):
 
 @pytest.mark.asyncio
 async def test_admin_can_create_conversion_for_another_users_affiliate(client):
-    owner_token, profile, campaign = await _enrolled_affiliate_and_campaign(client)
+    owner_token, profile, campaign, owner_headers = await _enrolled_affiliate_and_campaign(
+        client
+    )
     _, admin_token = await register_and_login(client, role="admin")
     me_owner = await client.get(f"{API_PREFIX}/auth/me", headers=auth_headers(owner_token))
     me_admin = await client.get(f"{API_PREFIX}/auth/me", headers=auth_headers(admin_token))
@@ -153,7 +163,10 @@ async def test_admin_can_create_conversion_for_another_users_affiliate(client):
 
     response = await client.post(
         f"{API_PREFIX}/conversions",
-        headers=auth_headers(admin_token),
+        headers={
+            **auth_headers(admin_token),
+            WORKSPACE_ID_HEADER: owner_headers[WORKSPACE_ID_HEADER],
+        },
         json=_conversion_body(profile["id"], campaign["id"]),
     )
     assert response.status_code == 201
@@ -177,7 +190,7 @@ async def test_admin_does_not_bypass_conversion_validation(client):
     _, admin_token = await register_and_login(client, role="admin")
     response = await client.post(
         f"{API_PREFIX}/conversions",
-        headers=auth_headers(admin_token),
+        headers=await workspace_auth_headers(admin_token),
         json={"amount": 1},
     )
     assert response.status_code == 422
@@ -185,11 +198,11 @@ async def test_admin_does_not_bypass_conversion_validation(client):
 
 @pytest.mark.asyncio
 async def test_missing_affiliate_returns_not_found(client):
-    token, _, campaign = await _enrolled_affiliate_and_campaign(client)
+    token, _, campaign, headers = await _enrolled_affiliate_and_campaign(client)
     missing_id = str(uuid4())
     response = await client.post(
         f"{API_PREFIX}/conversions",
-        headers=auth_headers(token),
+        headers=headers,
         json=_conversion_body(missing_id, campaign["id"]),
     )
     assert response.status_code == 404
@@ -199,8 +212,10 @@ async def test_missing_affiliate_returns_not_found(client):
 
 @pytest.mark.asyncio
 async def test_cross_user_forbidden_does_not_leak_affiliate_payload(client):
-    token_a, _, campaign = await _enrolled_affiliate_and_campaign(client)
-    token_b, profile_b, _ = await _enrolled_affiliate_and_campaign(client)
+    token_a, _, campaign, headers_a = await _enrolled_affiliate_and_campaign(client)
+    token_b, profile_b, _unused_campaign, _unused_headers = (
+        await _enrolled_affiliate_and_campaign(client)
+    )
     join_b = await client.post(
         f"{API_PREFIX}/affiliates/join-campaign",
         headers=auth_headers(token_b),
@@ -210,7 +225,7 @@ async def test_cross_user_forbidden_does_not_leak_affiliate_payload(client):
 
     response = await client.post(
         f"{API_PREFIX}/conversions",
-        headers=auth_headers(token_a),
+        headers=headers_a,
         json=_conversion_body(profile_b["id"], campaign["id"]),
     )
     assert response.status_code == 403

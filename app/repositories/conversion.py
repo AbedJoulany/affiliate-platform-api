@@ -3,6 +3,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.campaign import Campaign
 from app.models.conversion import Conversion
 from app.repositories.base import BaseRepository
 
@@ -17,16 +18,53 @@ class ConversionRepository(BaseRepository[Conversion]):
         )
         return result.scalar_one_or_none()
 
-    async def list_by_affiliate(
+    async def get_by_id_in_workspace(
         self,
-        affiliate_id: UUID,
+        conversion_id: UUID,
+        workspace_id: UUID,
+    ) -> Conversion | None:
+        result = await self.session.execute(
+            select(Conversion)
+            .join(Campaign, Conversion.campaign_id == Campaign.id)
+            .where(
+                Conversion.id == conversion_id,
+                Campaign.workspace_id == workspace_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def list_in_workspace(
+        self,
+        workspace_id: UUID,
         *,
         skip: int = 0,
         limit: int = 100,
     ) -> list[Conversion]:
         result = await self.session.execute(
             select(Conversion)
-            .where(Conversion.affiliate_id == affiliate_id)
+            .join(Campaign, Conversion.campaign_id == Campaign.id)
+            .where(Campaign.workspace_id == workspace_id)
+            .offset(skip)
+            .limit(limit)
+            .order_by(Conversion.created_at.desc())
+        )
+        return list(result.scalars().all())
+
+    async def list_by_affiliate_in_workspace(
+        self,
+        affiliate_id: UUID,
+        workspace_id: UUID,
+        *,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> list[Conversion]:
+        result = await self.session.execute(
+            select(Conversion)
+            .join(Campaign, Conversion.campaign_id == Campaign.id)
+            .where(
+                Conversion.affiliate_id == affiliate_id,
+                Campaign.workspace_id == workspace_id,
+            )
             .offset(skip)
             .limit(limit)
             .order_by(Conversion.created_at.desc())
