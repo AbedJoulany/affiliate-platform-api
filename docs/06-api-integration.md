@@ -230,7 +230,7 @@ Status definitions:
 | Endpoint | Status | Notes |
 | --- | --- | --- |
 | `GET/POST/PATCH /affiliates/*` | Backend only | No MVP screens |
-| `GET/POST/PATCH /campaigns/*` | Backend only | No MVP screens |
+| `GET/POST/PATCH /campaigns/*` | Backend only | No MVP screens. **Requires** `Authorization: Bearer <access_token>` and `X-Workspace-Id`. Workspace members see/update only campaigns in the active workspace; missing/invalid/unknown/non-member workspace → **403**. Cross-workspace campaign ids → **404** (`Campaign not found`). `GET /campaigns/active` and `GET /campaigns/{id}` are no longer public. `POST /campaigns` remains admin/advertiser; `workspace_id` is taken from the header, not the body. `UserRole.ADMIN` may use any existing workspace without a membership row (global admin), still scoped to the header workspace. |
 | `POST /conversions` | Backend only | **Requires** `Authorization: Bearer <access_token>`. Owner of `affiliate_id` or `ADMIN`. Non-owner **403**; anonymous **401**. Rate limit (policy): **30** / **1 minute** per user id (when valid access Bearer present) else client IP. Amount remains client-supplied; commission and `PENDING` status unchanged (access control only — not amount fraud verification). |
 | `GET/PATCH /conversions/*` | Backend only | Existing admin / affiliate list & status update routes; no MVP screens |
 

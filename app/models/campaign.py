@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from app.auth.models import User
     from app.models.affiliate import AffiliateCampaign
     from app.models.conversion import Conversion
+    from app.models.workspace import Workspace
 
 
 class Campaign(Base, UUIDPrimaryKeyMixin, TimestampMixin):
@@ -24,6 +25,12 @@ class Campaign(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     advertiser_id: Mapped[UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    workspace_id: Mapped[UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -39,6 +46,10 @@ class Campaign(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     advertiser: Mapped["User | None"] = relationship("User")
+    workspace: Mapped["Workspace | None"] = relationship(
+        "Workspace",
+        foreign_keys=[workspace_id],
+    )
     affiliate_links: Mapped[list["AffiliateCampaign"]] = relationship(
         "AffiliateCampaign",
         back_populates="campaign",
