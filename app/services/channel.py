@@ -15,7 +15,7 @@ class ChannelService:
         self.channel_repo = ChannelRepository(session)
         self.telegram_client = TelegramBotClient()
 
-    async def create(self, payload: ChannelCreate) -> TelegramChannel:
+    async def create(self, payload: ChannelCreate, workspace_id: UUID) -> TelegramChannel:
         existing = await self.channel_repo.get_by_telegram_channel_id(payload.telegram_channel_id)
         if existing:
             raise ConflictError("Telegram channel already registered")
@@ -29,16 +29,32 @@ class ChannelService:
             title=payload.title or permissions.title,
             username=permissions.username,
             is_active=payload.is_active,
+            workspace_id=workspace_id,
         )
         self._apply_permissions(channel, permissions)
         return await self.channel_repo.create(channel)
 
-    async def list_channels(self, *, skip: int = 0, limit: int = 100) -> ChannelListResponse:
-        items, total = await self.channel_repo.list_channels(skip=skip, limit=limit)
+    async def list_channels(
+        self,
+        workspace_id: UUID,
+        *,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> ChannelListResponse:
+        items, total = await self.channel_repo.list_in_workspace(
+            workspace_id,
+            skip=skip,
+            limit=limit,
+        )
         return ChannelListResponse(items=items, total=total, skip=skip, limit=limit)
 
-    async def update(self, channel_id: UUID, payload: ChannelUpdate) -> TelegramChannel:
-        channel = await self._get_or_404(channel_id)
+    async def update(
+        self,
+        channel_id: UUID,
+        payload: ChannelUpdate,
+        workspace_id: UUID,
+    ) -> TelegramChannel:
+        channel = await self._get_or_404(channel_id, workspace_id)
 
         if (
             payload.telegram_channel_id
@@ -66,12 +82,14 @@ class ChannelService:
 
         return await self.channel_repo.update(channel)
 
-    async def delete(self, channel_id: UUID) -> None:
-        channel = await self._get_or_404(channel_id)
+    async def delete(self, channel_id: UUID, workspace_id: UUID) -> None:
+        channel = await self._get_or_404(channel_id, workspace_id)
         await self.channel_repo.delete(channel)
 
     async def refresh_permissions(self, channel_id: UUID) -> TelegramChannel:
-        channel = await self._get_or_404(channel_id)
+        channel = await self.channel_repo.get_by_id(channel_id)
+        if not channel:
+            raise NotFoundError("Channel not found")
         permissions = await self.telegram_client.check_channel_permissions(
             channel.telegram_channel_id
         )
@@ -81,8 +99,8 @@ class ChannelService:
         channel.username = permissions.username
         return await self.channel_repo.update(channel)
 
-    async def _get_or_404(self, channel_id: UUID) -> TelegramChannel:
-        channel = await self.channel_repo.get_by_id(channel_id)
+    async def _get_or_404(self, channel_id: UUID, workspace_id: UUID) -> TelegramChannel:
+        channel = await self.channel_repo.get_by_id_in_workspace(channel_id, workspace_id)
         if not channel:
             raise NotFoundError("Channel not found")
         return channel

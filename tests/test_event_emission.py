@@ -15,6 +15,7 @@ from app.events.schemas import (
     QUEUE_STATUS_CHANGED,
     QueueEventEnvelope,
 )
+from app.models.workspace import Workspace
 from app.schemas.queue import QueueUpdate
 from app.services.exceptions import ConflictError, TelegramPublishError
 from app.services.queue import DEAD_LETTER_ERROR_CODE, QueueService, TelegramPublishingService
@@ -34,22 +35,35 @@ def _events_named(recorder: _RecordingPublisher, name: str) -> list[QueueEventEn
     return [event for event in recorder.events if event.event == name]
 
 
+async def _attach_workspace(session, item) -> UUID:
+    workspace = Workspace(name="Event workspace")
+    session.add(workspace)
+    await session.flush()
+    item.workspace_id = workspace.id
+    if item.channel is not None:
+        item.channel.workspace_id = workspace.id
+    await session.flush()
+    return workspace.id
+
+
 @pytest.mark.asyncio
 async def test_status_change_emits_queue_status_changed(session):
     item = await create_publishable_queue_item(session, status=QueueStatus.DRAFT)
+    workspace_id = await _attach_workspace(session, item)
     recorder = _RecordingPublisher()
     service = QueueService(session, events=recorder)
 
     updated = await service.update(
         item.id,
         QueueUpdate(status=QueueStatus.QUEUED),
+        workspace_id,
     )
 
     changed = _events_named(recorder, QUEUE_STATUS_CHANGED)
     assert len(changed) == 1
     envelope = changed[0]
     assert envelope.queue_id == item.id
-    assert envelope.workspace_id is None
+    assert envelope.workspace_id == str(workspace_id)
     assert UUID(envelope.id)
     assert envelope.data["previous_status"] == QueueStatus.DRAFT.value
     assert envelope.data["status"] == QueueStatus.QUEUED.value
@@ -60,10 +74,15 @@ async def test_status_change_emits_queue_status_changed(session):
 @pytest.mark.asyncio
 async def test_noop_status_assignment_does_not_emit(session):
     item = await create_publishable_queue_item(session, status=QueueStatus.QUEUED)
+    workspace_id = await _attach_workspace(session, item)
     recorder = _RecordingPublisher()
     service = QueueService(session, events=recorder)
 
-    await service.update(item.id, QueueUpdate(status=QueueStatus.QUEUED, title="same status"))
+    await service.update(
+        item.id,
+        QueueUpdate(status=QueueStatus.QUEUED, title="same status"),
+        workspace_id,
+    )
 
     assert _events_named(recorder, QUEUE_STATUS_CHANGED) == []
 
@@ -72,17 +91,19 @@ async def test_noop_status_assignment_does_not_emit(session):
 async def test_delete_emits_queue_deleted(session):
     item = await create_publishable_queue_item(session, status=QueueStatus.SCHEDULED)
     item.scheduled_at = datetime.now(UTC) + timedelta(hours=1)
+    workspace_id = await _attach_workspace(session, item)
     await session.flush()
     queue_id = item.id
     recorder = _RecordingPublisher()
     service = QueueService(session, events=recorder)
 
-    await service.delete(queue_id)
+    await service.delete(queue_id, workspace_id)
 
     deleted = _events_named(recorder, QUEUE_DELETED)
     assert len(deleted) == 1
     envelope = deleted[0]
     assert envelope.queue_id == queue_id
+    assert envelope.workspace_id == str(workspace_id)
     assert envelope.data == {"queue_id": str(queue_id)}
     assert UUID(envelope.id)
 
@@ -199,11 +220,16 @@ async def test_status_heal_emits_status_changed_only(
 @pytest.mark.asyncio
 async def test_event_publish_failure_is_logged_not_silent(session):
     item = await create_publishable_queue_item(session, status=QueueStatus.DRAFT)
+    workspace_id = await _attach_workspace(session, item)
     failing = AsyncMock()
     failing.publish = AsyncMock(side_effect=ConnectionError("redis down"))
     service = QueueService(session, events=failing)
 
     # Domain update must still succeed; enhancement-layer Redis failure is logged.
-    updated = await service.update(item.id, QueueUpdate(status=QueueStatus.QUEUED))
+    updated = await service.update(
+        item.id,
+        QueueUpdate(status=QueueStatus.QUEUED),
+        workspace_id,
+    )
     assert updated.status == QueueStatus.QUEUED
     failing.publish.assert_awaited_once()

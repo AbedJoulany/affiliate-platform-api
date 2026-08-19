@@ -1,13 +1,15 @@
 # API Integration Guide
 
-**Document Version:** 2.5  
-**Last Updated:** 2026-08-13
+**Document Version:** 2.6  
+**Last Updated:** 2026-08-19
 
 **2026-08-04 revision:** Phase A.1 **frontend tasks are complete** — queue KPIs, `QueueHealthBadge`, and `QueueTable` now resolve failures from backend attempt data (`resolveQueueFailure`) with the client failure map only as a short-lived gap-filler until per-item enrichment resolves; `QueueDetailsDrawer` renders read-only publish attempt history from `GET /queues/{id}/attempts` and retries via the existing `POST /queues/{id}/publish`. Statuses below for §4.6 and §5 are updated accordingly. Also reflects three post-implementation bug fixes (scheduled publishing, queue item deletion, Telegram long-message publishing) — see [10-production-readiness.md](./10-production-readiness.md) §10.
 
 **2026-08-08 revision (Phase B closeout):** Documented root operational endpoint `GET /worker/health` (Phase B Task 2). `/ready` semantics unchanged (database + Redis only).
 
 **2026-08-13 revision (Phase D closeout):** Auth refresh tokens, route rate limits, and `POST /conversions` authorization. See §1 and §4.8. Design: [planning/phase-d-auth-security-design.md](./planning/phase-d-auth-security-design.md).
+
+**2026-08-19 revision (Phase E Task 6):** Queue, channel, dashboard, and `GET /queues/stream` HTTP APIs require `X-Workspace-Id`. Queue/channel rows store nullable `workspace_id` (migration `012`). Product aggregates remain global. Frontend workspace header plumbing is Task 9.
 
 **Backend source of truth:** FastAPI routers + Pydantic schemas  
 **Default API base:** `http://localhost:8000/api/v1`  
@@ -125,7 +127,7 @@ Status definitions:
 
 | Endpoint | Frontend module | Status | Types / notes |
 | --- | --- | --- | --- |
-| `GET /dashboard` | `dashboard.api.ts` | Connected | `DashboardOverview` — counts, activity, DB status |
+| `GET /dashboard` | `dashboard.api.ts` | Connected | `DashboardOverview` — counts, activity, DB status. **Requires** `X-Workspace-Id`. Queue and channel aggregates/activity are scoped to the header workspace; **product** counts remain global until Task 7. |
 | `GET /ready` | `categories.api.ts` | Connected | `ReadinessResponse` — settings capability views; **database + redis only** |
 | `GET /health` | — | Backend only | API process liveness (ops) |
 | `GET /worker/health` | — | Backend only | Celery Beat→worker pipeline heartbeat (ops; root path, not under `/api/v1`) |
@@ -178,7 +180,7 @@ Status definitions:
 
 | Endpoint | Frontend module | Status | Types / notes |
 | --- | --- | --- | --- |
-| `GET /queues` | `queue.api.ts` | Connected | Fetches up to 200 items for workspace. List items do **not** populate attempt summary fields (defaults: `last_attempt=null`, `failure_reason=null`, `retry_count=0`); `useQueueAttemptSummaryEnrichment` backfills non-published rows via `GET /queues/{id}` with bounded concurrency (5) |
+| `GET /queues` | `queue.api.ts` | Connected | Fetches up to 200 items for the `X-Workspace-Id` workspace. List items do **not** populate attempt summary fields (defaults: `last_attempt=null`, `failure_reason=null`, `retry_count=0`); `useQueueAttemptSummaryEnrichment` backfills non-published rows via `GET /queues/{id}` with bounded concurrency (5) |
 | `GET /queues/{id}` | `queue.api.ts` | Connected | Returns `QueueRead` with attempt summary: `last_attempt`, `failure_reason`, `retry_count`. Used both for drawer detail and list enrichment |
 | `GET /queues/{id}/attempts` | `queue.api.ts` (`getQueuePublishAttempts`) | Connected | `QueuePublishAttemptListResponse` — attempt history newest-first. Wired via `useQueuePublishAttempts`, rendered read-only in `QueueDetailsDrawer` while the drawer is open |
 | `POST /queues` | `queue.api.ts` | Connected | Draft/queued creation from AI, products, discovery |
@@ -187,7 +189,9 @@ Status definitions:
 | `DELETE /queues/{id}` | `queue.api.ts` | Connected | Bulk delete with confirmation; ORM cascade (`cascade="all, delete-orphan"` on `QueueItem.publish_attempts`) deletes attempt history — fixes a prior bug where deleting an item with attempts raised a `NOT NULL` violation instead of cascading |
 | Publishing KPI "publishing" | `useQueuePublishingOperations` | Client-side | In-flight publish IDs (legitimately ephemeral) |
 | Failed today KPI | `lib/operations.ts` (`resolveQueueFailure`, `getQueueOperationalStats`) | Connected | Backend-owned via `queue_publish_attempts` (`error_code`, including `dead_letter`); `resolveQueueFailure` prefers `item.last_attempt` / `item.failure_reason` and falls back to the client failure map only until enrichment for that row resolves |
-| Real-time status stream | `queue` feature SSE client + `useQueueRealtimeInvalidation` | Connected (Phase A.2) | Authenticated `GET /api/v1/queues/stream` (SSE). Events: `queue.status_changed`, `queue.deleted`, `queue.attempt_*`. Debounced TanStack Query invalidation (never cache patch). Adaptive polling fallback 5s→30s when SSE unavailable. No `dashboard.stats_updated`. |
+| Real-time status stream | `queue` feature SSE client + `useQueueRealtimeInvalidation` | Connected (Phase A.2) | Authenticated `GET /api/v1/queues/stream` (SSE) **requires** `X-Workspace-Id`. Events: `queue.status_changed`, `queue.deleted`, `queue.attempt_*`. The subscriber callback delivers only events whose `workspace_id` matches the active workspace. Redis channel remains `queue-events`. Debounced TanStack Query invalidation (never cache patch). Adaptive polling fallback 5s→30s when SSE unavailable. No `dashboard.stats_updated`. Frontend SSE header support is Task 9. |
+
+Queue and channel HTTP routes require `Authorization: Bearer <access_token>` and `X-Workspace-Id`. Missing/invalid/unknown/non-member workspace → **403**. Unauthenticated → **401**. Cross-workspace queue or channel ids → **404** (existence is not leaked). `workspace_id` is taken from the header, never from the JSON body. Attaching or publishing a queue item to a channel in another workspace → **404** (`Channel not found`). `GET /queues/{id}/attempts` authorizes the parent `QueueItem` in the active workspace first; attempts have no `workspace_id` column. `UserRole.ADMIN` may name any existing workspace without membership, still scoped to that header. Celery `process_publish_queue` / `publish_queue_item_task` remain workspace-agnostic.
 
 #### Publish attempt schemas (Phase A.1 backend)
 
@@ -225,14 +229,16 @@ Status definitions:
 | `PUT /channels/{id}` | `channels.api.ts` | Connected | Active toggle + metadata |
 | `DELETE /channels/{id}` | — | Backend only | Not exposed in Channels UI |
 
+Channel routes require `X-Workspace-Id` with the same membership/ADMIN rules as queues. Create assigns `TelegramChannel.workspace_id` from the header. `telegram_channel_id` remains **globally unique**.
+
 ### 4.8 Affiliates, campaigns, conversions
 
 | Endpoint | Status | Notes |
 | --- | --- | --- |
 | `GET/POST/PATCH /affiliates/*` | Backend only | No MVP screens |
 | `GET/POST/PATCH /campaigns/*` | Backend only | No MVP screens. **Requires** `Authorization: Bearer <access_token>` and `X-Workspace-Id`. Workspace members see/update only campaigns in the active workspace; missing/invalid/unknown/non-member workspace → **403**. Cross-workspace campaign ids → **404** (`Campaign not found`). `GET /campaigns/active` and `GET /campaigns/{id}` are no longer public. `POST /campaigns` remains admin/advertiser; `workspace_id` is taken from the header, not the body. `UserRole.ADMIN` may use any existing workspace without a membership row (global admin), still scoped to the header workspace. |
-| `POST /conversions` | Backend only | **Requires** `Authorization: Bearer <access_token>`. Owner of `affiliate_id` or `ADMIN`. Non-owner **403**; anonymous **401**. Rate limit (policy): **30** / **1 minute** per user id (when valid access Bearer present) else client IP. Amount remains client-supplied; commission and `PENDING` status unchanged (access control only — not amount fraud verification). |
-| `GET/PATCH /conversions/*` | Backend only | Existing admin / affiliate list & status update routes; no MVP screens |
+| `POST /conversions` | Backend only | **Requires** `Authorization: Bearer <access_token>` and `X-Workspace-Id`. Owner of `affiliate_id` or `ADMIN`. Non-owner **403**; anonymous **401**; missing/invalid/unknown/non-member workspace → **403**. Campaign must belong to the active workspace (**404** if not). The affiliate's user must be a workspace member (**404** if not), which blocks cross-workspace affiliate/campaign pairing. Workspace is derived from `Campaign.workspace_id` (no `conversions.workspace_id` column). `external_order_id` remains **globally unique**. Rate limit (policy): **30** / **1 minute** per user id (when valid access Bearer present) else client IP. Amount remains client-supplied; commission and `PENDING` status unchanged (access control only — not amount fraud verification). |
+| `GET/PATCH /conversions/*` | Backend only | `GET /conversions/me` lists the caller's conversions whose campaign is in the active workspace. `GET /conversions` and `PATCH /conversions/{id}` remain admin-only and are workspace-scoped via the campaign relationship. No conversion delete route. `UserRole.ADMIN` may name any existing workspace without membership (global admin), still scoped to that header. No MVP screens. |
 
 ---
 
@@ -249,7 +255,7 @@ Status definitions:
 | **Queue table/drawer** | `GET /queues`, `GET /queues/{id}`, `GET /queues/{id}/attempts`, `PATCH`, `POST publish` | `content`, `scheduled_at`, `channel_id`, `status`; attempt summary/history read from backend truth; drawer includes read-only attempt-history list |
 | **Schedule dialog** | `PATCH /queues/{id}` | `scheduled_at`, `channel_id`, `status: scheduled` |
 | **Channels** | `GET/POST/PUT /channels` | `bot_permission_status`, `can_post_messages`, `is_active` |
-| **Dashboard** | `GET /dashboard` | Product/queue/channel aggregates |
+| **Dashboard** | `GET /dashboard` | Product counts remain global; queue/channel aggregates and queue activity are workspace-scoped via `X-Workspace-Id` |
 | **Settings** | `GET /ready` | `checks.database`, `checks.redis` |
 
 ---
@@ -278,7 +284,7 @@ Status definitions:
 - Rate limits: Redis fixed-window on login / refresh / conversions via route dependencies (not global middleware); fail-open on Redis errors; IP from `request.client.host` only (no `X-Forwarded-For` claim)
 - `POST /conversions` requires authentication + affiliate ownership (ADMIN bypass); request-body identity is not an authorization source
 - Import/delete require admin role in UI; backend enforces on routes
-- Queue and channel routes are authenticated but **not user-scoped** — do not imply tenant isolation
+- Queue, channel, dashboard, and `GET /queues/stream` require `X-Workspace-Id`. Isolation is per named workspace (ADMIN included). Product catalog remains globally scoped until Task 7. Frontend workspace interceptor/header support is Task 9.
 - `/ready` checks PostgreSQL + Redis only — not Celery worker liveness or provider credentials
 - `/worker/health` is an **unauthenticated operational infrastructure** endpoint at the app root (sibling to `/health` and `/ready`). It is **not** part of the authenticated `/api/v1` application API surface. It reports Beat→worker pipeline heartbeat freshness only — not task-failure metrics and not Flower status.
 

@@ -165,7 +165,7 @@ def mock_ai_provider(monkeypatch):
 @pytest.fixture
 def mock_queue_publish(monkeypatch):
     """Mock QueueService.publish to simulate successful Telegram publishing."""
-    async def fake_publish(self, queue_id):
+    async def fake_publish(self, queue_id, workspace_id=None):
         return PublishQueueResponse(
             queue_id=queue_id,
             telegram_message_id=987654321,

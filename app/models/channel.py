@@ -1,11 +1,16 @@
 from datetime import datetime
+from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Enum, String
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 from app.core.enums import BotPermissionStatus
 from app.core.model_mixins import TimestampMixin, UUIDPrimaryKeyMixin
+
+if TYPE_CHECKING:
+    from app.models.workspace import Workspace
 
 
 class TelegramChannel(Base, UUIDPrimaryKeyMixin, TimestampMixin):
@@ -16,6 +21,12 @@ class TelegramChannel(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         unique=True,
         index=True,
         nullable=False,
+    )
+    workspace_id: Mapped[UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     username: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
@@ -33,3 +44,8 @@ class TelegramChannel(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
     permission_detail: Mapped[str | None] = mapped_column(String(512), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    workspace: Mapped["Workspace | None"] = relationship(
+        "Workspace",
+        foreign_keys=[workspace_id],
+    )

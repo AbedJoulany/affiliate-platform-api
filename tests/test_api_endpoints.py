@@ -45,6 +45,46 @@ async def workspace_auth_headers(token: str) -> dict[str, str]:
         }
 
 
+async def campaign_workspace_id(campaign_id: str) -> str:
+    from app.models.campaign import Campaign
+
+    async with SessionLocal() as session:
+        campaign = await session.get(Campaign, UUID(campaign_id))
+        assert campaign is not None
+        assert campaign.workspace_id is not None
+        return str(campaign.workspace_id)
+
+
+async def add_workspace_member(token: str, workspace_id: str) -> None:
+    user_id = UUID(decode_access_token(token)["sub"])
+    async with SessionLocal() as session:
+        result = await session.execute(
+            select(WorkspaceMembership).where(
+                WorkspaceMembership.workspace_id == UUID(workspace_id),
+                WorkspaceMembership.user_id == user_id,
+            )
+        )
+        if result.scalar_one_or_none() is not None:
+            return
+        session.add(
+            WorkspaceMembership(
+                workspace_id=UUID(workspace_id),
+                user_id=user_id,
+                role=WorkspaceMembershipRole.MEMBER,
+            )
+        )
+        await session.commit()
+
+
+async def conversion_auth_headers(token: str, campaign_id: str) -> dict[str, str]:
+    workspace_id = await campaign_workspace_id(campaign_id)
+    await add_workspace_member(token, workspace_id)
+    return {
+        **auth_headers(token),
+        WORKSPACE_ID_HEADER: workspace_id,
+    }
+
+
 @pytest.mark.asyncio
 async def test_public_registration_always_creates_affiliate_and_rejects_role(client):
     email = f"public-{uuid4().hex[:8]}@example.com"
@@ -351,9 +391,10 @@ async def test_conversion_endpoints_and_admin_status_update(client):
     )
     assert join_resp.status_code == 201
 
+    conversion_headers = await conversion_auth_headers(affiliate_token, campaign["id"])
     conversion_resp = await client.post(
         f"{API_PREFIX}/conversions",
-        headers=auth_headers(affiliate_token),
+        headers=conversion_headers,
         json={
             "affiliate_id": affiliate_profile["id"],
             "campaign_id": campaign["id"],
@@ -369,7 +410,7 @@ async def test_conversion_endpoints_and_admin_status_update(client):
 
     duplicate_resp = await client.post(
         f"{API_PREFIX}/conversions",
-        headers=auth_headers(affiliate_token),
+        headers=conversion_headers,
         json={
             "affiliate_id": affiliate_profile["id"],
             "campaign_id": campaign["id"],
@@ -382,21 +423,25 @@ async def test_conversion_endpoints_and_admin_status_update(client):
 
     me_resp = await client.get(
         f"{API_PREFIX}/conversions/me",
-        headers=auth_headers(affiliate_token),
+        headers=conversion_headers,
     )
     assert me_resp.status_code == 200
     assert any(item["id"] == conversion["id"] for item in me_resp.json())
 
+    admin_headers = {
+        **auth_headers(admin_token),
+        WORKSPACE_ID_HEADER: conversion_headers[WORKSPACE_ID_HEADER],
+    }
     admin_list_resp = await client.get(
         f"{API_PREFIX}/conversions",
-        headers=auth_headers(admin_token),
+        headers=admin_headers,
     )
     assert admin_list_resp.status_code == 200
     assert any(item["id"] == conversion["id"] for item in admin_list_resp.json())
 
     status_resp = await client.patch(
         f"{API_PREFIX}/conversions/{conversion['id']}",
-        headers=auth_headers(admin_token),
+        headers=admin_headers,
         json={"status": "approved"},
     )
     assert status_resp.status_code == 200
@@ -404,7 +449,7 @@ async def test_conversion_endpoints_and_admin_status_update(client):
 
     forbidden_update = await client.patch(
         f"{API_PREFIX}/conversions/{conversion['id']}",
-        headers=auth_headers(affiliate_token),
+        headers=conversion_headers,
         json={"status": "paid"},
     )
     assert forbidden_update.status_code == 403
@@ -463,10 +508,11 @@ async def test_product_crud_and_search_filters(client):
 @pytest.mark.asyncio
 async def test_telegram_channel_crud_and_auth(client, mock_telegram_permissions):
     _, token = await register_and_login(client, role="affiliate")
+    headers = await workspace_auth_headers(token)
 
     create_resp = await client.post(
         f"{API_PREFIX}/channels",
-        headers=auth_headers(token),
+        headers=headers,
         json={"telegram_channel_id": "@testchannel", "title": "Test Channel"},
     )
     assert create_resp.status_code == 201
@@ -475,14 +521,14 @@ async def test_telegram_channel_crud_and_auth(client, mock_telegram_permissions)
 
     list_resp = await client.get(
         f"{API_PREFIX}/channels",
-        headers=auth_headers(token),
+        headers=headers,
     )
     assert list_resp.status_code == 200
     assert any(item["id"] == channel["id"] for item in list_resp.json()["items"])
 
     update_resp = await client.put(
         f"{API_PREFIX}/channels/{channel['id']}",
-        headers=auth_headers(token),
+        headers=headers,
         json={"title": "Updated Channel"},
     )
     assert update_resp.status_code == 200
@@ -490,7 +536,7 @@ async def test_telegram_channel_crud_and_auth(client, mock_telegram_permissions)
 
     delete_resp = await client.delete(
         f"{API_PREFIX}/channels/{channel['id']}",
-        headers=auth_headers(token),
+        headers=headers,
     )
     assert delete_resp.status_code == 200
     assert delete_resp.json()["message"] == "Channel deleted successfully"
@@ -539,10 +585,11 @@ async def test_ai_content_generation_with_product_and_url(client, mock_ai_provid
 @pytest.mark.asyncio
 async def test_queue_endpoints_and_publish(client, mock_queue_publish):
     _, token = await register_and_login(client, role="affiliate")
+    headers = await workspace_auth_headers(token)
 
     create_resp = await client.post(
         f"{API_PREFIX}/queues",
-        headers=auth_headers(token),
+        headers=headers,
         json={"content": "Publish me later"},
     )
     assert create_resp.status_code == 201
@@ -550,21 +597,21 @@ async def test_queue_endpoints_and_publish(client, mock_queue_publish):
 
     list_resp = await client.get(
         f"{API_PREFIX}/queues",
-        headers=auth_headers(token),
+        headers=headers,
     )
     assert list_resp.status_code == 200
     assert any(entry["id"] == item["id"] for entry in list_resp.json()["items"])
 
     get_resp = await client.get(
         f"{API_PREFIX}/queues/{item['id']}",
-        headers=auth_headers(token),
+        headers=headers,
     )
     assert get_resp.status_code == 200
     assert get_resp.json()["content"] == "Publish me later"
 
     patch_resp = await client.patch(
         f"{API_PREFIX}/queues/{item['id']}",
-        headers=auth_headers(token),
+        headers=headers,
         json={"title": "Updated Title"},
     )
     assert patch_resp.status_code == 200
@@ -572,14 +619,14 @@ async def test_queue_endpoints_and_publish(client, mock_queue_publish):
 
     publish_resp = await client.post(
         f"{API_PREFIX}/queues/{item['id']}/publish",
-        headers=auth_headers(token),
+        headers=headers,
     )
     assert publish_resp.status_code == 200
     assert publish_resp.json()["telegram_message_id"] == 987654321
 
     delete_resp = await client.delete(
         f"{API_PREFIX}/queues/{item['id']}",
-        headers=auth_headers(token),
+        headers=headers,
     )
     assert delete_resp.status_code == 200
     assert delete_resp.json()["message"] == "Queue item deleted successfully"

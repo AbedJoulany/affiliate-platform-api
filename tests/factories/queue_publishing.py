@@ -21,6 +21,7 @@ async def create_publishable_channel(
     is_active: bool = True,
     bot_permission_status: BotPermissionStatus = BotPermissionStatus.GRANTED,
     can_post_messages: bool = True,
+    workspace_id=None,
 ) -> TelegramChannel:
     channel = TelegramChannel(
         telegram_channel_id=telegram_channel_id or f"@ch-{uuid4().hex[:10]}",
@@ -31,6 +32,7 @@ async def create_publishable_channel(
         can_edit_messages=True,
         can_delete_messages=True,
         is_active=is_active,
+        workspace_id=workspace_id,
     )
     session.add(channel)
     await session.flush()
@@ -45,14 +47,16 @@ async def create_publishable_queue_item(
     content: str = "Publish me",
     status: QueueStatus = QueueStatus.QUEUED,
     title: str | None = "Publish test item",
+    workspace_id=None,
 ) -> QueueItem:
     if channel is None:
-        channel = await create_publishable_channel(session)
+        channel = await create_publishable_channel(session, workspace_id=workspace_id)
     item = QueueItem(
         title=title,
         content=content,
         status=status,
         channel_id=channel.id,
+        workspace_id=workspace_id,
     )
     session.add(item)
     await session.flush()

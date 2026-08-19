@@ -33,11 +33,19 @@ class DashboardRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
-    async def get_snapshot(self, *, activity_limit: int = 10) -> DashboardSnapshot:
+    async def get_snapshot(
+        self,
+        workspace_id: UUID,
+        *,
+        activity_limit: int = 10,
+    ) -> DashboardSnapshot:
         product_counts = await self._product_counts()
-        queue_counts = await self._queue_counts()
-        channel_total, active_channels = await self._channel_counts()
-        recent_activity = await self._recent_activity(limit=activity_limit)
+        queue_counts = await self._queue_counts(workspace_id)
+        channel_total, active_channels = await self._channel_counts(workspace_id)
+        recent_activity = await self._recent_activity(
+            workspace_id,
+            limit=activity_limit,
+        )
         return DashboardSnapshot(
             product_counts=product_counts,
             queue_counts=queue_counts,
@@ -52,13 +60,15 @@ class DashboardRepository:
         )
         return {status: count for status, count in result.all()}
 
-    async def _queue_counts(self) -> dict[QueueStatus, int]:
+    async def _queue_counts(self, workspace_id: UUID) -> dict[QueueStatus, int]:
         result = await self.session.execute(
-            select(QueueItem.status, func.count(QueueItem.id)).group_by(QueueItem.status)
+            select(QueueItem.status, func.count(QueueItem.id))
+            .where(QueueItem.workspace_id == workspace_id)
+            .group_by(QueueItem.status)
         )
         return {status: count for status, count in result.all()}
 
-    async def _channel_counts(self) -> tuple[int, int]:
+    async def _channel_counts(self, workspace_id: UUID) -> tuple[int, int]:
         result = await self.session.execute(
             select(
                 func.count(TelegramChannel.id),
@@ -66,12 +76,17 @@ class DashboardRepository:
                     func.sum(case((TelegramChannel.is_active.is_(True), 1), else_=0)),
                     0,
                 ),
-            )
+            ).where(TelegramChannel.workspace_id == workspace_id)
         )
         total, active = result.one()
         return int(total), int(active)
 
-    async def _recent_activity(self, *, limit: int) -> list[ActivityRecord]:
+    async def _recent_activity(
+        self,
+        workspace_id: UUID,
+        *,
+        limit: int,
+    ) -> list[ActivityRecord]:
         products = select(
             literal("product").label("resource_type"),
             Product.id.label("resource_id"),
@@ -85,7 +100,7 @@ class DashboardRepository:
             func.coalesce(QueueItem.title, literal("Queue item")).label("title"),
             cast(QueueItem.status, String).label("status"),
             QueueItem.created_at.label("occurred_at"),
-        )
+        ).where(QueueItem.workspace_id == workspace_id)
         activity = union_all(products, queue_items).subquery()
         result = await self.session.execute(
             select(activity).order_by(activity.c.occurred_at.desc()).limit(limit)

@@ -1,7 +1,7 @@
 # Production Readiness and Release Runbook
 
-**Document Version:** 2.6  
-**Last Updated:** 2026-08-14
+**Document Version:** 2.7  
+**Last Updated:** 2026-08-19
 
 Release gate supplement to documents 01–09. Defines security boundaries, environment configuration, CI/CD, deployment checklists, and architectural requirements.
 
@@ -122,7 +122,7 @@ Execute with staging admin:
 | Rate limiting | Redis fixed-window via FastAPI route dependencies (not middleware); fail-open; policies below |
 | Conversion create | Authenticated + affiliate ownership (or ADMIN); 401/403; amount integrity still client/PENDING review |
 | Admin operations | Import, delete — backend + UI role check |
-| Tenancy | Queue/channel data **not user-scoped** — not multi-tenant safe |
+| Tenancy | Queue/channel HTTP APIs and dashboard queue/channel aggregates are **workspace-scoped** via `X-Workspace-Id` (Stage 1: nullable `workspace_id`, no backfill). SSE filters by event `workspace_id`. Celery workers remain global. Product data is still not workspace-scoped. |
 | Public / unauthenticated | Discovery read, product list remain public; `POST /conversions` is **no longer** anonymous |
 | `/ready` | Dependency state only (database + redis) — no secrets; not Celery liveness |
 | `/worker/health` | Celery Beat→worker pipeline heartbeat only — no secrets; not task-failure metrics |

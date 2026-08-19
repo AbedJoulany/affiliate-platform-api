@@ -66,13 +66,14 @@ def _build_queue_event(
     event_name: str,
     queue_id: UUID,
     data: BaseModel,
+    workspace_id: UUID | None = None,
 ) -> QueueEventEnvelope:
     return QueueEventEnvelope(
         event=event_name,
         version=EVENT_ENVELOPE_VERSION,
         id=str(uuid4()),
         occurred_at=datetime.now(UTC),
-        workspace_id=None,
+        workspace_id=str(workspace_id) if workspace_id is not None else None,
         queue_id=queue_id,
         data=data.model_dump(mode="json"),
     )
@@ -193,6 +194,7 @@ class TelegramPublishingService:
                         attempt_number=attempt.attempt_number,
                         provider_message_id=result.message_id,
                     ),
+                    workspace_id=item.workspace_id,
                 ),
             )
             if previous_status != QueueStatus.PUBLISHED:
@@ -208,6 +210,7 @@ class TelegramPublishingService:
                             scheduled_at=item.scheduled_at,
                             published_at=item.published_at,
                         ),
+                        workspace_id=item.workspace_id,
                     ),
                 )
 
@@ -229,7 +232,12 @@ class TelegramPublishingService:
                 or not isinstance(exc, TelegramPublishError)
                 or self._is_non_retryable_telegram_error(exc)
             )
-            await self._mark_attempt_failed(attempt, exc, terminal=terminal)
+            await self._mark_attempt_failed(
+                attempt,
+                exc,
+                terminal=terminal,
+                workspace_id=item.workspace_id,
+            )
             raise
 
     async def publish_due_scheduled(
@@ -326,6 +334,7 @@ class TelegramPublishingService:
                                 scheduled_at=item.scheduled_at,
                                 published_at=item.published_at,
                             ),
+                            workspace_id=item.workspace_id,
                         ),
                     )
                 raise ConflictError(
@@ -362,6 +371,7 @@ class TelegramPublishingService:
                     attempt_number=attempt.attempt_number,
                     provider=attempt.provider,
                 ),
+                workspace_id=item.workspace_id,
             ),
         )
         return _PublishClaim(item=item, attempt=attempt, snapshot=snapshot)
@@ -408,6 +418,7 @@ class TelegramPublishingService:
         exc: BaseException,
         *,
         terminal: bool = False,
+        workspace_id: UUID | None = None,
     ) -> QueuePublishAttempt:
         """Persist a failed attempt. Never modifies QueueItem.status.
 
@@ -440,6 +451,7 @@ class TelegramPublishingService:
                     error_code=attempt.error_code or underlying_code,
                     is_terminal=terminal,
                 ),
+                workspace_id=workspace_id,
             ),
         )
         return attempt
@@ -550,8 +562,8 @@ class QueueService:
         self.product_repo = ProductRepository(session)
         self.publishing_service = TelegramPublishingService(session, events=self.events)
 
-    async def create(self, payload: QueueCreate) -> QueueItem:
-        await self._validate_relations(payload.channel_id, payload.product_id)
+    async def create(self, payload: QueueCreate, workspace_id: UUID) -> QueueItem:
+        await self._validate_relations(payload.channel_id, payload.product_id, workspace_id)
         self._validate_status_scheduling(payload.status, payload.scheduled_at)
 
         item = QueueItem(
@@ -561,6 +573,7 @@ class QueueService:
             scheduled_at=payload.scheduled_at,
             channel_id=payload.channel_id,
             product_id=payload.product_id,
+            workspace_id=workspace_id,
             image_url=str(payload.image_url) if payload.image_url else None,
             button_text=payload.button_text,
             button_url=str(payload.button_url) if payload.button_url else None,
@@ -570,25 +583,27 @@ class QueueService:
 
         return await self.queue_repo.create(item)
 
-    async def get(self, queue_id: UUID) -> QueueItem:
-        item = await self.queue_repo.get_by_id(queue_id)
+    async def get(self, queue_id: UUID, workspace_id: UUID) -> QueueItem:
+        item = await self.queue_repo.get_by_id_in_workspace(queue_id, workspace_id)
         if not item:
             raise NotFoundError("Queue item not found")
         return item
 
-    async def get_read(self, queue_id: UUID) -> QueueRead:
+    async def get_read(self, queue_id: UUID, workspace_id: UUID) -> QueueRead:
         """Return a queue item with backend-owned attempt summary fields populated."""
-        item = await self.get(queue_id)
+        item = await self.get(queue_id, workspace_id)
         return await self._to_queue_read(item)
 
     async def list_items(
         self,
+        workspace_id: UUID,
         *,
         status: QueueStatus | None = None,
         skip: int = 0,
         limit: int = 100,
     ) -> QueueListResponse:
         items, total = await self.queue_repo.list_items(
+            workspace_id,
             status=status,
             skip=skip,
             limit=limit,
@@ -597,8 +612,12 @@ class QueueService:
         # to avoid N+1 lookups; clients use GET /queues/{id}/attempts for history.
         return QueueListResponse(items=items, total=total, skip=skip, limit=limit)
 
-    async def list_publish_attempts(self, queue_id: UUID) -> QueuePublishAttemptListResponse:
-        await self.get(queue_id)
+    async def list_publish_attempts(
+        self,
+        queue_id: UUID,
+        workspace_id: UUID,
+    ) -> QueuePublishAttemptListResponse:
+        await self.get(queue_id, workspace_id)
         attempts = await self.attempt_repo.list_attempts(queue_id)
         return QueuePublishAttemptListResponse(
             queue_id=queue_id,
@@ -625,8 +644,13 @@ class QueueService:
             }
         )
 
-    async def update(self, queue_id: UUID, payload: QueueUpdate) -> QueueItem:
-        item = await self.get(queue_id)
+    async def update(
+        self,
+        queue_id: UUID,
+        payload: QueueUpdate,
+        workspace_id: UUID,
+    ) -> QueueItem:
+        item = await self.get(queue_id, workspace_id)
         previous_status = item.status
         update_data = payload.model_dump(exclude_unset=True)
 
@@ -634,7 +658,7 @@ class QueueService:
         new_scheduled_at = update_data.get("scheduled_at", item.scheduled_at)
 
         if "channel_id" in update_data:
-            await self._validate_channel(update_data["channel_id"])
+            await self._validate_channel(update_data["channel_id"], workspace_id)
         if "product_id" in update_data:
             await self._validate_product(update_data["product_id"])
 
@@ -679,13 +703,15 @@ class QueueService:
                         scheduled_at=updated.scheduled_at,
                         published_at=updated.published_at,
                     ),
+                    workspace_id=updated.workspace_id,
                 ),
             )
         return updated
 
-    async def delete(self, queue_id: UUID) -> None:
-        item = await self.get(queue_id)
+    async def delete(self, queue_id: UUID, workspace_id: UUID) -> None:
+        item = await self.get(queue_id, workspace_id)
         deleted_id = item.id
+        deleted_workspace_id = item.workspace_id
         await self.queue_repo.delete(item)
         await self.session.commit()
         await _publish_queue_event(
@@ -694,10 +720,13 @@ class QueueService:
                 QUEUE_DELETED,
                 deleted_id,
                 QueueDeletedData(queue_id=deleted_id),
+                workspace_id=deleted_workspace_id,
             ),
         )
 
-    async def publish(self, queue_id: UUID) -> PublishQueueResponse:
+    async def publish(self, queue_id: UUID, workspace_id: UUID) -> PublishQueueResponse:
+        item = await self.get(queue_id, workspace_id)
+        await self._validate_channel(item.channel_id, workspace_id)
         # Manual publish has no Celery autoretry, so transport failures are terminal.
         return await self.publishing_service.publish_queue_item(
             queue_id,
@@ -708,14 +737,19 @@ class QueueService:
         self,
         channel_id: UUID | None,
         product_id: UUID | None,
+        workspace_id: UUID,
     ) -> None:
-        await self._validate_channel(channel_id)
+        await self._validate_channel(channel_id, workspace_id)
         await self._validate_product(product_id)
 
-    async def _validate_channel(self, channel_id: UUID | None) -> None:
+    async def _validate_channel(
+        self,
+        channel_id: UUID | None,
+        workspace_id: UUID,
+    ) -> None:
         if channel_id is None:
             return
-        channel = await self.channel_repo.get_by_id(channel_id)
+        channel = await self.channel_repo.get_by_id_in_workspace(channel_id, workspace_id)
         if not channel:
             raise NotFoundError("Channel not found")
 
