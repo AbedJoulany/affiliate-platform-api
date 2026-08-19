@@ -1,10 +1,15 @@
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy import select
 
+from app.auth.security import decode_access_token
+from app.core.enums import WorkspaceMembershipRole
+from app.core.workspace import WORKSPACE_ID_HEADER
+from app.models.workspace import Workspace, WorkspaceMembership
 from app.schemas.aliexpress import AliExpressImportResponse
-from tests.conftest import provision_test_user
+from tests.conftest import SessionLocal, provision_test_user
 
 API_PREFIX = "/api/v1"
 PASSWORD = "StrongP@ssw0rd"
@@ -12,6 +17,32 @@ PASSWORD = "StrongP@ssw0rd"
 
 def auth_headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+async def workspace_auth_headers(token: str) -> dict[str, str]:
+    """Bearer token plus a live workspace membership for campaign isolation."""
+    user_id = UUID(decode_access_token(token)["sub"])
+    async with SessionLocal() as session:
+        result = await session.execute(
+            select(WorkspaceMembership).where(WorkspaceMembership.user_id == user_id)
+        )
+        membership = result.scalars().first()
+        if membership is None:
+            workspace = Workspace(name="Test Workspace", created_by_user_id=user_id)
+            session.add(workspace)
+            await session.flush()
+            membership = WorkspaceMembership(
+                workspace_id=workspace.id,
+                user_id=user_id,
+                role=WorkspaceMembershipRole.OWNER,
+            )
+            session.add(membership)
+            await session.commit()
+            await session.refresh(membership)
+        return {
+            **auth_headers(token),
+            WORKSPACE_ID_HEADER: str(membership.workspace_id),
+        }
 
 
 @pytest.mark.asyncio
@@ -91,7 +122,7 @@ async def create_campaign(client, token: str) -> dict:
     }
     response = await client.post(
         f"{API_PREFIX}/campaigns",
-        headers=auth_headers(token),
+        headers=await workspace_auth_headers(token),
         json=payload,
     )
     assert response.status_code == 201
@@ -101,7 +132,7 @@ async def create_campaign(client, token: str) -> dict:
 async def activate_campaign(client, token: str, campaign_id: str) -> dict:
     response = await client.patch(
         f"{API_PREFIX}/campaigns/{campaign_id}",
-        headers=auth_headers(token),
+        headers=await workspace_auth_headers(token),
         json={"status": "active"},
     )
     assert response.status_code == 200
@@ -221,7 +252,7 @@ async def test_affiliate_join_campaign_workflow(client):
     _, admin_token = await register_and_login(client, role="admin")
     _, affiliate_token = await register_and_login(client, role="affiliate")
 
-    affiliate_profile = await create_affiliate_profile(client, affiliate_token)
+    await create_affiliate_profile(client, affiliate_token)
     campaign = await create_campaign(client, admin_token)
     campaign = await activate_campaign(client, admin_token, campaign["id"])
 
@@ -253,7 +284,7 @@ async def test_campaign_endpoints_with_role_based_access(client):
 
     denied_resp = await client.post(
         f"{API_PREFIX}/campaigns",
-        headers=auth_headers(affiliate_token),
+        headers=await workspace_auth_headers(affiliate_token),
         json={
             "name": "Forbidden Campaign",
             "landing_url": "https://example.com",
@@ -266,30 +297,38 @@ async def test_campaign_endpoints_with_role_based_access(client):
     active_campaign = await activate_campaign(client, admin_token, admin_campaign["id"])
     assert active_campaign["status"] == "active"
 
-    active_list = await client.get(f"{API_PREFIX}/campaigns/active")
+    admin_headers = await workspace_auth_headers(admin_token)
+    advertiser_headers = await workspace_auth_headers(advertiser_token)
+
+    active_list = await client.get(f"{API_PREFIX}/campaigns/active", headers=admin_headers)
     assert active_list.status_code == 200
     assert any(item["id"] == admin_campaign["id"] for item in active_list.json())
 
-    fetch_resp = await client.get(f"{API_PREFIX}/campaigns/{admin_campaign['id']}")
+    fetch_resp = await client.get(
+        f"{API_PREFIX}/campaigns/{admin_campaign['id']}",
+        headers=admin_headers,
+    )
     assert fetch_resp.status_code == 200
     assert fetch_resp.json()["id"] == admin_campaign["id"]
 
     admin_list_resp = await client.get(
         f"{API_PREFIX}/campaigns",
-        headers=auth_headers(admin_token),
+        headers=admin_headers,
     )
     assert admin_list_resp.status_code == 200
-    assert len(admin_list_resp.json()) >= 2
+    admin_list_ids = {item["id"] for item in admin_list_resp.json()}
+    assert admin_campaign["id"] in admin_list_ids
+    assert advertiser_campaign["id"] not in admin_list_ids
 
     forbidden_list = await client.get(
         f"{API_PREFIX}/campaigns",
-        headers=auth_headers(affiliate_token),
+        headers=await workspace_auth_headers(affiliate_token),
     )
     assert forbidden_list.status_code == 403
 
     update_resp = await client.patch(
         f"{API_PREFIX}/campaigns/{advertiser_campaign['id']}",
-        headers=auth_headers(advertiser_token),
+        headers=advertiser_headers,
         json={"description": "Updated by advertiser"},
     )
     assert update_resp.status_code == 200

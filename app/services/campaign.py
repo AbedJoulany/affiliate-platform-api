@@ -15,7 +15,12 @@ class CampaignService:
         self.session = session
         self.campaign_repo = CampaignRepository(session)
 
-    async def create(self, user: User, payload: CampaignCreate) -> Campaign:
+    async def create(
+        self,
+        user: User,
+        payload: CampaignCreate,
+        workspace_id: UUID,
+    ) -> Campaign:
         if user.role not in (UserRole.ADMIN, UserRole.ADVERTISER):
             raise ForbiddenError("Only admins and advertisers can create campaigns")
 
@@ -23,6 +28,7 @@ class CampaignService:
             name=payload.name,
             description=payload.description,
             advertiser_id=user.id if user.role == UserRole.ADVERTISER else None,
+            workspace_id=workspace_id,
             payout_amount=payload.payout_amount,
             currency=payload.currency,
             landing_url=str(payload.landing_url),
@@ -32,34 +38,66 @@ class CampaignService:
         )
         return await self.campaign_repo.create(campaign)
 
-    async def get(self, campaign_id: UUID) -> Campaign:
-        campaign = await self.campaign_repo.get_by_id(campaign_id)
+    async def get(self, campaign_id: UUID, workspace_id: UUID) -> Campaign:
+        campaign = await self.campaign_repo.get_by_id_in_workspace(campaign_id, workspace_id)
         if not campaign:
             raise NotFoundError("Campaign not found")
         return campaign
 
-    async def list_active(self, *, skip: int = 0, limit: int = 100) -> list[Campaign]:
-        return await self.campaign_repo.list_active(skip=skip, limit=limit)
+    async def list_active(
+        self,
+        workspace_id: UUID,
+        *,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> list[Campaign]:
+        return await self.campaign_repo.list_active_in_workspace(
+            workspace_id,
+            skip=skip,
+            limit=limit,
+        )
 
-    async def list_all(self, *, skip: int = 0, limit: int = 100) -> list[Campaign]:
-        return await self.campaign_repo.list_all(skip=skip, limit=limit)
+    async def list_all(
+        self,
+        workspace_id: UUID,
+        *,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> list[Campaign]:
+        return await self.campaign_repo.list_in_workspace(
+            workspace_id,
+            skip=skip,
+            limit=limit,
+        )
 
-    async def update(self, user: User, campaign_id: UUID, payload: CampaignUpdate) -> Campaign:
-        campaign = await self.get(campaign_id)
-        self._ensure_can_modify(user, campaign)
+    async def update(
+        self,
+        user: User,
+        campaign_id: UUID,
+        payload: CampaignUpdate,
+        workspace_id: UUID,
+    ) -> Campaign:
+        campaign = await self.get(campaign_id, workspace_id)
+        self._ensure_can_modify(user, campaign, workspace_id)
 
         update_data = payload.model_dump(exclude_unset=True)
         if "landing_url" in update_data and update_data["landing_url"] is not None:
             update_data["landing_url"] = str(update_data["landing_url"])
+        update_data.pop("workspace_id", None)
 
         for field, value in update_data.items():
             setattr(campaign, field, value)
 
         return await self.campaign_repo.update(campaign)
 
-    def _ensure_can_modify(self, user: User, campaign: Campaign) -> None:
+    def _ensure_can_modify(
+        self,
+        user: User,
+        campaign: Campaign,
+        workspace_id: UUID,
+    ) -> None:
         if user.role == UserRole.ADMIN:
             return
-        if user.role == UserRole.ADVERTISER and campaign.advertiser_id == user.id:
+        if campaign.workspace_id == workspace_id:
             return
-        raise ForbiddenError("Cannot modify this campaign")
+        raise NotFoundError("Campaign not found")
