@@ -17,6 +17,7 @@ from tests.test_api_endpoints import (
     conversion_auth_headers,
     create_affiliate_profile,
     create_campaign,
+    join_campaign,
     register_and_login,
     workspace_auth_headers,
 )
@@ -44,11 +45,7 @@ async def _enrolled_affiliate_and_campaign(client) -> tuple[str, dict, dict, dic
     profile = await create_affiliate_profile(client, token)
     campaign = await create_campaign(client, admin_token)
     campaign = await activate_campaign(client, admin_token, campaign["id"])
-    join = await client.post(
-        f"{API_PREFIX}/affiliates/join-campaign",
-        headers=auth_headers(token),
-        json={"campaign_id": campaign["id"]},
-    )
+    join = await join_campaign(client, token, campaign["id"])
     assert join.status_code == 201
     headers = await conversion_auth_headers(token, campaign["id"])
     return token, profile, campaign, headers
@@ -102,11 +99,7 @@ async def test_user_cannot_create_conversion_for_another_affiliate(client):
     )
     assert profile_a["id"] != profile_b["id"]
 
-    join_b = await client.post(
-        f"{API_PREFIX}/affiliates/join-campaign",
-        headers=auth_headers(token_b),
-        json={"campaign_id": campaign["id"]},
-    )
+    join_b = await join_campaign(client, token_b, campaign["id"])
     assert join_b.status_code == 201
 
     response = await client.post(
@@ -128,11 +121,7 @@ async def test_request_body_user_id_cannot_spoof_ownership(client):
     assert me_b.status_code == 200
     user_b_id = me_b.json()["id"]
 
-    join_b = await client.post(
-        f"{API_PREFIX}/affiliates/join-campaign",
-        headers=auth_headers(token_b),
-        json={"campaign_id": campaign["id"]},
-    )
+    join_b = await join_campaign(client, token_b, campaign["id"])
     assert join_b.status_code == 201
 
     response = await client.post(
@@ -216,11 +205,7 @@ async def test_cross_user_forbidden_does_not_leak_affiliate_payload(client):
     token_b, profile_b, _unused_campaign, _unused_headers = (
         await _enrolled_affiliate_and_campaign(client)
     )
-    join_b = await client.post(
-        f"{API_PREFIX}/affiliates/join-campaign",
-        headers=auth_headers(token_b),
-        json={"campaign_id": campaign["id"]},
-    )
+    join_b = await join_campaign(client, token_b, campaign["id"])
     assert join_b.status_code == 201
 
     response = await client.post(

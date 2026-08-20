@@ -9,6 +9,7 @@ import pytest
 from app.auth.security import decode_access_token
 from app.core.enums import WorkspaceMembershipRole
 from app.core.workspace import WORKSPACE_ID_HEADER
+from app.models.affiliate import AffiliateCampaign
 from app.models.workspace import Workspace, WorkspaceMembership
 from tests.conftest import SessionLocal
 from tests.test_api_endpoints import (
@@ -16,6 +17,7 @@ from tests.test_api_endpoints import (
     activate_campaign,
     add_workspace_member,
     auth_headers,
+    campaign_workspace_id,
     create_affiliate_profile,
     register_and_login,
 )
@@ -82,12 +84,30 @@ async def _create_campaign(client, token: str, workspace_id: str) -> dict:
 
 
 async def _enroll(client, affiliate_token: str, campaign_id: str) -> None:
+    workspace_id = await campaign_workspace_id(campaign_id)
     join = await client.post(
         f"{API_PREFIX}/affiliates/join-campaign",
-        headers=auth_headers(affiliate_token),
+        headers=_headers(affiliate_token, workspace_id),
         json={"campaign_id": campaign_id},
     )
     assert join.status_code == 201, join.text
+
+
+async def _seed_enrollment(affiliate_id: str, campaign_id: str) -> None:
+    """Create an AffiliateCampaign row without granting workspace membership.
+
+    Join-campaign now requires membership, so Conversion's membership check is
+    still covered by seeding enrollment independently of the join API.
+    """
+    async with SessionLocal() as session:
+        session.add(
+            AffiliateCampaign(
+                affiliate_id=UUID(affiliate_id),
+                campaign_id=UUID(campaign_id),
+                tracking_link="https://example.com/landing?ref=seeded",
+            )
+        )
+        await session.commit()
 
 
 async def _setup_affiliate_workspace(client, *, workspace_name: str):
@@ -295,7 +315,7 @@ async def test_cross_workspace_affiliate_campaign_combination_is_rejected(client
         client,
         workspace_name="Combo B",
     )
-    await _enroll(client, token_a, campaign_b["id"])
+    await _seed_enrollment(profile_a["id"], campaign_b["id"])
 
     _, admin_token = await register_and_login(client, role="admin")
     response = await client.post(

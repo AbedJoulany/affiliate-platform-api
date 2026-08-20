@@ -3,15 +3,28 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import BotPermissionStatus, QueueStatus
 from app.models.channel import TelegramChannel
 from app.models.queue import QueueItem, QueuePublishAttempt
+from app.models.workspace import Workspace
 
 VALID_CONTENT_HASH = "a" * 64
+
+
+async def _ensure_workspace_id(
+    session: AsyncSession,
+    workspace_id: UUID | None,
+) -> UUID:
+    if workspace_id is not None:
+        return workspace_id
+    workspace = Workspace(name=f"Publish test workspace {uuid4().hex[:8]}")
+    session.add(workspace)
+    await session.flush()
+    return workspace.id
 
 
 async def create_publishable_channel(
@@ -21,8 +34,9 @@ async def create_publishable_channel(
     is_active: bool = True,
     bot_permission_status: BotPermissionStatus = BotPermissionStatus.GRANTED,
     can_post_messages: bool = True,
-    workspace_id=None,
+    workspace_id: UUID | None = None,
 ) -> TelegramChannel:
+    workspace_id = await _ensure_workspace_id(session, workspace_id)
     channel = TelegramChannel(
         telegram_channel_id=telegram_channel_id or f"@ch-{uuid4().hex[:10]}",
         title="Publish Test Channel",
@@ -47,8 +61,11 @@ async def create_publishable_queue_item(
     content: str = "Publish me",
     status: QueueStatus = QueueStatus.QUEUED,
     title: str | None = "Publish test item",
-    workspace_id=None,
+    workspace_id: UUID | None = None,
 ) -> QueueItem:
+    if workspace_id is None and channel is not None:
+        workspace_id = channel.workspace_id
+    workspace_id = await _ensure_workspace_id(session, workspace_id)
     if channel is None:
         channel = await create_publishable_channel(session, workspace_id=workspace_id)
     item = QueueItem(

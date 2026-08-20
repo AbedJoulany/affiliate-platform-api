@@ -94,10 +94,10 @@ class QueueItem(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         nullable=True,
         index=True,
     )
-    workspace_id: Mapped[UUID | None] = mapped_column(
+    workspace_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True),
-        ForeignKey("workspaces.id", ondelete="SET NULL"),
-        nullable=True,
+        ForeignKey("workspaces.id", ondelete="RESTRICT"),
+        nullable=False,
         index=True,
     )
     image_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
@@ -107,7 +107,7 @@ class QueueItem(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     channel: Mapped["TelegramChannel | None"] = relationship("TelegramChannel")
     product: Mapped["Product | None"] = relationship("Product")
-    workspace: Mapped["Workspace | None"] = relationship(
+    workspace: Mapped["Workspace"] = relationship(
         "Workspace",
         foreign_keys=[workspace_id],
     )

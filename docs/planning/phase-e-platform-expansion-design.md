@@ -612,19 +612,28 @@ Deliberately split into small, independently verifiable tasks. **No task below i
 ### Task 7 — Product Decision Closeout: `Product`/`Affiliate` Scoping (conditional)
 
 - **Goal:** Resolve and implement whichever direction the §4.2/§7.1 product decisions land on for `Product` and `Affiliate`.
-- **Scope/files/tests:** Not specified here — genuinely conditional on a product decision this document cannot make (per instruction, "do not invent architecture merely because it is common").
-- **Dependencies:** Task 1, Task 3, and the outstanding product decisions themselves.
-- **Explicit non-goals:** Must not proceed without an explicit product decision recorded first.
-- **Acceptance criteria:** N/A until scoped.
+- **Locked decisions (2026-08-19):** **Product remains a global shared catalog** (no `workspace_id`; `aliexpress_product_id` stays globally unique). **Affiliate remains a global user-owned 1:1 profile** (no `workspace_id`; unique `user_id` and `referral_code`). `POST /affiliates/join-campaign` is workspace-scoped via `X-Workspace-Id` and `CampaignRepository.get_by_id_in_workspace`.
+- **Scope/files/tests:** `app/api/v1/affiliates.py`, `app/services/affiliate.py`, `tests/test_affiliate_workspace_isolation.py`; docs `06` / `10`. No migration.
+- **Dependencies:** Task 1, Task 3, Task 4 (`get_by_id_in_workspace`), and the locked decisions above.
+- **Explicit non-goals:** No Product/Affiliate `workspace_id`. No Queue product-workspace check. No Conversion redesign. No Task 8 constraint closeout. No Task 9 frontend plumbing.
+- **Acceptance criteria:** Join-campaign isolation tests pass; Product catalog remains usable without `X-Workspace-Id`; existing Product/Affiliate/Campaign/Conversion/Queue tests remain green.
 
 ### Task 8 — Multi-Workspace NOT NULL / Constraint Closeout
 
-- **Goal:** Flip `workspace_id` columns to NOT NULL and land the composite unique constraints from §7.4, once all rows are confirmed backfilled (via Task 2's bootstrap workspace).
-- **Dependencies:** Tasks 2, 4, 5, 6 (and 7 if scoped).
-- **Database changes:** Second-stage migration per §7.6's two-step plan.
-- **Tests:** Migration up/down test coverage; full backend suite regression.
-- **Explicit non-goals:** No new feature behavior — pure constraint tightening.
-- **Acceptance criteria:** Migration applies cleanly to a backfilled database; full suite passes.
+- **Goal:** Flip tenant `workspace_id` columns to NOT NULL after Stage-1 nullable columns.
+- **Shipped (2026-08-19):** Constraint closeout only — not a tenancy redesign.
+  - `campaigns.workspace_id`, `queue_items.workspace_id`, `telegram_channels.workspace_id` are **NOT NULL**.
+  - FKs use **ON DELETE RESTRICT** (Stage-1 `SET NULL` is incompatible with NOT NULL).
+  - **No automatic backfill.** Migration `013` counts NULL rows on those three tables and **aborts** with table names and counts if any remain. Rows are not assigned to the bootstrap workspace and are not deleted.
+  - `telegram_channel_id` remains **globally unique** (not `(workspace_id, telegram_channel_id)`).
+  - No `workspace_id` on Product, Affiliate, AffiliateCampaign, Conversion, or QueuePublishAttempt.
+  - Product remains a global shared catalog; Affiliate remains a global user-owned 1:1 profile (Task 7).
+  - `conversions.external_order_id` remains globally unique.
+- **Dependencies:** Tasks 2, 4, 5, 6, 7.
+- **Database changes:** Alembic `013` (revises `012`): NULL check → replace FKs → `SET NOT NULL`. Downgrade restores nullable + `ON DELETE SET NULL` without deleting data.
+- **Tests:** `tests/test_workspace_not_null.py`; existing isolation and publishing suites.
+- **Explicit non-goals:** No new feature behavior; no Celery/SSE/frontend/Task 9; no composite Telegram uniqueness; no silent backfill.
+- **Acceptance criteria:** Migration applies when every tenant row already has a workspace; fails closed otherwise; full suite passes.
 
 ### Task 9 — Frontend Workspace Context Plumbing
 

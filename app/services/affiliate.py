@@ -64,9 +64,14 @@ class AffiliateService:
 
         return await self.affiliate_repo.update(affiliate)
 
-    async def join_campaign(self, user: User, campaign_id: UUID) -> AffiliateCampaign:
+    async def join_campaign(
+        self,
+        user: User,
+        campaign_id: UUID,
+        workspace_id: UUID,
+    ) -> AffiliateCampaign:
         affiliate = await self.get_my_profile(user)
-        campaign = await self.campaign_repo.get_by_id(campaign_id)
+        campaign = await self.campaign_repo.get_by_id_in_workspace(campaign_id, workspace_id)
         if not campaign:
             raise NotFoundError("Campaign not found")
         if campaign.status != CampaignStatus.ACTIVE:

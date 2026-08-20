@@ -28,10 +28,10 @@ class Campaign(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         nullable=True,
         index=True,
     )
-    workspace_id: Mapped[UUID | None] = mapped_column(
+    workspace_id: Mapped[UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("workspaces.id", ondelete="SET NULL"),
-        nullable=True,
+        ForeignKey("workspaces.id", ondelete="RESTRICT"),
+        nullable=False,
         index=True,
     )
     status: Mapped[CampaignStatus] = mapped_column(
@@ -46,7 +46,7 @@ class Campaign(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     advertiser: Mapped["User | None"] = relationship("User")
-    workspace: Mapped["Workspace | None"] = relationship(
+    workspace: Mapped["Workspace"] = relationship(
         "Workspace",
         foreign_keys=[workspace_id],
     )

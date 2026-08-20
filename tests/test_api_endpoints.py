@@ -85,6 +85,16 @@ async def conversion_auth_headers(token: str, campaign_id: str) -> dict[str, str
     }
 
 
+async def join_campaign(client, token: str, campaign_id: str):
+    """Enroll the caller's affiliate in a campaign using its workspace header."""
+    headers = await conversion_auth_headers(token, campaign_id)
+    return await client.post(
+        f"{API_PREFIX}/affiliates/join-campaign",
+        headers=headers,
+        json={"campaign_id": campaign_id},
+    )
+
+
 @pytest.mark.asyncio
 async def test_public_registration_always_creates_affiliate_and_rejects_role(client):
     email = f"public-{uuid4().hex[:8]}@example.com"
@@ -296,20 +306,12 @@ async def test_affiliate_join_campaign_workflow(client):
     campaign = await create_campaign(client, admin_token)
     campaign = await activate_campaign(client, admin_token, campaign["id"])
 
-    join_resp = await client.post(
-        f"{API_PREFIX}/affiliates/join-campaign",
-        headers=auth_headers(affiliate_token),
-        json={"campaign_id": campaign["id"]},
-    )
+    join_resp = await join_campaign(client, affiliate_token, campaign["id"])
     assert join_resp.status_code == 201
     assert join_resp.json()["campaign_id"] == campaign["id"]
     assert "tracking_link" in join_resp.json()
 
-    duplicate_resp = await client.post(
-        f"{API_PREFIX}/affiliates/join-campaign",
-        headers=auth_headers(affiliate_token),
-        json={"campaign_id": campaign["id"]},
-    )
+    duplicate_resp = await join_campaign(client, affiliate_token, campaign["id"])
     assert duplicate_resp.status_code == 409
 
 
@@ -384,11 +386,7 @@ async def test_conversion_endpoints_and_admin_status_update(client):
     campaign = await create_campaign(client, admin_token)
     campaign = await activate_campaign(client, admin_token, campaign["id"])
 
-    join_resp = await client.post(
-        f"{API_PREFIX}/affiliates/join-campaign",
-        headers=auth_headers(affiliate_token),
-        json={"campaign_id": campaign["id"]},
-    )
+    join_resp = await join_campaign(client, affiliate_token, campaign["id"])
     assert join_resp.status_code == 201
 
     conversion_headers = await conversion_auth_headers(affiliate_token, campaign["id"])

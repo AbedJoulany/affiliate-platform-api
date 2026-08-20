@@ -4,7 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_roles
+from app.api.deps import HttpWorkspaceId, get_current_user, require_roles
 from app.core.database import get_db
 from app.core.enums import UserRole
 from app.models.user import User
@@ -65,10 +65,15 @@ async def update_affiliate_profile(
 async def join_campaign(
     payload: AffiliateCampaignJoin,
     current_user: Annotated[User, Depends(get_current_user)],
+    workspace_id: HttpWorkspaceId,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> AffiliateCampaignRead:
     try:
-        return await AffiliateService(db).join_campaign(current_user, payload.campaign_id)
+        return await AffiliateService(db).join_campaign(
+            current_user,
+            payload.campaign_id,
+            workspace_id,
+        )
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 

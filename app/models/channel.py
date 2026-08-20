@@ -22,10 +22,10 @@ class TelegramChannel(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         index=True,
         nullable=False,
     )
-    workspace_id: Mapped[UUID | None] = mapped_column(
+    workspace_id: Mapped[UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("workspaces.id", ondelete="SET NULL"),
-        nullable=True,
+        ForeignKey("workspaces.id", ondelete="RESTRICT"),
+        nullable=False,
         index=True,
     )
     title: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -45,7 +45,7 @@ class TelegramChannel(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     permission_detail: Mapped[str | None] = mapped_column(String(512), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
-    workspace: Mapped["Workspace | None"] = relationship(
+    workspace: Mapped["Workspace"] = relationship(
         "Workspace",
         foreign_keys=[workspace_id],
     )

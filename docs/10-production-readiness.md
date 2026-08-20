@@ -1,6 +1,6 @@
 # Production Readiness and Release Runbook
 
-**Document Version:** 2.7  
+**Document Version:** 2.9  
 **Last Updated:** 2026-08-19
 
 Release gate supplement to documents 01–09. Defines security boundaries, environment configuration, CI/CD, deployment checklists, and architectural requirements.
@@ -14,6 +14,10 @@ Release gate supplement to documents 01–09. Defines security boundaries, envir
 **2026-08-13 revision (Phase D closeout):** Authentication & public-endpoint security COMPLETE. §6 / §9.6 / §10 updated for JWT validation, refresh tokens, route rate limits, and conversion authorization. Design: [planning/phase-d-auth-security-design.md](./planning/phase-d-auth-security-design.md).
 
 **2026-08-14 revision (Form & schema validation closeout):** §9.4 updated to the shipped frontend Zod/RHF standardization. UX/input validation only — not a security boundary; backend contracts unchanged.
+
+**2026-08-19 revision (Phase E Task 7):** Product remains a global shared catalog; Affiliate remains a global user-owned 1:1 profile. `POST /affiliates/join-campaign` requires `X-Workspace-Id`. See §6 tenancy row.
+
+**2026-08-19 revision (Phase E Task 8):** Stage-1 nullable `workspace_id` on campaigns, queue items, and Telegram channels is closed (migration `013`: NOT NULL, `ON DELETE RESTRICT`, fail-closed if NULL rows remain). No automatic bootstrap-workspace backfill.
 
 ---
 
@@ -122,7 +126,7 @@ Execute with staging admin:
 | Rate limiting | Redis fixed-window via FastAPI route dependencies (not middleware); fail-open; policies below |
 | Conversion create | Authenticated + affiliate ownership (or ADMIN); 401/403; amount integrity still client/PENDING review |
 | Admin operations | Import, delete — backend + UI role check |
-| Tenancy | Queue/channel HTTP APIs and dashboard queue/channel aggregates are **workspace-scoped** via `X-Workspace-Id` (Stage 1: nullable `workspace_id`, no backfill). SSE filters by event `workspace_id`. Celery workers remain global. Product data is still not workspace-scoped. |
+| Tenancy | Queue/channel HTTP APIs and dashboard queue/channel aggregates are **workspace-scoped** via `X-Workspace-Id`. `campaigns.workspace_id`, `queue_items.workspace_id`, and `telegram_channels.workspace_id` are **NOT NULL** with `ON DELETE RESTRICT` (migration `013`). Upgrade **fails closed** if any of those columns are still NULL; there is **no** automatic bootstrap-workspace backfill. `telegram_channel_id` remains globally unique. SSE filters by event `workspace_id`. Celery workers remain global. Product remains a **global shared catalog** (no `workspace_id`). Affiliate remains a **global user-owned 1:1 profile** (no `workspace_id`). `POST /affiliates/join-campaign` requires `X-Workspace-Id` and enrolls only into a campaign in that workspace. |
 | Public / unauthenticated | Discovery read, product list remain public; `POST /conversions` is **no longer** anonymous |
 | `/ready` | Dependency state only (database + redis) — no secrets; not Celery liveness |
 | `/worker/health` | Celery Beat→worker pipeline heartbeat only — no secrets; not task-failure metrics |
