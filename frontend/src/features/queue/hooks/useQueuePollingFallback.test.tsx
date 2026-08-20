@@ -1,8 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, renderHook, waitFor } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { session } from "@/services/session";
+import { setActiveWorkspaceId } from "@/lib/workspace";
+import { WORKSPACE_A } from "@/test/workspace";
 import { QueueRealtimePollingContext } from "../hooks/QueueRealtimePollingContext";
 import { queueKey, useQueue } from "../hooks/useQueue";
 import { useQueueRealtimeInvalidation } from "../hooks/useQueueRealtimeInvalidation";
@@ -43,6 +45,10 @@ function realtimeWrapper(client: QueryClient) {
     return createElement(QueryClientProvider, { client }, children);
   };
 }
+
+beforeEach(() => {
+  setActiveWorkspaceId(WORKSPACE_A);
+});
 
 afterEach(() => {
   cleanup();
@@ -125,7 +131,7 @@ describe("SSE → polling fallback", () => {
 
     await waitFor(() => expect(result.current.status).toBe("connected"));
     expect(result.current.pollingEnabled).toBe(false);
-    expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: queueKey });
+    expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: queueKey(WORKSPACE_A) });
 
     captured!.onError?.({
       kind: "network",
@@ -144,7 +150,7 @@ describe("SSE → polling fallback", () => {
     await waitFor(() => expect(result.current.status).toBe("connected"));
     expect(result.current.pollingEnabled).toBe(false);
     await waitFor(() =>
-      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: queueKey }),
+      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: queueKey(WORKSPACE_A) }),
     );
     expect(invalidateQueries).toHaveBeenCalledTimes(1);
     unmount();
@@ -169,7 +175,7 @@ describe("SSE → polling fallback", () => {
 
     await waitFor(() => expect(result.current.status).toBe("connected"));
     expect(result.current.pollingEnabled).toBe(false);
-    expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: queueKey });
+    expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: queueKey(WORKSPACE_A) });
     unmount();
   });
 
@@ -202,7 +208,7 @@ describe("SSE → polling fallback", () => {
     await waitFor(() => expect(off.result.current.isSuccess).toBe(true));
     const offObserver = clientOff
       .getQueryCache()
-      .find({ queryKey: [...queueKey, undefined, 200, 0] })
+      .find({ queryKey: [...queueKey(WORKSPACE_A), undefined, 200, 0] })
       ?.observers[0];
     expect(offObserver?.options.refetchInterval).toBe(false);
     off.unmount();
@@ -214,7 +220,7 @@ describe("SSE → polling fallback", () => {
     await waitFor(() => expect(on.result.current.isSuccess).toBe(true));
     const onQuery = clientOn
       .getQueryCache()
-      .find({ queryKey: [...queueKey, undefined, 200, 0] });
+      .find({ queryKey: [...queueKey(WORKSPACE_A), undefined, 200, 0] });
     const onObserver = onQuery?.observers[0];
     expect(typeof onObserver?.options.refetchInterval).toBe("function");
     expect(

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { session } from "@/services/session";
+import { useActiveWorkspaceId } from "@/lib/workspace";
 import {
   createQueueEventStream,
   type QueueSseError,
@@ -42,6 +43,7 @@ export function useQueueEventStream(
   options: UseQueueEventStreamOptions = {},
 ): UseQueueEventStreamResult {
   const { enabled = true } = options;
+  const workspaceId = useActiveWorkspaceId();
   const onEventRef = useRef(options.onEvent);
   const onErrorRef = useRef(options.onError);
   onEventRef.current = options.onEvent;
@@ -58,7 +60,7 @@ export function useQueueEventStream(
     }
 
     const token = session.getAccessToken();
-    if (!token) {
+    if (!token || !workspaceId) {
       setStatus("error");
       return;
     }
@@ -69,6 +71,7 @@ export function useQueueEventStream(
 
     void createQueueEventStream({
       token,
+      workspaceId,
       signal: controller.signal,
       onOpen: () => {
         if (!active || controller.signal.aborted) return;
@@ -108,7 +111,7 @@ export function useQueueEventStream(
       active = false;
       controller.abort();
     };
-  }, [enabled]);
+  }, [enabled, workspaceId]);
 
   return { status };
 }

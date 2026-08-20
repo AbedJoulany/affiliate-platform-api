@@ -2,7 +2,17 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { getDashboardOverview } from "../api/dashboard.api";
+import { useActiveWorkspaceId, workspaceScopedQueryKey } from "@/lib/workspace";
+
+export const dashboardKey = (workspaceId: string) =>
+  workspaceScopedQueryKey("dashboard", workspaceId);
 
 export function useDashboard() {
-  return useQuery({ queryKey: ["dashboard"], queryFn: getDashboardOverview, retry: false });
+  const workspaceId = useActiveWorkspaceId();
+  return useQuery({
+    queryKey: workspaceId ? dashboardKey(workspaceId) : (["dashboard", "none"] as const),
+    queryFn: getDashboardOverview,
+    enabled: Boolean(workspaceId),
+    retry: false,
+  });
 }

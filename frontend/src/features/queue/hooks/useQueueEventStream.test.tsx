@@ -1,6 +1,8 @@
 import { cleanup, renderHook, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { session } from "@/services/session";
+import { setActiveWorkspaceId } from "@/lib/workspace";
+import { WORKSPACE_A, WORKSPACE_B } from "@/test/workspace";
 import { useQueueEventStream } from "./useQueueEventStream";
 
 vi.mock("../lib/sse-client", () => ({
@@ -10,6 +12,10 @@ vi.mock("../lib/sse-client", () => ({
 import { createQueueEventStream } from "../lib/sse-client";
 
 const createStreamMock = vi.mocked(createQueueEventStream);
+
+beforeEach(() => {
+  setActiveWorkspaceId(WORKSPACE_A);
+});
 
 afterEach(() => {
   cleanup();
@@ -34,6 +40,7 @@ describe("useQueueEventStream", () => {
     });
 
     expect(createStreamMock.mock.calls[0][0].token).toBe("hook-token");
+    expect(createStreamMock.mock.calls[0][0].workspaceId).toBe(WORKSPACE_A);
 
     await waitFor(() => {
       expect(result.current.status).toBe("connected");
@@ -75,5 +82,30 @@ describe("useQueueEventStream", () => {
     );
     expect(result.current.status).toBe("disconnected");
     expect(createStreamMock).not.toHaveBeenCalled();
+  });
+
+  it("aborts workspace A and opens workspace B when the active workspace changes", async () => {
+    session.setAccessToken("hook-token");
+    const signals: AbortSignal[] = [];
+    createStreamMock.mockImplementation(async (options) => {
+      signals.push(options.signal);
+      options.onOpen?.();
+      await new Promise<void>((resolve) => {
+        options.signal.addEventListener("abort", () => resolve(), { once: true });
+      });
+    });
+
+    const { result } = renderHook(() => useQueueEventStream());
+    await waitFor(() => expect(result.current.status).toBe("connected"));
+    expect(createStreamMock.mock.calls[0][0].workspaceId).toBe(WORKSPACE_A);
+
+    setActiveWorkspaceId(WORKSPACE_B);
+
+    await waitFor(() => expect(signals[0]?.aborted).toBe(true));
+    await waitFor(() => expect(createStreamMock).toHaveBeenCalledTimes(2));
+    expect(createStreamMock.mock.calls[1][0].workspaceId).toBe(WORKSPACE_B);
+    await waitFor(() => expect(result.current.status).toBe("connected"));
+    expect(signals[1]?.aborted).toBe(false);
+    expect(signals.filter((signal) => !signal.aborted)).toHaveLength(1);
   });
 });

@@ -3,6 +3,8 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { session } from "@/services/session";
+import { setActiveWorkspaceId, getActiveWorkspaceId } from "@/lib/workspace";
+import { WORKSPACE_A } from "@/test/workspace";
 import type { TokenResponse } from "../types/api";
 
 const replace = vi.fn();
@@ -61,6 +63,7 @@ describe("useLogin / useLogout", () => {
 
   it("calls POST logout with the refresh token and clears local state", async () => {
     session.setTokens("access-login", "refresh-login");
+    setActiveWorkspaceId(WORKSPACE_A);
     logoutMock.mockResolvedValue(undefined);
 
     const { result } = renderHook(() => useLogout(), { wrapper });
@@ -69,6 +72,7 @@ describe("useLogin / useLogout", () => {
     await waitFor(() => expect(logoutMock).toHaveBeenCalledWith("refresh-login"));
     await waitFor(() => expect(session.getAccessToken()).toBeNull());
     expect(session.getRefreshToken()).toBeNull();
+    expect(getActiveWorkspaceId()).toBeNull();
     expect(replace).toHaveBeenCalledWith("/login");
   });
 

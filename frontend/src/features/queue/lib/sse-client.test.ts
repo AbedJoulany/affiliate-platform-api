@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { WORKSPACE_A } from "@/test/workspace";
 import {
   computeReconnectDelayMs,
   createQueueEventStream,
@@ -73,6 +74,7 @@ async function connectAndCollect(
   const onOpen = vi.fn();
   const done = createQueueEventStream({
     token: "test-token",
+    workspaceId: WORKSPACE_A,
     signal: controller.signal,
     onMessage,
     onOpen,
@@ -201,6 +203,7 @@ describe("createQueueEventStream — client behavior", () => {
 
     await createQueueEventStream({
       token: "jwt-abc",
+      workspaceId: WORKSPACE_A,
       signal: controller.signal,
       lastEventId: "prev-event-id",
       onMessage: vi.fn(),
@@ -211,8 +214,25 @@ describe("createQueueEventStream — client behavior", () => {
     const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     const headers = init.headers as Record<string, string>;
     expect(headers.Authorization).toBe("Bearer jwt-abc");
+    expect(headers["X-Workspace-Id"]).toBe(WORKSPACE_A);
     expect(headers["Last-Event-ID"]).toBe("prev-event-id");
     expect(headers.Accept).toBe("text/event-stream");
+  });
+
+  it("does not send an empty or undefined workspace header when none is selected", async () => {
+    const fetchImpl = vi.fn();
+    const onError = vi.fn();
+    await createQueueEventStream({
+      token: "jwt-abc",
+      signal: new AbortController().signal,
+      onMessage: vi.fn(),
+      onError,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "auth", fatal: true }),
+    );
   });
 
   it("forwards last event id from a prior message on reconnect", async () => {
@@ -231,12 +251,14 @@ describe("createQueueEventStream — client behavior", () => {
       ];
       const headers = init.headers as Record<string, string>;
       expect(headers["Last-Event-ID"]).toBe("cursor-42");
+      expect(headers["X-Workspace-Id"]).toBe(WORKSPACE_A);
       controller.abort();
       return mockOk(streamFromTextChunks([]));
     });
 
     const done = createQueueEventStream({
       token: "jwt-abc",
+      workspaceId: WORKSPACE_A,
       signal: controller.signal,
       onMessage: vi.fn(),
       fetchImpl: fetchImpl as unknown as typeof fetch,
@@ -267,6 +289,7 @@ describe("createQueueEventStream — client behavior", () => {
 
     const done = createQueueEventStream({
       token: "jwt-abc",
+      workspaceId: WORKSPACE_A,
       signal: controller.signal,
       onMessage: vi.fn(),
       onReconnect,
@@ -290,6 +313,7 @@ describe("createQueueEventStream — client behavior", () => {
 
     await createQueueEventStream({
       token: "expired",
+      workspaceId: WORKSPACE_A,
       signal: controller.signal,
       onMessage: vi.fn(),
       onError,
@@ -319,6 +343,7 @@ describe("createQueueEventStream — client behavior", () => {
 
     const done = createQueueEventStream({
       token: "jwt-abc",
+      workspaceId: WORKSPACE_A,
       signal: controller.signal,
       onMessage: vi.fn(),
       fetchImpl: fetchImpl as unknown as typeof fetch,

@@ -7,6 +7,7 @@ import {
   createDebouncedQueueEventInvalidator,
 } from "../lib/queue-event-invalidation";
 import { queueKey } from "./useQueue";
+import { useActiveWorkspaceId } from "@/lib/workspace";
 import {
   useQueueEventStream,
   type QueueEventStreamStatus,
@@ -39,6 +40,7 @@ export function useQueueRealtimeInvalidation(
   const { enabled = true, debounceMs = QUEUE_EVENT_INVALIDATION_DEBOUNCE_MS } =
     options;
   const queryClient = useQueryClient();
+  const workspaceId = useActiveWorkspaceId();
   /**
    * Reconnect recovery must ignore a stale `connected` status that can linger
    * across StrictMode remounts (stream cleanup no longer setStates after abort).
@@ -57,14 +59,17 @@ export function useQueueRealtimeInvalidation(
   useEffect(() => () => invalidator.dispose(), [invalidator]);
 
   useEffect(() => {
+    sawConnectingRef.current = false;
+    establishedConnectionRef.current = false;
+    setPollingEnabled(false);
     return () => {
       sawConnectingRef.current = false;
       establishedConnectionRef.current = false;
     };
-  }, []);
+  }, [workspaceId]);
 
   const { status } = useQueueEventStream({
-    enabled,
+    enabled: enabled && Boolean(workspaceId),
     onEvent: (event) => {
       invalidator.handle(event);
     },
@@ -87,11 +92,13 @@ export function useQueueRealtimeInvalidation(
     }
 
     // Reconnect recovery: refill any gap while disconnected (no event replay).
-    void queryClient.invalidateQueries({ queryKey: queueKey });
-  }, [status, queryClient]);
+    if (workspaceId) {
+      void queryClient.invalidateQueries({ queryKey: queueKey(workspaceId) });
+    }
+  }, [status, queryClient, workspaceId]);
 
   useEffect(() => {
-    if (!enabled) {
+    if (!enabled || !workspaceId) {
       sawConnectingRef.current = false;
       establishedConnectionRef.current = false;
       setPollingEnabled(false);
@@ -111,7 +118,7 @@ export function useQueueRealtimeInvalidation(
     // `connecting` after a previously established live session = reconnecting.
     // Initial connect (never established) must not start fallback polling.
     setPollingEnabled(establishedConnectionRef.current);
-  }, [status, enabled]);
+  }, [status, enabled, workspaceId]);
 
   return { status, pollingEnabled };
 }

@@ -1,6 +1,12 @@
 import { expect, test } from "@playwright/test";
 
 test("logs in and renders typed dashboard fixture", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.sessionStorage.setItem(
+      "affiliate_active_workspace_id",
+      "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+    );
+  });
   await page.route("**/api/v1/auth/login", async (route) => {
     await route.fulfill({
       json: {

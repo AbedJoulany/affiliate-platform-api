@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { session } from "./session";
+import { getActiveWorkspaceId, setActiveWorkspaceId } from "@/lib/workspace";
+import { WORKSPACE_A } from "@/test/workspace";
 
 afterEach(() => {
   session.clear();
@@ -23,9 +25,11 @@ describe("session token storage", () => {
 
   it("clears both tokens and the presence cookie", () => {
     session.setTokens("access-1", "refresh-1");
+    setActiveWorkspaceId(WORKSPACE_A);
     session.clear();
     expect(session.getAccessToken()).toBeNull();
     expect(session.getRefreshToken()).toBeNull();
+    expect(getActiveWorkspaceId()).toBeNull();
     expect(document.cookie).not.toContain("affiliate_access_token=1");
   });
 });

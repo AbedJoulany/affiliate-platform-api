@@ -1,8 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, renderHook, waitFor } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { session } from "@/services/session";
+import { setActiveWorkspaceId } from "@/lib/workspace";
+import { WORKSPACE_A } from "@/test/workspace";
 import { queueKey } from "../hooks/useQueue";
 import { useQueueRealtimeInvalidation } from "../hooks/useQueueRealtimeInvalidation";
 import type { CreateQueueEventStreamOptions } from "../lib/sse-client";
@@ -14,6 +16,10 @@ vi.mock("../lib/sse-client", () => ({
 import { createQueueEventStream } from "../lib/sse-client";
 
 const createStreamMock = vi.mocked(createQueueEventStream);
+
+beforeEach(() => {
+  setActiveWorkspaceId(WORKSPACE_A);
+});
 
 function wrapper(client: QueryClient) {
   return function Wrapper({ children }: { children: ReactNode }) {
@@ -50,7 +56,7 @@ describe("F4 — reconnect recovery refresh", () => {
     );
 
     await waitFor(() => expect(result.current.status).toBe("connected"));
-    expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: queueKey });
+    expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: queueKey(WORKSPACE_A) });
 
     captured.options?.onReconnect?.(1, 10);
     await waitFor(() => expect(result.current.status).toBe("connecting"));
@@ -58,7 +64,7 @@ describe("F4 — reconnect recovery refresh", () => {
     await waitFor(() => expect(result.current.status).toBe("connected"));
 
     await waitFor(() =>
-      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: queueKey }),
+      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: queueKey(WORKSPACE_A) }),
     );
 
     unmount();

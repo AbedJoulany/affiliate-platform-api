@@ -1,4 +1,10 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from "axios";
+import {
+  WORKSPACE_HEADER,
+  getActiveWorkspaceId,
+  isWorkspaceScopedPath,
+  requestPathname,
+} from "@/lib/workspace";
 import { session } from "@/services/session";
 
 declare module "axios" {
@@ -13,7 +19,23 @@ declare module "axios" {
 export interface ApiError {
   status: number;
   message: string;
+  code?: string;
   validation?: ReadonlyArray<{ loc: ReadonlyArray<string | number>; msg: string }>;
+}
+
+export const MISSING_WORKSPACE_ERROR: ApiError = {
+  status: 0,
+  code: "missing_workspace",
+  message: "لم يتم تحديد مساحة العمل.",
+};
+
+export function isMissingWorkspaceError(error: unknown): error is ApiError {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as ApiError).code === "missing_workspace"
+  );
 }
 
 interface ErrorBody {
@@ -42,15 +64,45 @@ export const apiClient = axios.create({
 let inFlightRefresh: Promise<void> | null = null;
 
 function requestPath(url: string | undefined): string {
-  if (!url) return "";
-  try {
-    const parsed = url.startsWith("http://") || url.startsWith("https://")
-      ? new URL(url)
-      : new URL(url, "http://local.invalid");
-    return parsed.pathname;
-  } catch {
-    return url;
+  return requestPathname(url);
+}
+
+function setHeader(
+  config: InternalAxiosRequestConfig,
+  name: string,
+  value: string,
+): void {
+  const headers = config.headers;
+  if (headers && typeof headers.set === "function") {
+    headers.set(name, value);
+    return;
   }
+  if (headers) {
+    (headers as Record<string, string>)[name] = value;
+  }
+}
+
+function deleteHeader(config: InternalAxiosRequestConfig, name: string): void {
+  const headers = config.headers;
+  if (!headers) return;
+  if (typeof headers.delete === "function") {
+    headers.delete(name);
+    return;
+  }
+  delete (headers as Record<string, unknown>)[name];
+}
+
+function applyWorkspaceHeader(config: InternalAxiosRequestConfig): void {
+  if (!isWorkspaceScopedPath(config.url)) {
+    deleteHeader(config, WORKSPACE_HEADER);
+    return;
+  }
+  const workspaceId = getActiveWorkspaceId();
+  if (!workspaceId) {
+    deleteHeader(config, WORKSPACE_HEADER);
+    throw MISSING_WORKSPACE_ERROR;
+  }
+  setHeader(config, WORKSPACE_HEADER, workspaceId);
 }
 
 function isAuthSessionRequest(config: AuthRequestConfig | undefined): boolean {
@@ -113,13 +165,22 @@ function refreshAccessToken(): Promise<void> {
 apiClient.interceptors.request.use((config) => {
   const token = session.getAccessToken();
   if (token) config.headers.Authorization = `Bearer ${token}`;
+  try {
+    applyWorkspaceHeader(config);
+  } catch (error) {
+    return Promise.reject(error);
+  }
   return config;
 });
 
 apiClient.interceptors.response.use(
   (response) => response,
-  async (error: AxiosError<ErrorBody>) => {
-    const normalized = normalizeAxiosError(error);
+  async (error: unknown) => {
+    if (!axios.isAxiosError(error)) {
+      return Promise.reject(error);
+    }
+
+    const normalized = normalizeAxiosError(error as AxiosError<ErrorBody>);
     const status = normalized.status;
     const original = error.config as AuthRequestConfig | undefined;
 

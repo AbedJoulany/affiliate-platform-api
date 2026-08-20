@@ -2,6 +2,8 @@ import { AxiosError, type InternalAxiosRequestConfig } from "axios";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { apiClient } from "./api-client";
 import { session } from "./session";
+import { setActiveWorkspaceId } from "@/lib/workspace";
+import { WORKSPACE_A } from "@/test/workspace";
 
 type MockResult = { status: number; data?: unknown };
 
@@ -46,6 +48,7 @@ function installAdapter(
 beforeEach(() => {
   session.clear();
   session.setTokens("access-old", "refresh-old");
+  setActiveWorkspaceId(WORKSPACE_A);
 });
 
 afterEach(() => {

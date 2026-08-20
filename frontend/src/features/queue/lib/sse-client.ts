@@ -19,6 +19,7 @@
  */
 
 import type { QueueEventEnvelope } from "../types/events";
+import { WORKSPACE_HEADER, isUsableWorkspaceId } from "@/lib/workspace";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -44,6 +45,8 @@ export type CreateQueueEventStreamOptions = {
   onReconnect?: (attempt: number, delayMs: number) => void;
   url?: string;
   lastEventId?: string;
+  /** Active tenant workspace; required for `X-Workspace-Id`. */
+  workspaceId?: string;
   /** Override for tests. */
   fetchImpl?: typeof fetch;
   initialBackoffMs?: number;
@@ -97,7 +100,17 @@ export async function createQueueEventStream(
     initialBackoffMs = DEFAULT_INITIAL_BACKOFF_MS,
     maxBackoffMs = DEFAULT_MAX_BACKOFF_MS,
     random = Math.random,
+    workspaceId,
   } = options;
+
+  if (!isUsableWorkspaceId(workspaceId)) {
+    onError?.({
+      kind: "auth",
+      message: "لم يتم تحديد مساحة العمل.",
+      fatal: true,
+    });
+    return;
+  }
 
   let lastEventId = initialLastEventId;
   let consecutiveFailures = 0;
@@ -123,6 +136,7 @@ export async function createQueueEventStream(
       const headers: Record<string, string> = {
         Accept: "text/event-stream",
         Authorization: `Bearer ${token}`,
+        [WORKSPACE_HEADER]: workspaceId,
       };
       if (lastEventId) {
         headers["Last-Event-ID"] = lastEventId;
