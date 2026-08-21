@@ -7,6 +7,7 @@ from typing import Protocol
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import BotPermissionStatus, QueueStatus
@@ -237,6 +238,7 @@ class TelegramPublishingService:
                 exc,
                 terminal=terminal,
                 workspace_id=item.workspace_id,
+                queue_id=item.id,
             )
             raise
 
@@ -400,17 +402,42 @@ class TelegramPublishingService:
             content_hash=content_hash,
         )
 
+    async def _persist_attempt_outcome(
+        self,
+        attempt: QueuePublishAttempt,
+        *,
+        values: dict,
+    ) -> QueuePublishAttempt:
+        """Write attempt outcome columns without touching ``queue_id``.
+
+        ORM flush of a ``delete-orphan`` child after the claim commit can emit
+        ``UPDATE ... SET queue_id=NULL``, which violates NOT NULL. A targeted
+        UPDATE keeps the FK stable.
+        """
+        await self.session.execute(
+            update(QueuePublishAttempt)
+            .where(QueuePublishAttempt.id == attempt.id)
+            .values(**values)
+        )
+        await self.session.flush()
+        await self.session.refresh(attempt)
+        return attempt
+
     async def _mark_attempt_succeeded(
         self,
         attempt: QueuePublishAttempt,
         result: TelegramPublishResult,
     ) -> QueuePublishAttempt:
-        attempt.status = "succeeded"
-        attempt.provider_chat_id = result.chat_id
-        attempt.provider_message_id = result.message_id
-        attempt.error_code = None
-        attempt.error_message = None
-        return await self.attempt_repo.update(attempt)
+        return await self._persist_attempt_outcome(
+            attempt,
+            values={
+                "status": "succeeded",
+                "provider_chat_id": result.chat_id,
+                "provider_message_id": result.message_id,
+                "error_code": None,
+                "error_message": None,
+            },
+        )
 
     async def _mark_attempt_failed(
         self,
@@ -419,6 +446,7 @@ class TelegramPublishingService:
         *,
         terminal: bool = False,
         workspace_id: UUID | None = None,
+        queue_id: UUID | None = None,
     ) -> QueuePublishAttempt:
         """Persist a failed attempt. Never modifies QueueItem.status.
 
@@ -428,25 +456,34 @@ class TelegramPublishingService:
         """
         underlying_code = self._error_code_for(exc)
         underlying_message = self._error_message_for(exc)
-        attempt.status = "failed"
         if terminal:
-            attempt.error_code = DEAD_LETTER_ERROR_CODE
-            attempt.error_message = f"{underlying_code}: {underlying_message}"
+            error_code = DEAD_LETTER_ERROR_CODE
+            error_message = f"{underlying_code}: {underlying_message}"
         else:
-            attempt.error_code = underlying_code
-            attempt.error_message = underlying_message
-        attempt.provider_chat_id = None
-        attempt.provider_message_id = None
-        attempt = await self.attempt_repo.update(attempt)
+            error_code = underlying_code
+            error_message = underlying_message
+        event_queue_id = queue_id or attempt.queue_id
+        if event_queue_id is None:
+            raise RuntimeError("Cannot persist a failed publish attempt without queue_id")
+        attempt = await self._persist_attempt_outcome(
+            attempt,
+            values={
+                "status": "failed",
+                "error_code": error_code,
+                "error_message": error_message,
+                "provider_chat_id": None,
+                "provider_message_id": None,
+            },
+        )
         # Persist the failure before the exception propagates and triggers rollback.
         await self.session.commit()
         await _publish_queue_event(
             self.events,
             _build_queue_event(
                 QUEUE_ATTEMPT_FAILED,
-                attempt.queue_id,
+                event_queue_id,
                 QueueAttemptFailedData(
-                    queue_id=attempt.queue_id,
+                    queue_id=event_queue_id,
                     attempt_number=attempt.attempt_number,
                     error_code=attempt.error_code or underlying_code,
                     is_terminal=terminal,

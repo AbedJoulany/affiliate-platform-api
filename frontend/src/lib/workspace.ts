@@ -57,6 +57,13 @@ export function clearActiveWorkspaceId(): void {
   session.clearActiveWorkspaceId();
 }
 
+export function applyDefaultWorkspaceFromUser(user: {
+  default_workspace_id?: string | null;
+}): void {
+  const id = normalizeWorkspaceId(user.default_workspace_id);
+  if (id) setActiveWorkspaceId(id);
+}
+
 export function subscribeActiveWorkspace(listener: () => void): () => void {
   return session.subscribeWorkspace(listener);
 }

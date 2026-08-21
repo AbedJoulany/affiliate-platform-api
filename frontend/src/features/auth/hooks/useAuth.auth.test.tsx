@@ -23,7 +23,10 @@ vi.mock("../api/auth.api", () => ({
   refreshSession: vi.fn(),
 }));
 
-import { useLogin, useLogout } from "./useAuth";
+import { useLogin, useLogout, useCurrentUser } from "./useAuth";
+import { getCurrentUser } from "../api/auth.api";
+
+const getCurrentUserMock = vi.mocked(getCurrentUser);
 
 function wrapper({ children }: { children: ReactNode }) {
   const client = new QueryClient({
@@ -37,6 +40,7 @@ beforeEach(() => {
   replace.mockReset();
   loginMock.mockReset();
   logoutMock.mockReset();
+  getCurrentUserMock.mockReset();
 });
 
 afterEach(() => {
@@ -86,5 +90,42 @@ describe("useLogin / useLogout", () => {
     await waitFor(() => expect(session.getAccessToken()).toBeNull());
     expect(session.getRefreshToken()).toBeNull();
     expect(replace).toHaveBeenCalledWith("/login");
+  });
+});
+
+const sampleUser = {
+  id: "00000000-0000-0000-0000-000000000001",
+  email: "owner@example.com",
+  full_name: "مالك المنصة",
+  role: "admin" as const,
+  is_active: true,
+  created_at: "2026-07-16T00:00:00Z",
+  updated_at: "2026-07-16T00:00:00Z",
+};
+
+describe("useCurrentUser workspace restoration", () => {
+  it("writes affiliate_active_workspace_id from default_workspace_id", async () => {
+    session.setTokens("access-login", "refresh-login");
+    getCurrentUserMock.mockResolvedValue({
+      ...sampleUser,
+      default_workspace_id: WORKSPACE_A,
+    });
+
+    const { result } = renderHook(() => useCurrentUser(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(getActiveWorkspaceId()).toBe(WORKSPACE_A);
+    expect(session.getActiveWorkspaceId()).toBe(WORKSPACE_A);
+  });
+
+  it("does not invent a workspace when default_workspace_id is null", async () => {
+    session.setTokens("access-login", "refresh-login");
+    getCurrentUserMock.mockResolvedValue({
+      ...sampleUser,
+      default_workspace_id: null,
+    });
+
+    const { result } = renderHook(() => useCurrentUser(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(getActiveWorkspaceId()).toBeNull();
   });
 });

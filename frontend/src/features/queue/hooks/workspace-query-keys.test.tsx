@@ -106,4 +106,15 @@ describe("workspace-aware TanStack Query keys", () => {
       workspaceScopedQueryKey("queue", WORKSPACE_B),
     );
   });
+
+  it("does not fetch GET /queues when no workspace is active", () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const { result } = renderHook(() => useQueue(undefined, 200), {
+      wrapper: wrapper(client),
+    });
+    expect(result.current.fetchStatus).toBe("idle");
+    expect(getQueueMock).not.toHaveBeenCalled();
+  });
 });

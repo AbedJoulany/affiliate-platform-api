@@ -10,6 +10,8 @@ import sys
 from dataclasses import dataclass
 from enum import StrEnum
 
+from pydantic import EmailStr, TypeAdapter
+from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,6 +25,7 @@ from app.repositories.workspace import WorkspaceMembershipRepository, WorkspaceR
 
 PASSWORD_ENV = "BOOTSTRAP_ADMIN_PASSWORD"
 DEFAULT_FULL_NAME = "Administrator"
+_EMAIL_ADAPTER = TypeAdapter(EmailStr)
 
 
 class BootstrapStatus(StrEnum):
@@ -33,6 +36,16 @@ class BootstrapStatus(StrEnum):
 
 class BootstrapError(Exception):
     """Abort bootstrap without mutating unrelated or inconsistent state."""
+
+
+def _validated_admin_email(email: str) -> str:
+    """Reject non-EmailStr values such as admin@localhost; do not special-case localhost."""
+    try:
+        return str(_EMAIL_ADAPTER.validate_python(email.strip()))
+    except PydanticValidationError as exc:
+        raise BootstrapError(
+            "Admin email must be a valid email address with a dotted domain."
+        ) from exc
 
 
 @dataclass(frozen=True)
@@ -91,11 +104,9 @@ async def bootstrap_admin(
     workspace_name: str,
     full_name: str = DEFAULT_FULL_NAME,
 ) -> BootstrapResult:
-    email = email.strip()
+    email = _validated_admin_email(email)
     workspace_name = workspace_name.strip()
     full_name = full_name.strip()
-    if not email:
-        raise BootstrapError("Admin email is required.")
     if not workspace_name:
         raise BootstrapError("Workspace name is required.")
     if not full_name:
@@ -202,7 +213,11 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
             "Trusted operator/deployment action - not a public registration route."
         )
     )
-    parser.add_argument("--email", required=True, help="Admin email (unique identity).")
+    parser.add_argument(
+        "--email",
+        required=True,
+        help="Admin email (must be a valid EmailStr, e.g. admin@example.com).",
+    )
     parser.add_argument(
         "--workspace-name",
         required=True,

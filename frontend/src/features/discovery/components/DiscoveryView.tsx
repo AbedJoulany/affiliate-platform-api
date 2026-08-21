@@ -8,6 +8,7 @@ import { useCategories } from "@/features/categories/hooks/useCategories";
 import { useCurrentUser } from "@/features/auth/hooks/useAuth";
 import { generateContent } from "@/features/ai/api/ai.api";
 import { createQueueItem } from "@/features/queue/api/queue.api";
+import { getApiErrorMessage } from "@/services/api-client";
 import { exportDiscoveryProductsCsv } from "../lib/export";
 import { DEFAULT_VISIBLE_COLUMNS, normalizeUiPrefs } from "../lib/ui-prefs";
 import {
@@ -68,7 +69,7 @@ export function DiscoveryView() {
       if (discovery.isSuccess && discovery.data) {
         markSuccess(committed, discovery.data);
       } else if (discovery.isError) {
-        markError(discovery.error instanceof Error ? discovery.error.message : "تعذر تشغيل الاكتشاف.");
+        markError(getApiErrorMessage(discovery.error, "تعذر تشغيل الاكتشاف."));
       }
     }
   }, [
@@ -131,7 +132,7 @@ export function DiscoveryView() {
       trackImported([product.aliexpress_product_id]);
       setActionMessage(`تم استيراد: ${product.title}`);
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : "تعذر الاستيراد.");
+      setActionError(getApiErrorMessage(error, "تعذر الاستيراد."));
     }
   };
 
@@ -148,7 +149,7 @@ export function DiscoveryView() {
       );
       selection.clear();
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : "تعذر الاستيراد الجماعي.");
+      setActionError(getApiErrorMessage(error, "تعذر الاستيراد الجماعي."));
     } finally {
       setBatchBusy(false);
     }
@@ -179,7 +180,7 @@ export function DiscoveryView() {
       setActionMessage(`تمت إضافة ${products.length.toLocaleString("ar")} مسودة إلى قائمة النشر.`);
       selection.clear();
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : "تعذر الإضافة إلى قائمة النشر.");
+      setActionError(getApiErrorMessage(error, "تعذر الإضافة إلى قائمة النشر."));
     } finally {
       setBatchBusy(false);
     }
@@ -204,7 +205,7 @@ export function DiscoveryView() {
       setActionMessage(`تم توليد AI وإضافة ${success.toLocaleString("ar")} مسودة إلى القائمة.`);
       selection.clear();
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : "تعذر توليد المحتوى.");
+      setActionError(getApiErrorMessage(error, "تعذر توليد المحتوى."));
     } finally {
       setBatchBusy(false);
     }

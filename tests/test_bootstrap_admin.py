@@ -205,3 +205,26 @@ async def test_existing_complete_bootstrap_is_noop(session):
     assert len(workspaces) == 1
     assert workspaces[0].name == "Existing Workspace"
     assert await _membership_count(session, user.id) == 1
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_rejects_non_emailstr_localhost(session):
+    with pytest.raises(BootstrapError, match="valid email"):
+        await bootstrap_admin(
+            session,
+            email="admin@localhost",
+            password="bootstrap-secret",
+            workspace_name="Default Workspace",
+        )
+    assert await UserRepository(session).get_by_email("admin@localhost") is None
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_rejects_malformed_email(session):
+    with pytest.raises(BootstrapError, match="valid email"):
+        await bootstrap_admin(
+            session,
+            email="not-an-email",
+            password="bootstrap-secret",
+            workspace_name="Default Workspace",
+        )

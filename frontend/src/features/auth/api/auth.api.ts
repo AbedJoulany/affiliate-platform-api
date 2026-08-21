@@ -1,4 +1,5 @@
 import { apiClient } from "@/services/api-client";
+import { applyDefaultWorkspaceFromUser } from "@/lib/workspace";
 import type { LoginInput, TokenResponse, User } from "../types/api";
 
 export async function login(input: LoginInput): Promise<TokenResponse> {
@@ -29,5 +30,6 @@ export async function logout(refreshToken: string): Promise<void> {
 
 export async function getCurrentUser(): Promise<User> {
   const { data } = await apiClient.get<User>("/auth/me");
+  applyDefaultWorkspaceFromUser(data);
   return data;
 }

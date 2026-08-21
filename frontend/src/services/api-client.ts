@@ -23,6 +23,25 @@ export interface ApiError {
   validation?: ReadonlyArray<{ loc: ReadonlyArray<string | number>; msg: string }>;
 }
 
+export function isApiError(error: unknown): error is ApiError {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "message" in error &&
+    typeof (error as ApiError).message === "string"
+  );
+}
+
+export function getApiErrorMessage(error: unknown, fallback: string): string {
+  if (isApiError(error) && error.message.length > 0) {
+    return error.message;
+  }
+  if (error instanceof Error && error.message.length > 0) {
+    return error.message;
+  }
+  return fallback;
+}
+
 export const MISSING_WORKSPACE_ERROR: ApiError = {
   status: 0,
   code: "missing_workspace",

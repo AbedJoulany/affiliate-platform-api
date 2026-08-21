@@ -79,7 +79,9 @@ Response: `{ "access_token", "token_type": "bearer", "refresh_token" }` (rotated
 
 ### Current user
 
-`GET /auth/me` → `UserRead` (`id`, `email`, `full_name`, `role`, `is_active`, timestamps)
+`GET /auth/me` → `UserRead` (`id`, `email`, `full_name`, `role`, `is_active`, timestamps, additive `default_workspace_id`)
+
+`default_workspace_id` is the caller's workspace UUID when they have **exactly one** membership; otherwise `null` (zero or multiple memberships). It does not invent a workspace for `ADMIN`. Tenant routes still require `X-Workspace-Id`.
 
 ---
 

@@ -214,6 +214,56 @@ async def test_products_import_uses_iop_sdk(client, mock_iop_sdk):
 
 
 @pytest.mark.asyncio
+async def test_products_import_is_admin_only_and_ignores_missing_workspace_header(
+    client, mock_iop_sdk
+):
+    from tests.test_api_endpoints import register_and_login
+
+    _, affiliate_token = await register_and_login(client, role="affiliate")
+    forbidden = await client.post(
+        f"{API_PREFIX}/products/import",
+        headers=auth_headers(affiliate_token),
+        json={"product_id": "1234567890"},
+    )
+    assert forbidden.status_code == 403
+
+    admin_token = await register_admin(client)
+    allowed = await client.post(
+        f"{API_PREFIX}/products/import",
+        headers=auth_headers(admin_token),
+        json={"product_id": "1234567890"},
+    )
+    assert allowed.status_code in (200, 201)
+    assert "x-workspace-id" not in {k.lower() for k in allowed.request.headers.keys()}
+
+
+@pytest.mark.asyncio
+async def test_products_import_missing_title_returns_502(client, mock_iop_sdk):
+    _, mock_client = mock_iop_sdk
+    admin_token = await register_admin(client)
+
+    def missing_title(request: iop.IopRequest, access_token: str | None = None):
+        response = iop.IopResponse()
+        payload = _product_detail_response()
+        product = payload["aliexpress_affiliate_productdetail_get_response"]["resp_result"][
+            "result"
+        ]["products"][0]
+        product["product_title"] = ""
+        product.pop("title", None)
+        response.body = payload
+        return response
+
+    mock_client.execute.side_effect = missing_title
+    response = await client.post(
+        f"{API_PREFIX}/products/import",
+        headers=auth_headers(admin_token),
+        json={"product_id": "1234567890"},
+    )
+    assert response.status_code == 502
+    assert "title" in response.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
 async def test_products_import_batch_uses_iop_sdk(client, mock_iop_sdk):
     tracker, mock_client = mock_iop_sdk
     admin_token = await register_admin(client)

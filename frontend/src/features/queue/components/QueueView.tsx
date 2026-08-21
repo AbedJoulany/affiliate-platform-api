@@ -4,13 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
-import { EmptyState, ErrorState, LoadingState } from "@/components/common/states";
+import { EmptyState, ErrorState, LoadingState, NoActiveWorkspaceState } from "@/components/common/states";
 import { ToastOverlay } from "@/components/common/ToastOverlay";
 import { PageContainer, PageHeader } from "@/components/layout/page";
 import { Button } from "@/components/ui/primitives";
-import type { ApiError } from "@/services/api-client";
+import { getApiErrorMessage } from "@/services/api-client";
 import { useChannels } from "@/features/channels/hooks/useChannels";
 import { useProducts } from "@/features/products/hooks/useProducts";
+import { useActiveWorkspaceId } from "@/lib/workspace";
 import { getQueueOperationalStats } from "../lib/operations";
 import {
   useDeleteQueueItem,
@@ -47,19 +48,6 @@ type ToastState = {
   tone: "success" | "error";
 } | null;
 
-function getApiErrorMessage(error: unknown, fallback: string): string {
-  if (
-    error &&
-    typeof error === "object" &&
-    "message" in error &&
-    typeof (error as ApiError).message === "string" &&
-    (error as ApiError).message.length > 0
-  ) {
-    return (error as ApiError).message;
-  }
-  return fallback;
-}
-
 export function QueueView() {
   // Single workspace-scoped SSE → query invalidation (not in child components).
   const realtime = useQueueRealtimeInvalidation();
@@ -77,6 +65,7 @@ function QueueViewBody({
   realtimeStatus: QueueEventStreamStatus;
 }) {
   const router = useRouter();
+  const workspaceId = useActiveWorkspaceId();
   const queue = useQueue(undefined, 200);
   const channels = useChannels();
   const products = useProducts({ limit: 200, skip: 0 });
@@ -304,6 +293,18 @@ function QueueViewBody({
     listItems.length > 0 &&
     workspace.filteredItems.length === 0;
 
+  if (!workspaceId) {
+    return (
+      <PageContainer wide>
+        <PageHeader
+          title="مركز عمليات النشر"
+          description="راجع الجاهزية، عيّن القنوات، وجدول وراقب عمليات النشر."
+        />
+        <NoActiveWorkspaceState />
+      </PageContainer>
+    );
+  }
+
   return (
     <PageContainer wide>
       <PageHeader
@@ -352,7 +353,7 @@ function QueueViewBody({
           <LoadingState rows={8} />
         ) : queue.isError ? (
           <ErrorState
-            message="تعذر تحميل عمليات النشر."
+            message={getApiErrorMessage(queue.error, "تعذر تحميل عمليات النشر.")}
             onRetry={() => void queue.refetch()}
           />
         ) : noItems ? (

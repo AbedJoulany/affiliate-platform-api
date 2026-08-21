@@ -1,6 +1,7 @@
 import { QueryClient } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  applyDefaultWorkspaceFromUser,
   clearActiveWorkspaceId,
   getActiveWorkspaceId,
   isUsableWorkspaceId,
@@ -68,6 +69,25 @@ describe("active workspace persistence", () => {
     vi.stubEnv("NEXT_PUBLIC_WORKSPACE_ID", "invalid-value");
     expect(getActiveWorkspaceId()).toBeNull();
     vi.unstubAllEnvs();
+  });
+});
+
+describe("applyDefaultWorkspaceFromUser", () => {
+  it("writes a valid default_workspace_id to session storage", () => {
+    applyDefaultWorkspaceFromUser({ default_workspace_id: WORKSPACE_A });
+    expect(getActiveWorkspaceId()).toBe(WORKSPACE_A);
+    expect(session.getActiveWorkspaceId()).toBe(WORKSPACE_A);
+  });
+
+  it("does not invent a workspace when default_workspace_id is null", () => {
+    applyDefaultWorkspaceFromUser({ default_workspace_id: null });
+    expect(getActiveWorkspaceId()).toBeNull();
+  });
+
+  it("ignores invalid default_workspace_id values", () => {
+    applyDefaultWorkspaceFromUser({ default_workspace_id: "undefined" });
+    applyDefaultWorkspaceFromUser({ default_workspace_id: "admin@localhost" });
+    expect(getActiveWorkspaceId()).toBeNull();
   });
 });
 

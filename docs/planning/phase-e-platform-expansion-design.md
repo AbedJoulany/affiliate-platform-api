@@ -624,7 +624,7 @@ Deliberately split into small, independently verifiable tasks. **No task below i
 - **Shipped (2026-08-19):** Constraint closeout only — not a tenancy redesign.
   - `campaigns.workspace_id`, `queue_items.workspace_id`, `telegram_channels.workspace_id` are **NOT NULL**.
   - FKs use **ON DELETE RESTRICT** (Stage-1 `SET NULL` is incompatible with NOT NULL).
-  - **No automatic backfill.** Migration `013` counts NULL rows on those three tables and **aborts** with table names and counts if any remain. Rows are not assigned to the bootstrap workspace and are not deleted.
+  - **No automatic backfill.** Migration `013` counts NULL rows on those three tables and **aborts** with table names and counts if any remain. Rows are not assigned to the bootstrap workspace and are not deleted. Operators assign leftovers with `python -m scripts.assign_legacy_workspace_ids --workspace-id <uuid>` then retry `alembic upgrade head`.
   - `telegram_channel_id` remains **globally unique** (not `(workspace_id, telegram_channel_id)`).
   - No `workspace_id` on Product, Affiliate, AffiliateCampaign, Conversion, or QueuePublishAttempt.
   - Product remains a global shared catalog; Affiliate remains a global user-owned 1:1 profile (Task 7).

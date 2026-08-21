@@ -43,3 +43,4 @@ class UserRead(TimestampSchema):
     full_name: str
     role: UserRole
     is_active: bool
+    default_workspace_id: UUID | None = None

@@ -8,6 +8,7 @@ export interface User {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  default_workspace_id: string | null;
 }
 
 export interface TokenResponse {

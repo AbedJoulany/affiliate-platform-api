@@ -15,6 +15,18 @@ from app.services.exceptions import ForbiddenError
 WORKSPACE_ID_HEADER = "X-Workspace-Id"
 
 
+async def default_workspace_id_for_user(db: AsyncSession, user_id: UUID) -> UUID | None:
+    """Return the user's workspace only when they have exactly one membership.
+
+    Zero or multiple memberships yield ``None``. Callers must not invent a
+    workspace for admins or anyone else.
+    """
+    workspaces = await WorkspaceRepository(db).list_for_user(user_id)
+    if len(workspaces) != 1:
+        return None
+    return workspaces[0].id
+
+
 @dataclass(frozen=True, slots=True)
 class WorkspaceContext:
     """Server-validated workspace authorization context for a single request."""

@@ -6,11 +6,21 @@ import { getCurrentUser, login, logout } from "../api/auth.api";
 import type { LoginInput, TokenResponse } from "../types/api";
 import { session } from "@/services/session";
 import type { ApiError } from "@/services/api-client";
+import { applyDefaultWorkspaceFromUser } from "@/lib/workspace";
 
 export const authKeys = { me: ["auth", "me"] as const };
 
 export function useCurrentUser(enabled = true) {
-  return useQuery({ queryKey: authKeys.me, queryFn: getCurrentUser, enabled, retry: false });
+  return useQuery({
+    queryKey: authKeys.me,
+    queryFn: async () => {
+      const user = await getCurrentUser();
+      applyDefaultWorkspaceFromUser(user);
+      return user;
+    },
+    enabled,
+    retry: false,
+  });
 }
 
 export function useLogin() {

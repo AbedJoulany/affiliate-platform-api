@@ -214,6 +214,7 @@ async def test_auth_register_login_and_profile_endpoints(client):
     assert body["email"].endswith("@example.com")
     assert body["role"] == "affiliate"
     assert body["is_active"] is True
+    assert body["default_workspace_id"] is None
 
     response = await client.post(
         f"{API_PREFIX}/auth/register",
