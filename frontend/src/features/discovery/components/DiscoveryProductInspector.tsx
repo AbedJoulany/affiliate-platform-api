@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import { Badge, Button, Drawer } from "@/components/ui/primitives";
 import { formatMoney } from "@/lib/utils";
@@ -20,6 +21,7 @@ export function DiscoveryProductInspector({
   onImport,
   onGenerateAi,
   onAddToQueue,
+  onSearchByImage,
 }: {
   product: DiscoveryProduct | null;
   open: boolean;
@@ -29,7 +31,13 @@ export function DiscoveryProductInspector({
   onImport: (product: DiscoveryProduct) => void;
   onGenerateAi: (product: DiscoveryProduct) => void;
   onAddToQueue: (product: DiscoveryProduct) => void;
+  onSearchByImage?: (imageUrl: string) => void;
 }) {
+  const [selectedImage, setSelectedImage] = useState(product?.image_url ?? "");
+  useEffect(() => {
+    setSelectedImage(product?.image_url ?? "");
+  }, [product?.aliexpress_product_id, product?.image_url]);
+
   if (!product) {
     return (
       <Drawer open={open} onClose={onClose} title="معاينة المنتج" aria-label="معاينة المنتج">
@@ -64,9 +72,23 @@ export function DiscoveryProductInspector({
           <Button className="w-full" variant="outline" onClick={() => onGenerateAi(product)}>
             إنشاء محتوى AI
           </Button>
-          <Button className="w-full" variant="secondary" onClick={() => onAddToQueue(product)}>
+          <Button
+            className="w-full"
+            variant="secondary"
+            onClick={() => onAddToQueue({ ...product, image_url: selectedImage || product.image_url })}
+          >
             إضافة إلى قائمة النشر
           </Button>
+          {onSearchByImage && (selectedImage || product.image_url) ? (
+            <Button
+              className="w-full"
+              variant="outline"
+              type="button"
+              onClick={() => onSearchByImage(selectedImage || product.image_url)}
+            >
+              بحث بمنتجات مشابهة
+            </Button>
+          ) : null}
           <Button
             className="w-full"
             variant="ghost"
@@ -80,14 +102,31 @@ export function DiscoveryProductInspector({
     >
       <div className="space-y-5">
         <div className="relative aspect-[16/10] overflow-hidden rounded-md bg-muted">
-          <Image src={product.image_url} alt={product.title} fill className="object-cover" sizes="400px" />
+          <Image
+            src={selectedImage || product.image_url}
+            alt={product.title}
+            fill
+            className="object-cover"
+            sizes="400px"
+          />
         </div>
         {images.length > 1 && (
           <div className="flex gap-2 overflow-x-auto">
             {images.slice(0, 6).map((src) => (
-              <div key={src} className="relative size-14 shrink-0 overflow-hidden rounded-md bg-muted">
+              <button
+                key={src}
+                type="button"
+                className={
+                  src === selectedImage
+                    ? "relative size-14 shrink-0 overflow-hidden rounded-md ring-2 ring-primary"
+                    : "relative size-14 shrink-0 overflow-hidden rounded-md bg-muted"
+                }
+                aria-pressed={src === selectedImage}
+                aria-label="اختيار صورة المنتج"
+                onClick={() => setSelectedImage(src)}
+              >
                 <Image src={src} alt="" fill className="object-cover" sizes="56px" />
-              </div>
+              </button>
             ))}
           </div>
         )}

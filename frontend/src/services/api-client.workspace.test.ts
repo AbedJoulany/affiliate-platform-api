@@ -190,10 +190,14 @@ describe("apiClient workspace header", () => {
     await apiClient.get("/products");
     await apiClient.get("/auth/me");
     await apiClient.get("/affiliates/me");
+    await apiClient.post("/products/search/image", {
+      image_url: "https://example.com/product.jpg",
+    });
     expect(seen).toEqual({
       "/products": undefined,
       "/auth/me": undefined,
       "/affiliates/me": undefined,
+      "/products/search/image": undefined,
     });
   });
 

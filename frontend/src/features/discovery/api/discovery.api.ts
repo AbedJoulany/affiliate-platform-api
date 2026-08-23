@@ -3,6 +3,7 @@ import { normalizeDiscoveryResponse, type DiscoveryResponseRaw } from "../lib/no
 import type {
   DiscoveryParams,
   DiscoveryResponse,
+  ProductImageSearchRequest,
   ProductImportBatchResponse,
   ProductImportResponse,
 } from "../types/api";
@@ -33,6 +34,13 @@ export async function discoverProducts(params: DiscoveryParams): Promise<Discove
     page_size: params.page_size,
   };
   const { data } = await apiClient.get<DiscoveryResponseRaw>(path, { params: query });
+  return normalizeDiscoveryResponse(data);
+}
+
+export async function searchProductsByImage(
+  payload: ProductImageSearchRequest,
+): Promise<DiscoveryResponse> {
+  const { data } = await apiClient.post<DiscoveryResponseRaw>("/products/search/image", payload);
   return normalizeDiscoveryResponse(data);
 }
 

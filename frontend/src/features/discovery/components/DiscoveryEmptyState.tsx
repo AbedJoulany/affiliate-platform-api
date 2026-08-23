@@ -9,11 +9,30 @@ export function DiscoveryEmptyState({
   onResetFilters,
   onSwitchMode,
 }: {
-  variant: "initial" | "no-results";
+  variant: "initial" | "no-results" | "no-images";
   onRun: () => void;
   onResetFilters: () => void;
   onSwitchMode: (mode: DiscoveryMode) => void;
 }) {
+  if (variant === "no-images") {
+    return (
+      <div className="rounded-lg border border-dashed border-border bg-muted/30 px-6 py-10 text-center">
+        <h3 className="text-lg font-semibold">لا توجد صور مطابقة</h3>
+        <p className="mx-auto mt-2 max-w-lg text-sm text-muted-foreground">
+          لم يُعثر على منتجات مشابهة لهذه الصورة. جرّب رابطًا أو ملفًا أوضح ثم أعد البحث.
+        </p>
+        <div className="mt-5 flex flex-wrap justify-center gap-2">
+          <Button type="button" onClick={onRun}>
+            إعادة البحث
+          </Button>
+          <Button type="button" variant="outline" onClick={onResetFilters}>
+            العودة للاكتشاف
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   if (variant === "initial") {
     return (
       <div className="rounded-lg border border-dashed border-border bg-muted/30 px-6 py-10 text-center">

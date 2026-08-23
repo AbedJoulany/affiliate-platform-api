@@ -335,6 +335,37 @@ async def test_search_image_uses_iop_sdk_when_enabled(client, mock_iop_sdk, monk
 
 
 @pytest.mark.asyncio
+async def test_search_image_malformed_provider_payload_returns_empty_items(
+    client, mock_iop_sdk, monkeypatch
+):
+    _, mock_client = mock_iop_sdk
+    monkeypatch.setenv("ALIEXPRESS_ENABLE_DS_IMAGE_SEARCH", "true")
+    get_settings.cache_clear()
+
+    def fake_execute(request, access_token=None):
+        response = iop.IopResponse()
+        response.body = {
+            "aliexpress_ds_image_search_response": {
+                "resp_result": {
+                    "resp_code": 200,
+                    "result": {"products": "not-a-list"},
+                }
+            }
+        }
+        return response
+
+    mock_client.execute.side_effect = fake_execute
+
+    response = await client.post(
+        f"{API_PREFIX}/products/search/image",
+        json={"image_url": "https://example.com/product.jpg"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["items"] == []
+
+
+@pytest.mark.asyncio
 async def test_iop_requests_are_built_with_add_api_param(client, mock_iop_sdk):
     tracker, _ = mock_iop_sdk
     admin_token = await register_admin(client)
@@ -356,3 +387,67 @@ async def test_iop_requests_are_built_with_add_api_param(client, mock_iop_sdk):
     assert request._api_params["product_ids"] == "1234567890"
     assert "fields" in request._api_params
     assert "tracking_id" in request._api_params
+
+
+@pytest.mark.asyncio
+async def test_search_image_is_global_without_workspace_header(client, mock_iop_sdk):
+    response = await client.post(
+        f"{API_PREFIX}/products/search/image",
+        json={"image_url": "https://example.com/product.jpg"},
+    )
+    assert response.status_code == 501
+    assert "workspace" not in response.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_search_image_rejects_empty_and_ambiguous_payloads(client, mock_iop_sdk):
+    empty = await client.post(f"{API_PREFIX}/products/search/image", json={})
+    assert empty.status_code == 422
+
+    both = await client.post(
+        f"{API_PREFIX}/products/search/image",
+        json={
+            "image_url": "https://example.com/product.jpg",
+            "image_base64": "abc",
+        },
+    )
+    assert both.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_search_image_empty_results_when_enabled(client, mock_iop_sdk, monkeypatch):
+    tracker, mock_client = mock_iop_sdk
+    monkeypatch.setenv("ALIEXPRESS_ENABLE_DS_IMAGE_SEARCH", "true")
+    get_settings.cache_clear()
+
+    def empty_execute(request: iop.IopRequest, access_token: str | None = None):
+        tracker.methods.append(request._api_pame)
+        response = iop.IopResponse()
+        response.body = _empty_products_response("aliexpress_ds_image_search_response")
+        return response
+
+    mock_client.execute.side_effect = empty_execute
+
+    response = await client.post(
+        f"{API_PREFIX}/products/search/image",
+        json={"image_url": "https://example.com/product.jpg"},
+    )
+    assert response.status_code == 200
+    assert response.json()["items"] == []
+    assert response.json()["total"] == 0
+    get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_search_image_maps_provider_failure(client, mock_iop_sdk, monkeypatch):
+    _, mock_client = mock_iop_sdk
+    monkeypatch.setenv("ALIEXPRESS_ENABLE_DS_IMAGE_SEARCH", "true")
+    get_settings.cache_clear()
+    mock_client.execute.side_effect = RuntimeError("provider down")
+
+    response = await client.post(
+        f"{API_PREFIX}/products/search/image",
+        json={"image_url": "https://example.com/product.jpg"},
+    )
+    assert response.status_code == 502
+    get_settings.cache_clear()

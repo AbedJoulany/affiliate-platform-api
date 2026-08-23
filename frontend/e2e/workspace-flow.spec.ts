@@ -184,6 +184,6 @@ test("stale workspace header for a non-member shows an error, not infinite loadi
   await page.getByLabel("كلمة المرور").fill("password123");
   await page.getByRole("button", { name: "تسجيل الدخول" }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
-  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.getByText("Insufficient permissions")).toBeVisible();
   await expect(page.getByLabel("جار التحميل")).toHaveCount(0);
 });

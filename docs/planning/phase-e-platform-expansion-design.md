@@ -646,6 +646,7 @@ Deliberately split into small, independently verifiable tasks. **No task below i
 
 ### Task 10 — Image Search UI (independent — can run in parallel with any Multi-workspace task)
 
+- **Shipped (2026-08-22):** Discovery `ImageSearchPanel` calls existing global `POST /products/search/image`. No backend/API/gating changes.
 - **Goal:** Build a frontend surface for the already-complete `POST /products/search/image` endpoint.
 - **Scope:** New `ImageSearchPanel`/upload entry point inside `features/discovery`, `discovery.api.ts` gains `searchProductsByImage`, results render through the existing `DiscoveryResultsTable`/`DiscoveryProductInspector` components (§21) — no new results-rendering component needed.
 - **Dependencies:** None.

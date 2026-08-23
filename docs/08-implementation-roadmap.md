@@ -85,7 +85,7 @@ Legend: ✅ Done · 🟡 Partial · ⬜ Planned
 | Bulk selection + batch import                           | ✅      | Admin only                            |
 | CSV export                                              | ✅      |                                       |
 | Session persistence (filters/UI prefs)                  | ✅      | sessionStorage                        |
-| Image search UI                                         | ⬜      | Backend `POST /products/search/image` |
+| Image search UI                                         | ✅      | Global `POST /products/search/image`; no workspace header |
 | Persist toggle (`persist=true`)                         | ⬜      | API only                              |
 | Full paging UI for all modes                            | 🟡     | page/page_size in advanced drawer     |
 

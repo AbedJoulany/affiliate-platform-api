@@ -110,6 +110,7 @@ describe("isWorkspaceScopedPath", () => {
     expect(isWorkspaceScopedPath("/products/abc")).toBe(false);
     expect(isWorkspaceScopedPath("/products/discover")).toBe(false);
     expect(isWorkspaceScopedPath("/products/search/image")).toBe(false);
+    expect(isWorkspaceScopedPath("/products/import")).toBe(false);
     expect(isWorkspaceScopedPath("/auth/me")).toBe(false);
     expect(isWorkspaceScopedPath("/auth/login")).toBe(false);
     expect(isWorkspaceScopedPath("/affiliates/me")).toBe(false);
@@ -131,6 +132,7 @@ describe("workspace query keys", () => {
       workspaceScopedQueryKey("dashboard", WORKSPACE_B),
     );
     expect(isWorkspaceScopedQueryKey(["products"])).toBe(false);
+    expect(isWorkspaceScopedQueryKey(["product-image-search", { page: 1 }])).toBe(false);
     expect(isWorkspaceScopedQueryKey(["queue", WORKSPACE_A])).toBe(true);
   });
 

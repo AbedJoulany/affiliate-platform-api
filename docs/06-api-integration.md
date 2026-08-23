@@ -1,13 +1,15 @@
 # API Integration Guide
 
-**Document Version:** 2.8  
-**Last Updated:** 2026-08-19
+**Document Version:** 2.9  
+**Last Updated:** 2026-08-22
 
 **2026-08-04 revision:** Phase A.1 **frontend tasks are complete** — queue KPIs, `QueueHealthBadge`, and `QueueTable` now resolve failures from backend attempt data (`resolveQueueFailure`) with the client failure map only as a short-lived gap-filler until per-item enrichment resolves; `QueueDetailsDrawer` renders read-only publish attempt history from `GET /queues/{id}/attempts` and retries via the existing `POST /queues/{id}/publish`. Statuses below for §4.6 and §5 are updated accordingly. Also reflects three post-implementation bug fixes (scheduled publishing, queue item deletion, Telegram long-message publishing) — see [10-production-readiness.md](./10-production-readiness.md) §10.
 
 **2026-08-08 revision (Phase B closeout):** Documented root operational endpoint `GET /worker/health` (Phase B Task 2). `/ready` semantics unchanged (database + Redis only).
 
 **2026-08-13 revision (Phase D closeout):** Auth refresh tokens, route rate limits, and `POST /conversions` authorization. See §1 and §4.8. Design: [planning/phase-d-auth-security-design.md](./planning/phase-d-auth-security-design.md).
+
+**2026-08-22 revision (Phase E Task 10):** Discovery UI now calls global `POST /products/search/image`. No `X-Workspace-Id`. Results reuse the existing discovery table/inspector.
 
 **2026-08-19 revision (Phase E Task 6):** Queue, channel, dashboard, and `GET /queues/stream` HTTP APIs require `X-Workspace-Id`. Queue/channel rows store `workspace_id` (migration `012`, closed to NOT NULL in Task 8 / migration `013`). Product aggregates remain global. Frontend workspace header plumbing is Task 9.
 
@@ -163,7 +165,7 @@ Product is a **global shared catalog**. There is no `products.workspace_id`, `us
 | `GET /products/discover/trending` | `discovery.api.ts` | Connected | Same client-owned retry boundary |
 | `GET /products/discover/category/{id}` | `discovery.api.ts` | Connected | Requires `category_id` |
 | `GET /products/search` | — | Backend only | Keyword mode uses discover paths |
-| `POST /products/search/image` | — | Backend only | DS image search; env-gated |
+| `POST /products/search/image` | `discovery.api.ts` | Connected | DS image search; env-gated (`ALIEXPRESS_ENABLE_DS_IMAGE_SEARCH`). Global — no `X-Workspace-Id`. UI: `ImageSearchPanel` |
 | `POST /products/import` | `discovery.api.ts` | Connected | Single import (admin) |
 | `POST /products/import/batch` | `discovery.api.ts` | Connected | Bulk import from selection bar |
 | `POST /products/import-url` | — | Backend only | URL import not in UI |
