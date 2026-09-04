@@ -43,5 +43,6 @@ async def test_all_openapi_endpoints(client):
             response = await client.request(method.upper(), url, **request_kwargs)
 
             assert response.status_code in allowed_status_codes(method), (
-                f"Unexpected status for {method.upper()} {url}: {response.status_code} - {response.text}"
+                f"Unexpected status for {method.upper()} {url}: "
+                f"{response.status_code} - {response.text}"
             )

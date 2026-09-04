@@ -103,8 +103,12 @@ def _product_detail_response() -> dict:
 RESPONSE_BY_METHOD = {
     METHOD_PRODUCT_DETAIL: _product_detail_response,
     METHOD_PRODUCT_QUERY: lambda: _products_response("aliexpress_affiliate_product_query_response"),
-    METHOD_HOT_PRODUCT_QUERY: lambda: _products_response("aliexpress_affiliate_hotproduct_query_response"),
-    METHOD_SMART_MATCH: lambda: _products_response("aliexpress_affiliate_product_smartmatch_response"),
+    METHOD_HOT_PRODUCT_QUERY: lambda: _products_response(
+        "aliexpress_affiliate_hotproduct_query_response"
+    ),
+    METHOD_SMART_MATCH: lambda: _products_response(
+        "aliexpress_affiliate_product_smartmatch_response"
+    ),
     METHOD_FEATURED_PROMO_PRODUCTS: lambda: _products_response(
         "aliexpress_affiliate_featuredpromo_products_get_response"
     ),
@@ -302,7 +306,9 @@ async def test_discover_endpoints_use_iop_sdk(client, mock_iop_sdk):
 
         assert response.status_code == 200, f"{path} failed: {response.text}"
         assert mock_client.execute.called, f"{path} did not call IOP SDK"
-        assert expected_method in tracker.methods, f"{path} expected {expected_method}, got {tracker.methods}"
+        assert expected_method in tracker.methods, (
+            f"{path} expected {expected_method}, got {tracker.methods}"
+        )
 
 
 @pytest.mark.asyncio
@@ -378,9 +384,7 @@ async def test_iop_requests_are_built_with_add_api_param(client, mock_iop_sdk):
 
     assert tracker.requests
     request = next(
-        request
-        for request in tracker.requests
-        if request._api_pame == METHOD_PRODUCT_DETAIL
+        request for request in tracker.requests if request._api_pame == METHOD_PRODUCT_DETAIL
     )
     assert isinstance(request, iop.IopRequest)
     assert request._api_pame == METHOD_PRODUCT_DETAIL

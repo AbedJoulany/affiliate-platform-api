@@ -61,7 +61,9 @@ class GenerateContentRequest(BaseModel):
         has_url = self.url is not None
         if has_product_id == has_url:
             raise ValueError("Provide exactly one of product_id or url")
-        unknown = [item for item in self.instruction_modifiers if item not in ALLOWED_INSTRUCTION_MODIFIERS]
+        unknown = [
+            item for item in self.instruction_modifiers if item not in ALLOWED_INSTRUCTION_MODIFIERS
+        ]
         if unknown:
             raise ValueError(f"Unsupported instruction_modifiers: {', '.join(unknown)}")
         # Deduplicate while preserving order

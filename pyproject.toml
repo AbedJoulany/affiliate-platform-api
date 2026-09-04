@@ -46,6 +46,9 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+# Vendored AliExpress IOP SDK (Python-2-era third-party). Not first-party code;
+# rewriting it to pass E/F/UP would be a vendor fork, not a lint cleanup.
+extend-exclude = ["iop"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]

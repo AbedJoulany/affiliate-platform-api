@@ -131,7 +131,11 @@ class ProductDiscoveryService:
                 ship_to_country=ship_to_country,
             )
 
-        if query.mode in (DiscoveryMode.DEALS, DiscoveryMode.BIG_DISCOUNT, DiscoveryMode.COMMISSION):
+        if query.mode in (
+            DiscoveryMode.DEALS,
+            DiscoveryMode.BIG_DISCOUNT,
+            DiscoveryMode.COMMISSION,
+        ):
             promo_sort = self._map_promo_sort(query.sort, query.mode)
             return await self.client.get_featured_promo_products(
                 page_no=query.page,
@@ -158,7 +162,9 @@ class ProductDiscoveryService:
             ship_to_country=ship_to_country,
         )
 
-    def _dedupe_products(self, products: list[AliExpressProductData]) -> list[AliExpressProductData]:
+    def _dedupe_products(
+        self, products: list[AliExpressProductData]
+    ) -> list[AliExpressProductData]:
         seen: set[str] = set()
         unique: list[AliExpressProductData] = []
         for product in products:
@@ -186,8 +192,7 @@ class ProductDiscoveryService:
             if query.min_discount is not None and product.discount < query.min_discount:
                 continue
             if query.free_shipping and not (
-                product.shipping_info
-                and product.shipping_info.get("free_shipping") is True
+                product.shipping_info and product.shipping_info.get("free_shipping") is True
             ):
                 continue
             filtered.append(product)

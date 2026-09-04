@@ -1,23 +1,23 @@
 import asyncio
 from logging.config import fileConfig
 
-from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+from alembic import context
+from app.auth.models import User  # noqa: F401
 from app.core.config import get_settings
 from app.core.database import Base
-from app.auth.models import User  # noqa: F401
 from app.models import (  # noqa: F401
     Affiliate,
     AffiliateCampaign,
     Campaign,
     Conversion,
     Product,
+    QueueItem,
     RefreshToken,
     TelegramChannel,
-    QueueItem,
     Workspace,
     WorkspaceMembership,
 )
