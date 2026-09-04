@@ -1,7 +1,7 @@
 # Routing and Navigation
 
-**Document Version:** 2.0  
-**Last Updated:** 2026-07-29
+**Document Version:** 2.1  
+**Last Updated:** 2026-09-04
 
 ---
 
@@ -40,6 +40,7 @@ app/(dashboard)/     → Protected (AuthGuard + middleware cookie)
 ├── discovery
 ├── ai                      ← ?product= | ?url= query params
 ├── queue
+├── analytics
 ├── channels
 ├── settings
 │   ├── general
@@ -51,7 +52,7 @@ app/(dashboard)/     → Protected (AuthGuard + middleware cookie)
 └── profile                 ← header user menu only
 ```
 
-**Deferred:** `/analytics`, `/register`, workspace routes
+**Deferred:** `/register`, workspace routes
 
 ---
 
@@ -73,17 +74,21 @@ AI Content Studio (`ContentWorkspaceView`). Accepts `?product={uuid}` or `?url=�
 
 Publishing Operations Center. KPI strip at top. **Drawer boundary:** `QueueDetailsDrawer` for post inspection. **Dialog boundary:** `QueueSchedulingDialog` for bulk/single schedule.
 
+### `/analytics`
+
+Workspace-scoped click and conversion KPIs. Date range controls, overview line chart, optional campaign funnel (`GET /campaigns/active` selector). Gated on active workspace id like Dashboard/Queue/Channels.
+
 ### `/channels`
 
 Telegram channel registry. Full-page CRUD (no drawer).
 
 ### `/settings/*`
 
-Read-only capability screens. No editable forms.
+Workspace-scoped editable forms (`GET/PATCH /workspace-settings`). Secret/env status is read-only badges. Gated on active workspace id; PATCH requires admin or workspace OWNER (`can_edit`).
 
 ### `/profile`
 
-Read-only account info from `/auth/me`.
+User-global profile form (`GET/PATCH /auth/me`). Role and account status are read-only.
 
 ---
 
@@ -95,6 +100,7 @@ Products
 Discovery
 AI Studio
 Queue
+Analytics
 Channels
 Settings
 ```
@@ -106,10 +112,11 @@ Settings
 | Discovery | `/discovery` | |
 | AI Studio | `/ai` | |
 | Queue | `/queue` | |
+| Analytics | `/analytics` | Workspace-scoped; between Queue and Channels |
 | Channels | `/channels` | |
 | Settings | `/settings/general` | Parent redirects to general |
 
-**Not in sidebar:** Profile (header menu), Analytics (deferred), Workspace switcher (hidden)
+**Not in sidebar:** Profile (header menu), Workspace switcher (hidden)
 
 ---
 
@@ -179,7 +186,6 @@ Request → middleware (session cookie present?)
 ## 12. Future Routing
 
 ```text
-/analytics
 /workspace/[id]/products
 /automation/workflows/[id]
 /integrations

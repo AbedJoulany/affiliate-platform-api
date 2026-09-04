@@ -73,6 +73,8 @@ describe("apiClient workspace header", () => {
     await apiClient.get("/queues");
     await apiClient.get("/channels");
     await apiClient.get("/dashboard");
+    await apiClient.get("/analytics/overview");
+    await apiClient.get("/workspace-settings");
     await apiClient.get("/campaigns");
     await apiClient.post("/conversions", { amount: 1 });
     await apiClient.post("/affiliates/join-campaign", { campaign_id: "camp-1" });
@@ -81,6 +83,8 @@ describe("apiClient workspace header", () => {
       "/queues": WORKSPACE_A,
       "/channels": WORKSPACE_A,
       "/dashboard": WORKSPACE_A,
+      "/analytics/overview": WORKSPACE_A,
+      "/workspace-settings": WORKSPACE_A,
       "/campaigns": WORKSPACE_A,
       "/conversions": WORKSPACE_A,
       "/affiliates/join-campaign": WORKSPACE_A,
@@ -189,6 +193,7 @@ describe("apiClient workspace header", () => {
 
     await apiClient.get("/products");
     await apiClient.get("/auth/me");
+    await apiClient.patch("/auth/me", { full_name: "Ada" });
     await apiClient.get("/affiliates/me");
     await apiClient.post("/products/search/image", {
       image_url: "https://example.com/product.jpg",

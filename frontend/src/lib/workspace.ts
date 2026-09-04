@@ -8,6 +8,8 @@ export const WORKSPACE_SCOPED_QUERY_ROOTS = [
   "queue",
   "channels",
   "dashboard",
+  "analytics",
+  "workspace-settings",
 ] as const;
 
 export type WorkspaceScopedQueryRoot =
@@ -22,6 +24,8 @@ const WORKSPACE_SCOPED_PREFIXES = [
   "/queues",
   "/channels",
   "/dashboard",
+  "/analytics",
+  "/workspace-settings",
 ] as const;
 
 export function isUsableWorkspaceId(value: unknown): value is string {

@@ -13,6 +13,7 @@ from app.auth.schemas import (
     RefreshTokenRequest,
     TokenResponse,
     UserLogin,
+    UserProfileUpdate,
     UserRead,
     UserRegister,
 )
@@ -94,5 +95,22 @@ async def get_current_user_profile(
 ) -> UserRead:
     default_workspace_id = await default_workspace_id_for_user(db, current_user.id)
     return UserRead.model_validate(current_user).model_copy(
+        update={"default_workspace_id": default_workspace_id},
+    )
+
+
+@router.patch("/me", response_model=UserRead)
+async def update_current_user_profile(
+    payload: UserProfileUpdate,
+    current_user: CurrentUser,
+    auth_service: AuthServiceDep,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> UserRead:
+    try:
+        user = await auth_service.update_profile(current_user, payload)
+    except ServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    default_workspace_id = await default_workspace_id_for_user(db, user.id)
+    return UserRead.model_validate(user).model_copy(
         update={"default_workspace_id": default_workspace_id},
     )

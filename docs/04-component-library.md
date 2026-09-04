@@ -1,7 +1,11 @@
 # Component Library
 
-**Document Version:** 2.2  
-**Last Updated:** 2026-08-04
+**Document Version:** 2.3  
+**Last Updated:** 2026-09-04
+
+**2026-09-04 revision:** Settings forms (`WorkspaceSettingsView`, connection badges) and editable `CapabilityView` sections. Analytics components remain registered.
+
+**2026-09-04 revision:** Analytics feature components (`AnalyticsView`, KPI cards, charts) registered.
 
 **2026-08-04 revision:** Phase A.1 frontend wiring shipped — `QueueOperationalStats`, `QueueHealthBadge`, and `QueueDetailsDrawer` notes below updated from "planned" to implemented backend-truth behavior.
 
@@ -178,7 +182,28 @@ Interactive score cell with:
 | --- | --- |
 | `ChannelsView` | Implemented — list, create, permission badges, active toggle |
 | `DashboardView` | Implemented — stat cards, activity, system status |
-| `CapabilityView` | Implemented — read-only settings sections |
+| `CapabilityView` | Implemented — re-exports `WorkspaceSettingsView`; per-section editable forms |
+
+## 10.1 Analytics
+
+| Component | Status | Description |
+| --- | --- | --- |
+| `AnalyticsView` | Implemented | PageContainer + PageHeader, date range, workspace gating (`NoActiveWorkspaceState`) |
+| `AnalyticsOverviewCards` | Implemented | KPI strip (clicks, conversions, rate, revenue) — same visual pattern as `QueueOperationalStats` |
+| `ClickConversionChart` | Implemented | `recharts` line chart of `by_day`; SVG wrapped `dir="ltr"`; colors from CSS tokens |
+| `CampaignFunnelChart` | Implemented | Per-campaign funnel steps + daily series; selector uses `GET /campaigns/active` |
+
+Loading/empty/error use shared `LoadingState` / `EmptyState` / `ErrorState`. No new state components.
+
+## 10.2 Settings
+
+| Component | Status | Description |
+| --- | --- | --- |
+| `WorkspaceSettingsView` | Implemented | Section forms (general, AliExpress, AI, Telegram, discovery, scheduling); workspace gating; admin/OWNER `can_edit` |
+| `ConnectionStatusBadges` | Implemented | Env-derived connected/not-connected only — never secret values |
+| `CapabilityView` | Implemented | Alias of `WorkspaceSettingsView` used by `/settings/*` pages |
+
+Submit uses `ToastOverlay`. 422 field errors map onto RHF. Shared `Input`/`Select` primitives only.
 
 ---
 
@@ -208,6 +233,6 @@ Before adding a component:
 
 ## 13. Future Components
 
-`WorkspaceSwitcher` · `CommandPalette` · `NotificationCenter` · `AnalyticsChart` · `WorkflowBuilder` · `AIChatAssistant`
+`WorkspaceSwitcher` · `CommandPalette` · `NotificationCenter` · `WorkflowBuilder` · `AIChatAssistant`
 
 Do not render `WorkspaceSwitcher` until multi-workspace backend exists.

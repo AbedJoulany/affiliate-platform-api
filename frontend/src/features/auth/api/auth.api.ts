@@ -33,3 +33,12 @@ export async function getCurrentUser(): Promise<User> {
   applyDefaultWorkspaceFromUser(data);
   return data;
 }
+
+export async function updateCurrentUser(input: {
+  full_name?: string;
+  email?: string;
+}): Promise<User> {
+  const { data } = await apiClient.patch<User>("/auth/me", input);
+  applyDefaultWorkspaceFromUser(data);
+  return data;
+}

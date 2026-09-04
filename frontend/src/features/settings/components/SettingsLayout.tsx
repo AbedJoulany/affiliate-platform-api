@@ -19,7 +19,7 @@ export function SettingsLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   return (
     <PageContainer>
-      <PageHeader title="الإعدادات" description="عرض إعدادات وقدرات المنصة المدعومة حاليًا." />
+      <PageHeader title="الإعدادات" description="تفضيلات مساحة العمل وحالة تكامل المزوّدين." />
       <div className="grid gap-6 lg:grid-cols-[220px_1fr]">
         <nav className="flex gap-1 overflow-x-auto lg:flex-col" aria-label="أقسام الإعدادات">
           {items.map(([label, href]) => (

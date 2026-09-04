@@ -13,6 +13,7 @@ from app.models import (  # noqa: F401
     Affiliate,
     AffiliateCampaign,
     Campaign,
+    Click,
     Conversion,
     Product,
     QueueItem,
@@ -20,6 +21,7 @@ from app.models import (  # noqa: F401
     TelegramChannel,
     Workspace,
     WorkspaceMembership,
+    WorkspaceSettings,
 )
 
 config = context.config

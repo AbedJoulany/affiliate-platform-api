@@ -1,7 +1,15 @@
 # Implementation Roadmap
 
-**Document Version:** 2.9  
-**Last Updated:** 2026-08-14
+**Document Version:** 3.2  
+**Last Updated:** 2026-09-04
+
+**2026-09-04 revision (CI hardening):** Platform foundation — Ruff CI gate is the full first-party Python tree; Playwright smoke runs as GitHub Actions job `e2e` (not a required branch-protection check yet). See [10-production-readiness.md](./10-production-readiness.md) §3.
+
+**2026-09-04 revision (Phase E Task 14):** Editable workspace settings + `PATCH /auth/me`. See Phase E Task 14 below.
+
+**2026-09-04 revision (Phase E Tasks 12–13):** Analytics slice 1 + click/funnel metrics complete. See Phase E Tasks 12–13 below.
+
+**2026-09-04 revision (Phase E Tasks 9–11 closeout):** Frontend workspace runtime (Task 9), Discovery image search UI (Task 10), and public click tracking backend (Task 11) marked complete. Phase E remains open for payouts and remaining design items.
 
 Consolidated feature tracker (replaces empty `PROJECT_STATUS.md`). See [06-api-integration.md](./06-api-integration.md) for endpoint-level status.
 
@@ -47,11 +55,14 @@ Legend: ✅ Done · 🟡 Partial · ⬜ Planned
 | Next.js App Router + feature folders | ✅      |                      |
 | TanStack Query + Axios client        | ✅      |                      |
 | Auth login + JWT session             | ✅      | Access + refresh; single-flight refresh |
+| Active workspace runtime (Task 9)    | ✅      | `/auth/me` → `default_workspace_id` → `sessionStorage`; Axios `X-Workspace-Id` on tenant paths |
 | AppShell + sidebar navigation        | ✅      |                      |
 | RTL + dark mode                      | ✅      |                      |
 | Shared loading/empty/error states    | ✅      |                      |
 | Drawer + Popover primitives          | ✅      |                      |
 | ToastOverlay feedback                | ✅      | Custom; not sonner   |
+| CI: Ruff first-party Python tree     | ✅      | `ruff check .`; vendored `iop/` excluded |
+| CI: Playwright smoke job             | ✅      | Job `e2e`; not a required branch-protection check yet |
 | Shared DataTable extraction          | ⬜      | Feature-local tables |
 | Registration UI                      | ⬜      | API exists           |
 
@@ -150,7 +161,7 @@ Legend: ✅ Done · 🟡 Partial · ⬜ Planned
 | Publish failure tracking                | ✅      | Backend owns `queue_publish_attempts` + dead-letter codes; UI resolves via `resolveQueueFailure` (backend-first, client map only as short-lived fallback) |
 | Publish attempt/event history            | ✅      | `GET /queues/{id}/attempts` wired in `QueueDetailsDrawer` via `useQueuePublishAttempts`; `QueueRead` summary on `GET /queues/{id}`                     |
 | Telegram retry policy                    | ✅      | In-process retries + Celery `autoretry_for` / `max_retries=3`; non-retryable 4xx marked terminal immediately |
-| Real-time status updates                | ✅      | Phase A.2 COMPLETE — SSE `GET /queues/stream` + TanStack Query invalidation; polling fallback 5s→30s when SSE unavailable |
+| Real-time status updates                | ✅      | Phase A.2 + Task 9 — SSE `GET /queues/stream` with workspace header; polling fallback 5s→30s when SSE unavailable |
 | Dedicated retry orchestration           | ✅      | Shared claim/idempotency guard; manual + Celery share path; terminal → `dead_letter`; status-drift healing on guard-suppressed success |
 
 
@@ -204,7 +215,10 @@ Phase D — Authentication & Public-Endpoint Security   ✅ COMPLETE
 Form & schema validation standardization   ✅ COMPLETE
         │
         ▼
-Phase E — Platform expansion (V2)   ← NEXT MILESTONE
+Phase E — Platform expansion (V2)   ← IN PROGRESS (Tasks 9–13 complete)
+        │
+        ▼
+Phase E remainder — Editable settings · Payouts   ← OPEN
 ```
 
 
@@ -526,11 +540,92 @@ React Hook Form, Zod, and `@hookform/resolvers` were **already** in the project 
 
 **Task 5 validation (that task’s run):** focused tests **36** passed; full frontend tests **136** passed; typecheck PASS; lint PASS (pre-existing warnings only); build PASS.
 
-### Phase E — Platform expansion (V2)   ← NEXT MILESTONE
+### Phase E — Platform expansion (V2)   ← IN PROGRESS
 
 Multi-workspace tenancy · Analytics `/analytics` · Editable settings · Image search UI · Admin bootstrap CLI · Click tracking · Payout module
 
 Depends on Phases A.1–D being substantially complete. JWT refresh tokens are **done in Phase D** (not deferred here).
+
+#### Phase E Task 9 — Frontend workspace context plumbing ✅ COMPLETE
+
+**Completed:** 2026-09-04. Design: [planning/phase-e-platform-expansion-design.md](./planning/phase-e-platform-expansion-design.md) §18 Task 9.
+
+**Shipped:**
+
+| Area | Behavior |
+| --- | --- |
+| Workspace init | `GET /auth/me` → `default_workspace_id` (single membership) → `affiliate_active_workspace_id` in `sessionStorage` |
+| Axios interceptor | Attaches `X-Workspace-Id` only on workspace-scoped paths (`/dashboard`, `/queues`, `/channels`, `/campaigns`, `/conversions`, `/affiliates/join-campaign`, `/analytics`, `/workspace-settings`); strips header elsewhere |
+| Query keys | `workspaceScopedQueryKey` for `dashboard`, `queue`, `channels`, `analytics`, `workspace-settings`; cache cleared on logout |
+| SSE | `useQueueEventStream` sends JWT + workspace header; no stream without both |
+| UI gating | Dashboard, queue, channels, analytics views show no-workspace state when id absent |
+| Logout | Clears tokens, workspace id, cookie, query cache → `/login` |
+
+**Explicit non-goals (unchanged):** workspace selector UI; new routes/pages; workspace-scoping of Products, Discovery, or Image Search.
+
+**Tests:** `api-client.workspace.test.ts`, dashboard/queue/SSE workspace gating tests.
+
+#### Phase E Task 10 — Image search UI ✅ COMPLETE
+
+**Completed:** 2026-08-22 (UI); documented 2026-09-04. Independent of workspace tenancy.
+
+**Shipped:**
+
+| Area | Behavior |
+| --- | --- |
+| UI | `ImageSearchPanel` inside Discovery — image URL input or file upload (≤5MB, `image/*`) |
+| API | `POST /products/search/image` via `discovery.api.ts`; **no** `X-Workspace-Id` |
+| Results | Reuses `DiscoveryResultsTable`, pagination, and `DiscoveryProductInspector` |
+| Gallery handoff | Inspector `onSearchByImage` re-runs image search from a product image URL |
+| Gating | Backend env `ALIEXPRESS_ENABLE_DS_IMAGE_SEARCH` (unchanged) |
+
+**Explicit non-goals:** workspace-scoped product catalog; backend/API changes to the image search endpoint.
+
+#### Phase E Task 11 — Click tracking ✅ COMPLETE
+
+**Completed:** 2026-08-23 (backend); live-verified 2026-09-04. Design: [planning/phase-e-platform-expansion-design.md](./planning/phase-e-platform-expansion-design.md) §18 Task 11.
+
+**Shipped:**
+
+| Area | Behavior |
+| --- | --- |
+| Model | `Click` → `AffiliateCampaign`; unique server `click_id`; no `workspace_id` |
+| Migration | `014_add_clicks.py` (revises `013`; `010`–`013` unchanged) |
+| Public route | `GET /api/v1/clicks/{affiliate_campaign_id}` → persist click, **302** to `tracking_link` |
+| Security | Redirect from stored link only; blank/unsafe schemes rejected (**422**, no row) |
+| Rate limit | Phase D primitive — **30** / **60s** per IP → **429** + `Retry-After` |
+| Conversions | Optional `click_id`; enrollment match enforced when Click exists |
+| Frontend | None (server-to-browser redirect) |
+
+**Verified live:** 302 + persistence; public scope; unsafe link rejection; conversion correlation; tenant/SSE regression intact.
+
+**Explicit non-goals:** analytics/funnel metrics shipped in Tasks 12–13; bot filtering beyond rate limit; Product↔Campaign redesign.
+
+**Still open in Phase E:** Task 15 payout module · workspace selector UI.
+
+#### Phase E Task 12 — Analytics slice 1 (aggregate KPIs) ✅ COMPLETE
+
+**Completed:** 2026-09-04.
+
+**Shipped:** `GET /api/v1/analytics/overview?from=&to=` — workspace-scoped totals (`total_clicks`, `total_conversions`, `conversion_rate`, `total_revenue` from `Conversion.amount`, `by_day`). Auth + `X-Workspace-Id`. Default last 30 days; max 1 year. Frontend `/analytics` KPI strip + line chart (`recharts`).
+
+**Tenancy:** derived via Campaign FK chain. No `workspace_id` on clicks/conversions.
+
+#### Phase E Task 13 — Click/funnel analytics ✅ COMPLETE
+
+**Completed:** 2026-09-04.
+
+**Shipped:** `GET /api/v1/analytics/campaigns/{campaign_id}/funnel` — per-campaign click→conversion series + `attributed_conversions`. Cross-workspace campaign id → **404**. Migration `015_add_analytics_indexes` (revises `014`). Campaign selector uses `GET /campaigns/active`.
+
+**Explicit non-goals:** payouts; Product↔Campaign redesign.
+
+#### Phase E Task 14 — Editable settings ✅ COMPLETE
+
+**Completed:** 2026-09-04.
+
+**Shipped:** `GET/PATCH /api/v1/workspace-settings` (Bearer + `X-Workspace-Id`; PATCH admin or workspace OWNER). `PATCH /auth/me` for `full_name`/`email` only (no workspace header; cannot change `role`/`is_active`). Table `workspace_settings` (migration `016`, revises `015`, `ON DELETE CASCADE`). Connection booleans only — no secret values. Frontend section forms in `features/settings/` with feature-local Zod + RHF; profile form in `features/auth/`.
+
+**Explicit non-goals:** exposing JWT/Telegram/AliExpress/OpenAI/Gemini secrets; editing `QueueStatus`/`ProductStatus`; celery worker cadence.
 
 ---
 
@@ -551,8 +646,11 @@ Depends on Phases A.1–D being substantially complete. JWT refresh tokens are *
 | Celery worker/Beat health + Flower ops    | ✅ Phase B             |
 | Affiliates/campaigns/conversions          | ✅ API + Phase D authz |
 | Refresh tokens                            | ✅ Phase D (migration 009) |
-| Rate limiting (route dependencies)        | ✅ Phase D (login/refresh/conversions) |
-| CI/CD full lint gate                      | 🟡 Partial Ruff scope |
+| Rate limiting (route dependencies)        | ✅ Phase D + E (login/refresh/conversions/clicks) |
+| Public click tracking                     | ✅ Phase E Task 11 (migration 014) |
+| Analytics (overview + campaign funnel)    | ✅ Phase E Tasks 12–13 (migration 015) |
+| Workspace settings + profile PATCH        | ✅ Phase E Task 14 (migration 016) |
+| CI/CD full lint gate                      | ✅ Ruff `check .` (iop vendor excluded) |
 | Publish attempt/event tracking (Telegram) | ✅ Phase A.1 backend   |
 | Telegram retry + idempotency policy       | ✅ Phase A.1 backend   |
 | Real-time queue SSE + polling fallback    | ✅ Phase A.2           |

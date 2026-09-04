@@ -11,6 +11,7 @@ import {
   ChevronRight,
   Compass,
   LayoutDashboard,
+  ChartLine,
   LogOut,
   Menu,
   Moon,
@@ -31,6 +32,7 @@ const navigation = [
   { label: "الاكتشاف", href: "/discovery", icon: Compass },
   { label: "محتوى التسويق", href: "/ai", icon: BrainCircuit },
   { label: "قائمة النشر", href: "/queue", icon: Radio },
+  { label: "التحليلات", href: "/analytics", icon: ChartLine },
   { label: "القنوات", href: "/channels", icon: Bot },
   { label: "الإعدادات", href: "/settings", icon: Settings },
 ] as const;

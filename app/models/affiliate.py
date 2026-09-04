@@ -12,6 +12,7 @@ from app.core.model_mixins import TimestampMixin, UUIDPrimaryKeyMixin
 if TYPE_CHECKING:
     from app.auth.models import User
     from app.models.campaign import Campaign
+    from app.models.click import Click
     from app.models.conversion import Conversion
 
 
@@ -73,3 +74,8 @@ class AffiliateCampaign(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     affiliate: Mapped["Affiliate"] = relationship("Affiliate", back_populates="campaign_links")
     campaign: Mapped["Campaign"] = relationship("Campaign", back_populates="affiliate_links")
+    clicks: Mapped[list["Click"]] = relationship(
+        "Click",
+        back_populates="affiliate_campaign",
+        cascade="all, delete-orphan",
+    )

@@ -1,7 +1,11 @@
 # Production Readiness and Release Runbook
 
-**Document Version:** 2.9  
-**Last Updated:** 2026-08-19
+**Document Version:** 3.1  
+**Last Updated:** 2026-09-04
+
+**2026-09-04 revision (CI hardening):** GitHub Actions Ruff step is `ruff check .` on first-party Python (vendored `iop/` excluded). Playwright smoke is job `e2e` (API-mocked; not a required branch-protection check yet). See §3, §9.5.
+
+**2026-09-04 revision (Phase E Tasks 9–11 closeout):** Workspace runtime, image search global scope, click tracking public endpoint, migration `014_add_clicks`, click rate limit, and live-verified Task 11 behavior. See §6, §9.7.
 
 Release gate supplement to documents 01–09. Defines security boundaries, environment configuration, CI/CD, deployment checklists, and architectural requirements.
 
@@ -41,7 +45,7 @@ Release gate supplement to documents 01–09. Defines security boundaries, envir
 
 ### Migrations
 
-Run `alembic upgrade head` once before API/worker promotion.
+Run `alembic upgrade head` once before API/worker promotion. Current head includes migration **`016_add_workspace_settings`** (one `workspace_settings` row per workspace, `ON DELETE CASCADE`; revises `015`; no secret columns).
 
 See `.env.example` for full variable list (migrated from legacy handoff doc).
 
@@ -74,10 +78,11 @@ Flower binds **localhost-only** (`127.0.0.1:5555:5555`), uses basic auth via `FL
 
 GitHub Actions (Python 3.12, Node 22):
 
-- Backend: full pytest suite; Ruff on production-readiness file set
+- Backend: full pytest suite; Ruff on the first-party Python tree (`python -m ruff check .`). The vendored AliExpress IOP SDK under `iop/` is excluded — it is third-party Python-2-era code, not a disabled Ruff rule.
 - Frontend: typecheck, ESLint, Vitest, production build
+- E2E: Playwright smoke job `e2e` (`npm run test:e2e`, Chromium). The job builds the Next.js app and Playwright `webServer` serves `npm run start`, waiting until `GET /login` is reachable. Specs stub FastAPI with Playwright `page.route` (login, workspace tenancy, discovery image search, import, AI generate, queue publish, queue schedule). They do not boot docker compose and do not call Telegram, AliExpress, OpenAI, or Gemini.
 
-Playwright (`npm run test:e2e`) — local/manual; **not** CI gate today.
+Playwright is a CI **job**, not a required GitHub branch-protection check. Promote it to required only after 2–3 consecutive green PRs without flake (**TODO**).
 
 Do not release from failing required checks.
 
@@ -126,8 +131,8 @@ Execute with staging admin:
 | Rate limiting | Redis fixed-window via FastAPI route dependencies (not middleware); fail-open; policies below |
 | Conversion create | Authenticated + affiliate ownership (or ADMIN); 401/403; amount integrity still client/PENDING review |
 | Admin operations | Import, delete — backend + UI role check |
-| Tenancy | Queue/channel HTTP APIs and dashboard queue/channel aggregates are **workspace-scoped** via `X-Workspace-Id`. `campaigns.workspace_id`, `queue_items.workspace_id`, and `telegram_channels.workspace_id` are **NOT NULL** with `ON DELETE RESTRICT` (migration `013`). Upgrade **fails closed** if any of those columns are still NULL; there is **no** automatic bootstrap-workspace backfill. Assign leftovers explicitly with `python -m scripts.assign_legacy_workspace_ids --workspace-id <uuid>` then retry `alembic upgrade head`. `telegram_channel_id` remains globally unique. SSE filters by event `workspace_id`. Celery workers remain global. Product remains a **global shared catalog** (no `workspace_id`). Affiliate remains a **global user-owned 1:1 profile** (no `workspace_id`). `POST /affiliates/join-campaign` requires `X-Workspace-Id` and enrolls only into a campaign in that workspace. |
-| Public / unauthenticated | Discovery read, product list remain public; `POST /conversions` is **no longer** anonymous |
+| Tenancy | Queue/channel HTTP APIs, dashboard queue/channel aggregates, **analytics**, **workspace settings**, and `GET /queues/stream` are **workspace-scoped** via `X-Workspace-Id`. Analytics derives click/conversion scope through `Campaign.workspace_id` (no `workspace_id` on `clicks` or `conversions`; migration `015` adds query indexes only). `workspace_settings.workspace_id` is **NOT NULL** with `ON DELETE CASCADE` (migration `016`). `campaigns.workspace_id`, `queue_items.workspace_id`, and `telegram_channels.workspace_id` are **NOT NULL** with `ON DELETE RESTRICT` (migration `013`). Product remains a **global shared catalog** (no `workspace_id`). Affiliate remains a **global user-owned 1:1 profile** (no `workspace_id`). `PATCH /auth/me` is user-global (no workspace header). `POST /affiliates/join-campaign` requires `X-Workspace-Id`. Public **`GET /clicks/{affiliate_campaign_id}`** is global — no JWT, no workspace header (Task 11). Discovery and **`POST /products/search/image`** remain global (Task 10). Frontend workspace init: `/auth/me` → `default_workspace_id` → `sessionStorage` (Task 9). |
+| Public / unauthenticated | Discovery read, product list, public click redirect; `POST /conversions` is **no longer** anonymous |
 | `/ready` | Dependency state only (database + redis) — no secrets; not Celery liveness |
 | `/worker/health` | Celery Beat→worker pipeline heartbeat only — no secrets; not task-failure metrics |
 | Auth service | No password/credential logging in `app/auth/service.py` or `app/auth/security.py` (verified 2026-07-29) |
@@ -139,6 +144,7 @@ Execute with staging admin:
 | `POST /auth/login` | 10 | 5 minutes | client IP (`request.client.host`) |
 | `POST /auth/refresh` | 20 | 5 minutes | client IP |
 | `POST /conversions` | 30 | 1 minute | user id when valid access Bearer present; else IP |
+| `GET /clicks/{affiliate_campaign_id}` | 30 | 60 seconds | client IP (`request.client.host`) |
 
 429 includes `Retry-After`. No claim of `X-Forwarded-For` / trusted-proxy IP handling.
 
@@ -284,7 +290,7 @@ Frontend Zod must not be treated as a security control.
 ### 9.5 Observability & CI/CD (Phase 4)
 
 - Structured JSON logging with request IDs
-- GitHub Actions: expand Ruff to full codebase; add Playwright smoke to CI when stable
+- GitHub Actions: Ruff on the first-party Python tree; Playwright smoke job `e2e` (not a required branch-protection check until proven stable — see §3)
 - Secret management: Vault/AWS Secrets Manager for production
 - HTTPS termination, HSTS, CSP headers on frontend
 
@@ -301,6 +307,32 @@ Shipped 2026-08-13. Design: [planning/phase-d-auth-security-design.md](./plannin
 | Frontend | Single-flight refresh; retry-once; refresh never Bearer; logout clears local state | No CSRF beyond existing app behavior |
 
 **Regression boundaries preserved:** A.1 publishing, A.2 SSE, Phase B `/worker/health`, Phase C' retry ownership — unchanged.
+
+### 9.7 Phase E workspace runtime & click tracking (Tasks 9–11) ✅ COMPLETE
+
+**Task 9 — Frontend workspace runtime (verified):**
+
+- Login → `GET /auth/me` → store `default_workspace_id` when exactly one membership exists
+- Workspace-scoped REST/SSE attach `X-Workspace-Id`; global catalog/discovery/image-search/click paths do not
+- Missing workspace on tenant routes: client `missing_workspace` or backend **403**
+- Logout clears tokens, workspace id, and query cache
+
+**Task 10 — Image search UI (verified):** Discovery `ImageSearchPanel` calls global `POST /products/search/image` without workspace header; results reuse existing discovery table/inspector; gallery image can trigger a new image search.
+
+**Task 11 — Click tracking (live-verified):**
+
+| Check | Result |
+| --- | --- |
+| Valid enrollment click | **302** + `Click` persisted; `click_id` server-generated |
+| Public access | Works without JWT or `X-Workspace-Id`; arbitrary workspace header ignored |
+| Unsafe/blank `tracking_link` | **422**; no new click row |
+| Conversion correlation | Valid enrollment **201**; cross-enrollment **422** |
+| Rate limit | **429** + `Retry-After` after **30** requests / **60s** per IP |
+| Schema | Migration `014_add_clicks`; no `clicks.workspace_id` |
+
+**Open follow-up:** OpenAPI route metadata for click endpoint still documents primarily **302**; **404** and **429** belong in code-level OpenAPI when application metadata is next touched.
+
+**Still out of scope:** Analytics, funnel metrics, payouts, Product↔Campaign redesign, workspace selector UI.
 
 ---
 

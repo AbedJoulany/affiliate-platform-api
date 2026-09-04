@@ -341,7 +341,9 @@ Classification legend: **Global** (workspace-independent), **WS** (workspace-sco
 
 ## 10. Analytics Analysis
 
-**Does `/analytics` exist today? NO — absent.** No route, no frontend page, no service. Confirmed: `Glob frontend/src/app/**/*.tsx` lists no `analytics` path; `Grep` for `analytics` across `app/` and `frontend/src/` returns no functional matches beyond incidental substring hits in unrelated files.
+**Implementation note (2026-09-04):** Tasks 12–13 shipped. Metrics are workspace-scoped click/conversion KPIs and a per-campaign funnel (`GET /analytics/overview`, `GET /analytics/campaigns/{id}/funnel`). Tenancy is the Campaign FK chain — no `workspace_id` on clicks or conversions. QueuePublishAttempt/dashboard aggregates were **not** included. The remainder of this section is the pre-implementation snapshot.
+
+**Does `/analytics` exist today? NO — absent.** (Snapshot at Task 0.) No route, no frontend page, no service. Confirmed: `Glob frontend/src/app/**/*.tsx` lists no `analytics` path; `Grep` for `analytics` across `app/` and `frontend/src/` returns no functional matches beyond incidental substring hits in unrelated files.
 
 ### EXISTING DATA (usable today, without new persistence)
 
@@ -637,15 +639,17 @@ Deliberately split into small, independently verifiable tasks. **No task below i
 
 ### Task 9 — Frontend Workspace Context Plumbing
 
+- **Status:** ✅ COMPLETE (2026-09-04)
 - **Goal:** Implement the §9 architecture — `sessionStorage`-backed active workspace, Axios header interceptor, workspace-aware query keys, cache-clear-on-switch — with **no** workspace selector UI (per explicit instruction).
 - **Dependencies:** Tasks 4 and 6 (needs real workspace-scoped endpoints to integrate against).
 - **Expected files/modules:** `frontend/src/services/session.ts` (extend), `frontend/src/services/api-client.ts` (extend interceptor), new `frontend/src/lib/workspace.ts` or similar for the query-key helper.
 - **Tests:** New `frontend/src/services/api-client.workspace.test.ts`.
 - **Explicit non-goals:** No workspace selector, no new routes/pages, no new state-management library (per §23 boundary).
-- **Acceptance criteria:** Existing 16+ frontend test files pass unmodified; new tests confirm header attachment and cache isolation on a simulated switch.
+- **Acceptance criteria:** Existing frontend tests pass; new tests confirm header attachment and cache isolation on a simulated switch. **Verified:** login → `/auth/me` → `default_workspace_id` → `sessionStorage`; tenant routes send `X-Workspace-Id`; logout clears workspace state; SSE requires workspace id.
 
 ### Task 10 — Image Search UI (independent — can run in parallel with any Multi-workspace task)
 
+- **Status:** ✅ COMPLETE (2026-08-22 UI; documented 2026-09-04)
 - **Shipped (2026-08-22):** Discovery `ImageSearchPanel` calls existing global `POST /products/search/image`. No backend/API/gating changes.
 - **Goal:** Build a frontend surface for the already-complete `POST /products/search/image` endpoint.
 - **Scope:** New `ImageSearchPanel`/upload entry point inside `features/discovery`, `discovery.api.ts` gains `searchProductsByImage`, results render through the existing `DiscoveryResultsTable`/`DiscoveryProductInspector` components (§21) — no new results-rendering component needed.
@@ -657,10 +661,11 @@ Deliberately split into small, independently verifiable tasks. **No task below i
 - **Tests:** New component/hook test(s) following the existing Discovery feature's test conventions.
 - **Documentation:** `docs/08-implementation-roadmap.md` Discovery workspace checklist row flips from ⬜ to ✅; `docs/06-api-integration.md` §4.4 status updated.
 - **Explicit non-goals:** Does not modify `POST /products/search/image` or its env-gating (`aliexpress_enable_ds_image_search`). Does not add multi-workspace context (independent per §17).
-- **Acceptance criteria:** Image search reachable from the Discovery UI; existing Discovery tests pass unmodified; new tests cover the upload/search/result-render path.
+- **Acceptance criteria:** Image search reachable from the Discovery UI; existing Discovery tests pass unmodified; new tests cover the upload/search/result-render path. **Verified:** URL and file input; no `X-Workspace-Id`; inspector gallery can re-run image search.
 
 ### Task 11 — Click Tracking Foundational Schema + Redirect Endpoint
 
+- **Status:** ✅ COMPLETE (2026-08-23 backend; live-verified 2026-09-04)
 - **Goal:** Implement the §13 architecture — `Click` model, redirect endpoint, `click_id` now references a real row.
 - **Dependencies:** Task 1 (for workspace scoping), Task 4 (Campaign scoping), plus resolution of the Product↔Campaign modeling question **only if** product-level attribution is required — otherwise scoped narrowly to affiliate-link clicks (§13, §17).
 - **Expected files/modules:** `app/models/click.py` (new), new migration, new `app/api/v1/clicks.py` (or folded into an existing router), `app/services/click.py`.
@@ -671,24 +676,29 @@ Deliberately split into small, independently verifiable tasks. **No task below i
 - **Tests:** New `tests/test_click_tracking.py` — redirect records a click and 302s correctly; rate-limit behavior (reusing the Phase D `app/core/rate_limit.py` primitive, not inventing a new one).
 - **Documentation:** `docs/06-api-integration.md` gains a new §.
 - **Explicit non-goals:** Does not resolve Product↔Campaign modeling unless explicitly scoped to (flagged open question, §24). Does not implement bot-detection beyond basic rate-limiting.
-- **Acceptance criteria:** New tests pass; a click followed by a matching `POST /conversions.click_id` correctly correlates.
+- **Acceptance criteria:** New tests pass; a click followed by a matching `POST /conversions.click_id` correctly correlates. **Verified live:** `GET /api/v1/clicks/{affiliate_campaign_id}` persists before **302**; public scope; unsafe link **422**; cross-enrollment **422**; rate limit **429**; migration `014_add_clicks`; no `clicks.workspace_id`.
 
 ### Task 12 — Analytics Slice 1 (existing-data metrics)
 
-- **Goal:** A read-only `/analytics` endpoint + minimal frontend page using only already-persisted data (Conversion, QueuePublishAttempt, Dashboard aggregates).
+- **Status:** ✅ COMPLETE (2026-09-04)
+- **Goal:** A read-only `/analytics` endpoint + minimal frontend page using already-persisted Conversion and Click data.
 - **Dependencies:** Tasks 4, 5, 6 (workspace-scoped source tables).
-- **Explicit non-goals:** No click-derived funnel metrics (Task 13). No new persistence/rollup table unless a later performance need is evidenced.
+- **Shipped vs original design:** Click/conversion KPIs only (not QueuePublishAttempt or dashboard aggregates). Funnel shipped with Task 13 in the same implementation pass.
+- **Explicit non-goals:** No new persistence/rollup table. No `workspace_id` on clicks/conversions.
 - **Acceptance criteria:** New endpoint + page ship; metrics are traceable to real, already-persisted columns (no invented numbers).
 
 ### Task 13 — Analytics Slice 2 (click/funnel metrics)
 
+- **Status:** ✅ COMPLETE (2026-09-04)
 - **Goal:** Extend Analytics with click-derived metrics.
 - **Dependencies:** Task 11, Task 12.
 - **Acceptance criteria:** Funnel metrics (click→conversion rate) ship without altering Slice 1's existing metrics contract.
 
 ### Task 14 — Editable Settings (workspace-scoped)
 
+- **Status:** ✅ COMPLETE (2026-09-04)
 - **Goal:** A minimal, admin-gated, workspace-scoped settings table + API + form, covering only non-secret candidates identified in §11 (subject to product confirmation of the exact field list).
+- **Shipped:** `workspace_settings` (migration `016`); `GET/PATCH /workspace-settings`; `PATCH /auth/me` for name/email. Connection booleans only — no secret values. PATCH is admin or workspace OWNER.
 - **Dependencies:** Task 1 (and ideally Task 4/6 for a workspace to scope to).
 - **Explicit non-goals:** Never exposes secrets/infra config (`jwt_secret_key`, API keys, `database_url`) — these remain env-only regardless.
 - **Acceptance criteria:** At least one real setting (e.g., default AI provider) becomes DB-backed and editable per workspace, admin-gated.

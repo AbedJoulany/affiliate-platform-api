@@ -2,8 +2,8 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
-import { getCurrentUser, login, logout } from "../api/auth.api";
-import type { LoginInput, TokenResponse } from "../types/api";
+import { getCurrentUser, login, logout, updateCurrentUser } from "../api/auth.api";
+import type { LoginInput, TokenResponse, User } from "../types/api";
 import { session } from "@/services/session";
 import type { ApiError } from "@/services/api-client";
 import { applyDefaultWorkspaceFromUser } from "@/lib/workspace";
@@ -54,4 +54,14 @@ export function useLogout() {
     }
     void logout(refreshToken).catch(() => undefined).finally(finish);
   };
+}
+
+export function useUpdateProfile() {
+  const queryClient = useQueryClient();
+  return useMutation<User, ApiError, { full_name?: string; email?: string }>({
+    mutationFn: updateCurrentUser,
+    onSuccess: (user) => {
+      queryClient.setQueryData(authKeys.me, user);
+    },
+  });
 }

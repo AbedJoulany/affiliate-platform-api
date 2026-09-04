@@ -97,6 +97,9 @@ describe("isWorkspaceScopedPath", () => {
     expect(isWorkspaceScopedPath("/queues/abc/attempts")).toBe(true);
     expect(isWorkspaceScopedPath("/channels")).toBe(true);
     expect(isWorkspaceScopedPath("/dashboard")).toBe(true);
+    expect(isWorkspaceScopedPath("/analytics")).toBe(true);
+    expect(isWorkspaceScopedPath("/analytics/overview")).toBe(true);
+    expect(isWorkspaceScopedPath("/workspace-settings")).toBe(true);
     expect(isWorkspaceScopedPath("/campaigns")).toBe(true);
     expect(isWorkspaceScopedPath("/conversions")).toBe(true);
     expect(isWorkspaceScopedPath("/affiliates/join-campaign")).toBe(true);
@@ -131,6 +134,12 @@ describe("workspace query keys", () => {
     expect(workspaceScopedQueryKey("dashboard", WORKSPACE_A)).not.toEqual(
       workspaceScopedQueryKey("dashboard", WORKSPACE_B),
     );
+    expect(workspaceScopedQueryKey("analytics", WORKSPACE_A)).not.toEqual(
+      workspaceScopedQueryKey("analytics", WORKSPACE_B),
+    );
+    expect(workspaceScopedQueryKey("workspace-settings", WORKSPACE_A)).not.toEqual(
+      workspaceScopedQueryKey("workspace-settings", WORKSPACE_B),
+    );
     expect(isWorkspaceScopedQueryKey(["products"])).toBe(false);
     expect(isWorkspaceScopedQueryKey(["product-image-search", { page: 1 }])).toBe(false);
     expect(isWorkspaceScopedQueryKey(["queue", WORKSPACE_A])).toBe(true);
@@ -141,6 +150,8 @@ describe("workspace query keys", () => {
     client.setQueryData(["queue", WORKSPACE_A], { items: ["a"] });
     client.setQueryData(["channels", WORKSPACE_A], { items: ["ch"] });
     client.setQueryData(["dashboard", WORKSPACE_A], { products: { total: 1 } });
+    client.setQueryData(["analytics", WORKSPACE_A], { total_clicks: 1 });
+    client.setQueryData(["workspace-settings", WORKSPACE_A], { timezone: "UTC" });
     client.setQueryData(["products"], { items: ["p"] });
 
     removeWorkspaceScopedQueries(client);
@@ -148,6 +159,8 @@ describe("workspace query keys", () => {
     expect(client.getQueryData(["queue", WORKSPACE_A])).toBeUndefined();
     expect(client.getQueryData(["channels", WORKSPACE_A])).toBeUndefined();
     expect(client.getQueryData(["dashboard", WORKSPACE_A])).toBeUndefined();
+    expect(client.getQueryData(["analytics", WORKSPACE_A])).toBeUndefined();
+    expect(client.getQueryData(["workspace-settings", WORKSPACE_A])).toBeUndefined();
     expect(client.getQueryData(["products"])).toEqual({ items: ["p"] });
   });
 });

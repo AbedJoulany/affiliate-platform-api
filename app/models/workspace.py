@@ -11,6 +11,7 @@ from app.core.model_mixins import TimestampMixin, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
     from app.auth.models import User
+    from app.models.workspace_settings import WorkspaceSettings
 
 
 class Workspace(Base, UUIDPrimaryKeyMixin, TimestampMixin):
@@ -30,6 +31,12 @@ class Workspace(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     memberships: Mapped[list["WorkspaceMembership"]] = relationship(
         "WorkspaceMembership",
         back_populates="workspace",
+        cascade="all, delete-orphan",
+    )
+    settings: Mapped["WorkspaceSettings | None"] = relationship(
+        "WorkspaceSettings",
+        back_populates="workspace",
+        uselist=False,
         cascade="all, delete-orphan",
     )
 

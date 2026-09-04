@@ -8,10 +8,11 @@ from app.models.conversion import Conversion
 from app.models.user import User
 from app.repositories.affiliate import AffiliateCampaignRepository, AffiliateRepository
 from app.repositories.campaign import CampaignRepository
+from app.repositories.click import ClickRepository
 from app.repositories.conversion import ConversionRepository
 from app.repositories.workspace import WorkspaceMembershipRepository
 from app.schemas.conversion import ConversionCreate, ConversionUpdate
-from app.services.exceptions import ConflictError, ForbiddenError, NotFoundError
+from app.services.exceptions import ConflictError, ForbiddenError, NotFoundError, ValidationError
 
 
 class ConversionService:
@@ -21,6 +22,7 @@ class ConversionService:
         self.affiliate_repo = AffiliateRepository(session)
         self.campaign_repo = CampaignRepository(session)
         self.link_repo = AffiliateCampaignRepository(session)
+        self.click_repo = ClickRepository(session)
         self.membership_repo = WorkspaceMembershipRepository(session)
 
     async def record_conversion(
@@ -60,6 +62,11 @@ class ConversionService:
         )
         if not link:
             raise ForbiddenError("Affiliate is not enrolled in this campaign")
+
+        if payload.click_id:
+            click = await self.click_repo.get_by_click_id(payload.click_id)
+            if click is not None and click.affiliate_campaign_id != link.id:
+                raise ValidationError("click_id does not match this affiliate campaign")
 
         commission = (payload.amount * affiliate.commission_rate / Decimal("100")).quantize(
             Decimal("0.01")
