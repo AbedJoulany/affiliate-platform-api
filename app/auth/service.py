@@ -24,7 +24,6 @@ _INVALID_REFRESH = "Invalid refresh token"
 
 
 def _as_utc(value: datetime) -> datetime:
-    """Normalize DB datetimes for comparison (SQLite may return naive UTC)."""
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
     return value.astimezone(UTC)
@@ -44,7 +43,7 @@ class AuthService:
             email=payload.email,
             hashed_password=hash_password(payload.password),
             full_name=payload.full_name,
-            role=UserRole.AFFILIATE,
+            role=UserRole.USER,
         )
         return await self.users.create(user)
 
@@ -65,14 +64,11 @@ class AuthService:
         token_hash = hash_refresh_token(raw_refresh_token)
         now = datetime.now(UTC)
         record = await self.refresh_tokens.get_by_token_hash_for_update(token_hash)
-
         if record is None:
             raise UnauthorizedError(_INVALID_REFRESH)
-
         if record.revoked_at is not None or record.replaced_by_id is not None:
             await self._handle_reuse(record.user_id, now=now)
             raise UnauthorizedError(_INVALID_REFRESH)
-
         if _as_utc(record.expires_at) <= now:
             raise UnauthorizedError(_INVALID_REFRESH)
 
@@ -80,7 +76,6 @@ class AuthService:
         if not user or not user.is_active:
             raise UnauthorizedError(_INVALID_REFRESH)
 
-        # Atomic single-use consume: at most one concurrent rotator wins.
         consume = await self.session.execute(
             update(RefreshToken)
             .where(
@@ -99,14 +94,10 @@ class AuthService:
         replacement = await self.refresh_tokens.get_by_token_hash(new_hash)
         if replacement is None:
             raise UnauthorizedError(_INVALID_REFRESH)
-
         record.replaced_by_id = replacement.id
         await self.session.flush()
 
-        return TokenResponse(
-            access_token=create_access_token(user.id),
-            refresh_token=new_raw,
-        )
+        return TokenResponse(access_token=create_access_token(user.id), refresh_token=new_raw)
 
     async def logout(self, raw_refresh_token: str) -> None:
         token_hash = hash_refresh_token(raw_refresh_token)
@@ -118,7 +109,6 @@ class AuthService:
             await self.session.flush()
 
     async def _handle_reuse(self, user_id: UUID, *, now: datetime) -> None:
-        """Revoke all active tokens and commit so the HTTP error path cannot roll it back."""
         await self.refresh_tokens.revoke_all_active_for_user(user_id, revoked_at=now)
         await self.session.commit()
 
@@ -134,8 +124,7 @@ class AuthService:
         entity = RefreshToken(
             user_id=user_id,
             token_hash=hash_refresh_token(raw_token),
-            expires_at=created_at
-            + timedelta(days=settings.refresh_token_expire_days),
+            expires_at=created_at + timedelta(days=settings.refresh_token_expire_days),
         )
         await self.refresh_tokens.create(entity)
         return raw_token
