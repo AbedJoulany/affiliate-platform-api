@@ -169,7 +169,7 @@ test("stale workspace header for a non-member shows an error, not infinite loadi
   });
   await fulfillJson(page, "**/api/v1/auth/me", {
     ...meBody,
-    role: "affiliate",
+    role: "user",
     default_workspace_id: null,
   });
   await page.route("**/api/v1/dashboard", async (route) => {

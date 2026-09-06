@@ -8,7 +8,6 @@ export const WORKSPACE_SCOPED_QUERY_ROOTS = [
   "queue",
   "channels",
   "dashboard",
-  "analytics",
   "workspace-settings",
 ] as const;
 
@@ -19,12 +18,9 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const WORKSPACE_SCOPED_PREFIXES = [
-  "/campaigns",
-  "/conversions",
   "/queues",
   "/channels",
   "/dashboard",
-  "/analytics",
   "/workspace-settings",
 ] as const;
 
@@ -95,20 +91,13 @@ export function requestPathname(url: string | undefined): string {
 
 /**
  * Tenant-scoped HTTP paths that require `X-Workspace-Id`.
- * Global catalog/auth/affiliate-profile paths must not match.
+ * Global catalog/auth paths must not match.
  */
 export function isWorkspaceScopedPath(url: string | undefined): boolean {
   const path = requestPathname(url);
   const normalized = path.startsWith("/api/v1/")
     ? path.slice("/api/v1".length)
     : path;
-
-  if (
-    normalized === "/affiliates/join-campaign" ||
-    normalized.startsWith("/affiliates/join-campaign/")
-  ) {
-    return true;
-  }
 
   return WORKSPACE_SCOPED_PREFIXES.some(
     (prefix) => normalized === prefix || normalized.startsWith(`${prefix}/`),

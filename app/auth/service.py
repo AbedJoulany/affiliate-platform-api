@@ -44,7 +44,7 @@ class AuthService:
             email=payload.email,
             hashed_password=hash_password(payload.password),
             full_name=payload.full_name,
-            role=UserRole.AFFILIATE,
+            role=UserRole.USER,
         )
         return await self.users.create(user)
 

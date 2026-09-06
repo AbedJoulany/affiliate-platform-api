@@ -22,7 +22,7 @@ AliExpress Discovery → Product Scoring → Inventory Review
         ↓
 AI Content Studio → Publishing Queue → Telegram Dispatch
         ↓
-Performance Analytics (workspace-scoped /analytics)
+Operational dashboard (queue / channel / product activity)
 ```
 
 ---
@@ -43,7 +43,7 @@ Long-term vision: an **affiliate automation operating system** supporting multi-
 | **Admin operators** | Import products, manage catalog lifecycle, configure channels |
 | **Future — Teams & businesses** | Shared workspaces, roles, analytics, automation rules |
 
-Public registration creates `affiliate` users only. Admin accounts must be provisioned operationally before catalog import is available.
+Public registration creates `user` accounts only. Admin accounts must be provisioned operationally before catalog import is available.
 
 ---
 
@@ -157,17 +157,15 @@ Telegram channel management; workspace settings forms (`/workspace-settings`) pl
 
 ## 7. MVP Scope & Boundaries
 
-**In scope today:** Login (with workspace runtime for tenant routes), dashboard, discovery (including image search), products inventory, AI studio, queue operations, analytics, channels, editable workspace settings, backend public click tracking (no SPA).
+**In scope today:** Login (with workspace runtime for tenant routes), dashboard, discovery (including image search), products inventory, AI studio, queue operations, channels, editable workspace settings.
 
-**Partial / roadmap:** Editable settings, payout module, workspace selector UI, full discovery filter surface, server-side AI variant persistence.
+**Partial / roadmap:** Workspace selector UI, full discovery filter surface, server-side AI variant persistence.
 
 **Phase E boundary (implemented vs open):**
 
 | Global APIs | Workspace-scoped APIs |
 | --- | --- |
-| Products · Discovery · Image search · Public click tracking | Dashboard · Queue · Channels · Queue SSE · Analytics |
-
-Affiliate profile remains user-global; campaign/conversion/join-campaign use workspace headers when called from integrated clients.
+| Products · Discovery · Image search | Dashboard · Queue · Channels · Queue SSE · Workspace settings |
 
 ---
 

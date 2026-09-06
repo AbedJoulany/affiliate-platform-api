@@ -31,7 +31,7 @@ async def _create_user(
     session,
     *,
     email: str,
-    role: UserRole = UserRole.AFFILIATE,
+    role: UserRole = UserRole.USER,
 ) -> User:
     user = User(
         email=email,

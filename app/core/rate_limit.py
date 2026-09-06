@@ -1,8 +1,7 @@
 """Redis-backed fixed-window rate limiting as a FastAPI dependency factory.
 
-Applied to selected routes via ``Depends(...)`` (Phase D auth/conversions,
-plus the public click redirect). Not middleware — SSE and other routes are
-untouched unless explicitly wired.
+Applied to selected routes via ``Depends(...)`` (login and refresh).
+Not middleware — SSE and other routes are untouched unless explicitly wired.
 """
 
 from __future__ import annotations
@@ -24,10 +23,6 @@ LOGIN_LIMIT = 10
 LOGIN_WINDOW_SECONDS = 5 * 60
 REFRESH_LIMIT = 20
 REFRESH_WINDOW_SECONDS = 5 * 60
-CONVERSION_LIMIT = 30
-CONVERSION_WINDOW_SECONDS = 60
-CLICK_LIMIT = 30
-CLICK_WINDOW_SECONDS = 60
 
 _IDENTITY_SAFE = re.compile(r"[^A-Za-z0-9._-]+")
 _REDIS_CONNECT_TIMEOUT_SECONDS = 1.0
@@ -187,17 +182,5 @@ limit_auth_refresh = rate_limit(
     route="refresh",
     limit=REFRESH_LIMIT,
     window_seconds=REFRESH_WINDOW_SECONDS,
-    identity="ip",
-)
-limit_conversions = rate_limit(
-    route="conversions",
-    limit=CONVERSION_LIMIT,
-    window_seconds=CONVERSION_WINDOW_SECONDS,
-    identity="user_or_ip",
-)
-limit_clicks = rate_limit(
-    route="clicks",
-    limit=CLICK_LIMIT,
-    window_seconds=CLICK_WINDOW_SECONDS,
     identity="ip",
 )

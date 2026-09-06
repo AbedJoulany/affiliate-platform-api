@@ -1,6 +1,5 @@
 import { AxiosError, type InternalAxiosRequestConfig } from "axios";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { joinCampaign } from "@/features/affiliates/api/affiliates.api";
 import { getProducts } from "@/features/products/api/products.api";
 import {
   WORKSPACE_HEADER,
@@ -73,21 +72,13 @@ describe("apiClient workspace header", () => {
     await apiClient.get("/queues");
     await apiClient.get("/channels");
     await apiClient.get("/dashboard");
-    await apiClient.get("/analytics/overview");
     await apiClient.get("/workspace-settings");
-    await apiClient.get("/campaigns");
-    await apiClient.post("/conversions", { amount: 1 });
-    await apiClient.post("/affiliates/join-campaign", { campaign_id: "camp-1" });
 
     expect(seen).toEqual({
       "/queues": WORKSPACE_A,
       "/channels": WORKSPACE_A,
       "/dashboard": WORKSPACE_A,
-      "/analytics/overview": WORKSPACE_A,
       "/workspace-settings": WORKSPACE_A,
-      "/campaigns": WORKSPACE_A,
-      "/conversions": WORKSPACE_A,
-      "/affiliates/join-campaign": WORKSPACE_A,
     });
   });
 
@@ -121,7 +112,7 @@ describe("apiClient workspace header", () => {
     );
 
     setActiveWorkspaceId("null");
-    await expect(apiClient.post("/conversions", { amount: 1 })).rejects.toMatchObject(
+    await expect(apiClient.get("/workspace-settings")).rejects.toMatchObject(
       MISSING_WORKSPACE_ERROR,
     );
 
@@ -183,7 +174,7 @@ describe("apiClient workspace header", () => {
     expect(result.total).toBe(0);
   });
 
-  it("does not attach X-Workspace-Id to global product, auth, or affiliate-profile requests", async () => {
+  it("does not attach X-Workspace-Id to global product or auth requests", async () => {
     setActiveWorkspaceId(WORKSPACE_A);
     const seen: Record<string, string | undefined> = {};
     installAdapter((config) => {
@@ -194,43 +185,13 @@ describe("apiClient workspace header", () => {
     await apiClient.get("/products");
     await apiClient.get("/auth/me");
     await apiClient.patch("/auth/me", { full_name: "Ada" });
-    await apiClient.get("/affiliates/me");
     await apiClient.post("/products/search/image", {
       image_url: "https://example.com/product.jpg",
     });
     expect(seen).toEqual({
       "/products": undefined,
       "/auth/me": undefined,
-      "/affiliates/me": undefined,
       "/products/search/image": undefined,
     });
-  });
-
-  it("sends X-Workspace-Id on POST /affiliates/join-campaign without putting workspace in the body", async () => {
-    setActiveWorkspaceId(WORKSPACE_A);
-    let header: string | undefined;
-    let body: unknown;
-    let url: string | undefined;
-    installAdapter((config) => {
-      header = headerValue(config, WORKSPACE_HEADER);
-      url = config.url;
-      body = typeof config.data === "string" ? JSON.parse(config.data) : config.data;
-      return {
-        status: 201,
-        data: {
-          id: "join-1",
-          affiliate_id: "aff-1",
-          campaign_id: "camp-1",
-          tracking_link: "https://example.test/t",
-          created_at: "2026-08-13T00:00:00Z",
-          updated_at: "2026-08-13T00:00:00Z",
-        },
-      };
-    });
-
-    await joinCampaign({ campaign_id: "camp-1" });
-    expect(url).toBe("/affiliates/join-campaign");
-    expect(header).toBe(WORKSPACE_A);
-    expect(body).toEqual({ campaign_id: "camp-1" });
   });
 });

@@ -17,7 +17,7 @@ from tests.test_api_endpoints import (
     register_and_login,
     workspace_auth_headers,
 )
-from tests.test_campaign_workspace_isolation import _create_workspace_for_user
+from tests.test_channel_workspace_isolation import _create_workspace_for_user
 
 SETTINGS = f"{API_PREFIX}/workspace-settings"
 ME = f"{API_PREFIX}/auth/me"
@@ -79,7 +79,7 @@ async def test_get_requires_auth(client):
 
 @pytest.mark.asyncio
 async def test_get_requires_workspace_header(client):
-    _, token = await register_and_login(client, role="affiliate")
+    _, token = await register_and_login(client, role="user")
     response = await client.get(SETTINGS, headers=auth_headers(token))
     assert response.status_code == 403
 
@@ -87,7 +87,7 @@ async def test_get_requires_workspace_header(client):
 @pytest.mark.asyncio
 async def test_get_empty_defaults_and_hides_secrets(client, monkeypatch):
     _install_sentinel_secrets(monkeypatch)
-    _, token = await register_and_login(client, role="affiliate")
+    _, token = await register_and_login(client, role="user")
     headers = await workspace_auth_headers(token)
     response = await client.get(SETTINGS, headers=headers)
     assert response.status_code == 200
@@ -109,7 +109,7 @@ async def test_get_empty_defaults_and_hides_secrets(client, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_owner_patch_upserts_and_unknown_fields_are_422(client):
-    _, token = await register_and_login(client, role="affiliate")
+    _, token = await register_and_login(client, role="user")
     headers = await workspace_auth_headers(token)
 
     forbidden = await client.patch(
@@ -136,11 +136,11 @@ async def test_owner_patch_upserts_and_unknown_fields_are_422(client):
 
 @pytest.mark.asyncio
 async def test_member_patch_is_403(client):
-    _, owner_token = await register_and_login(client, role="affiliate")
+    _, owner_token = await register_and_login(client, role="user")
     owner_headers = await workspace_auth_headers(owner_token)
     workspace_id = owner_headers[WORKSPACE_ID_HEADER]
 
-    _, member_token = await register_and_login(client, role="affiliate")
+    _, member_token = await register_and_login(client, role="user")
     await add_workspace_member(member_token, workspace_id)
     member_headers = _headers(member_token, workspace_id)
 
@@ -161,7 +161,7 @@ async def test_member_patch_is_403(client):
 
 @pytest.mark.asyncio
 async def test_cross_workspace_patch_is_404(client):
-    _, token_a = await register_and_login(client, role="affiliate")
+    _, token_a = await register_and_login(client, role="user")
     headers_a = await workspace_auth_headers(token_a)
     await client.patch(
         SETTINGS,
@@ -169,7 +169,7 @@ async def test_cross_workspace_patch_is_404(client):
         json={"ui_language": "en"},
     )
 
-    _, token_b = await register_and_login(client, role="affiliate")
+    _, token_b = await register_and_login(client, role="user")
     workspace_b = await _create_workspace_for_user(token_b, name="Other WS")
 
     leaked = await client.patch(
@@ -193,7 +193,7 @@ async def test_cross_workspace_patch_is_404(client):
 
 @pytest.mark.asyncio
 async def test_admin_can_patch_named_workspace(client):
-    _, owner_token = await register_and_login(client, role="affiliate")
+    _, owner_token = await register_and_login(client, role="user")
     owner_headers = await workspace_auth_headers(owner_token)
     workspace_id = owner_headers[WORKSPACE_ID_HEADER]
 
@@ -210,7 +210,7 @@ async def test_admin_can_patch_named_workspace(client):
 
 @pytest.mark.asyncio
 async def test_profile_patch_updates_name_not_role(client):
-    email, token = await register_and_login(client, role="affiliate")
+    email, token = await register_and_login(client, role="user")
     headers = auth_headers(token)
 
     role_attempt = await client.patch(
@@ -235,10 +235,10 @@ async def test_profile_patch_updates_name_not_role(client):
     assert updated.status_code == 200
     body = updated.json()
     assert body["full_name"] == "New Name"
-    assert body["role"] == UserRole.AFFILIATE.value
+    assert body["role"] == UserRole.USER.value
     assert body["is_active"] is True
     assert body["email"] == email
 
     me = await client.get(ME, headers=headers)
     assert me.json()["full_name"] == "New Name"
-    assert me.json()["role"] == UserRole.AFFILIATE.value
+    assert me.json()["role"] == UserRole.USER.value

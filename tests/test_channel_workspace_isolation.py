@@ -74,7 +74,7 @@ async def test_unauthenticated_channel_request_is_401(client):
 
 @pytest.mark.asyncio
 async def test_missing_workspace_header_is_rejected(client):
-    _, token = await register_and_login(client, role="affiliate")
+    _, token = await register_and_login(client, role="user")
     response = await client.get(CHANNELS, headers=auth_headers(token))
     assert response.status_code == 403
     assert response.json() == {"detail": "Insufficient permissions"}
@@ -82,22 +82,22 @@ async def test_missing_workspace_header_is_rejected(client):
 
 @pytest.mark.asyncio
 async def test_malformed_workspace_header_is_rejected(client):
-    _, token = await register_and_login(client, role="affiliate")
+    _, token = await register_and_login(client, role="user")
     response = await client.get(CHANNELS, headers=_headers(token, "not-a-uuid"))
     assert response.status_code == 403
 
 
 @pytest.mark.asyncio
 async def test_unknown_workspace_is_rejected(client):
-    _, token = await register_and_login(client, role="affiliate")
+    _, token = await register_and_login(client, role="user")
     response = await client.get(CHANNELS, headers=_headers(token, str(uuid4())))
     assert response.status_code == 403
 
 
 @pytest.mark.asyncio
 async def test_non_member_workspace_is_rejected(client):
-    _, owner_token = await register_and_login(client, role="affiliate")
-    _, stranger_token = await register_and_login(client, role="affiliate")
+    _, owner_token = await register_and_login(client, role="user")
+    _, stranger_token = await register_and_login(client, role="user")
     workspace_id = await _create_workspace_for_user(owner_token, name="Private")
     response = await client.get(CHANNELS, headers=_headers(stranger_token, workspace_id))
     assert response.status_code == 403
@@ -108,7 +108,7 @@ async def test_member_lists_only_own_workspace_channels(
     client,
     mock_telegram_permissions,
 ):
-    _, token = await register_and_login(client, role="affiliate")
+    _, token = await register_and_login(client, role="user")
     workspace_a = await _create_workspace_for_user(token, name="Channels A")
     workspace_b = await _create_workspace_for_user(token, name="Channels B")
     channel_a = await _create_channel(client, token, workspace_a, suffix="a1")
@@ -131,8 +131,8 @@ async def test_cross_workspace_update_and_delete_are_404(
     client,
     mock_telegram_permissions,
 ):
-    _, token_a = await register_and_login(client, role="affiliate")
-    _, token_b = await register_and_login(client, role="affiliate")
+    _, token_a = await register_and_login(client, role="user")
+    _, token_b = await register_and_login(client, role="user")
     workspace_a = await _create_workspace_for_user(token_a, name="A")
     workspace_b = await _create_workspace_for_user(token_b, name="B")
     channel_a = await _create_channel(client, token_a, workspace_a, suffix="xa")
@@ -158,7 +158,7 @@ async def test_create_assigns_workspace_from_header_not_body(
     client,
     mock_telegram_permissions,
 ):
-    _, token = await register_and_login(client, role="affiliate")
+    _, token = await register_and_login(client, role="user")
     workspace_a = await _create_workspace_for_user(token, name="Header A")
     workspace_b = await _create_workspace_for_user(token, name="Header B")
     payload = _channel_payload(suffix="hdr")
@@ -186,8 +186,8 @@ async def test_duplicate_telegram_channel_id_is_globally_rejected(
     client,
     mock_telegram_permissions,
 ):
-    _, token_a = await register_and_login(client, role="affiliate")
-    _, token_b = await register_and_login(client, role="affiliate")
+    _, token_a = await register_and_login(client, role="user")
+    _, token_b = await register_and_login(client, role="user")
     workspace_a = await _create_workspace_for_user(token_a, name="Unique A")
     workspace_b = await _create_workspace_for_user(token_b, name="Unique B")
     await _create_channel(client, token_a, workspace_a, suffix="dup")
@@ -206,7 +206,7 @@ async def test_admin_can_operate_without_membership(
     client,
     mock_telegram_permissions,
 ):
-    _, owner_token = await register_and_login(client, role="affiliate")
+    _, owner_token = await register_and_login(client, role="user")
     _, admin_token = await register_and_login(client, role="admin")
     workspace = await _create_workspace_for_user(owner_token, name="Admin target")
     channel = await _create_channel(client, owner_token, workspace, suffix="adm")
@@ -229,8 +229,8 @@ async def test_admin_requires_workspace_header_and_stays_scoped(
     client,
     mock_telegram_permissions,
 ):
-    _, token_a = await register_and_login(client, role="affiliate")
-    _, token_b = await register_and_login(client, role="affiliate")
+    _, token_a = await register_and_login(client, role="user")
+    _, token_b = await register_and_login(client, role="user")
     _, admin_token = await register_and_login(client, role="admin")
     workspace_a = await _create_workspace_for_user(token_a, name="Admin A")
     workspace_b = await _create_workspace_for_user(token_b, name="Admin B")

@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
@@ -20,7 +20,7 @@ def auth_headers(token: str) -> dict[str, str]:
 
 
 async def workspace_auth_headers(token: str) -> dict[str, str]:
-    """Bearer token plus a live workspace membership for campaign isolation."""
+    """Bearer token plus a live workspace membership for tenant isolation."""
     user_id = UUID(decode_access_token(token)["sub"])
     async with SessionLocal() as session:
         result = await session.execute(
@@ -45,16 +45,6 @@ async def workspace_auth_headers(token: str) -> dict[str, str]:
         }
 
 
-async def campaign_workspace_id(campaign_id: str) -> str:
-    from app.models.campaign import Campaign
-
-    async with SessionLocal() as session:
-        campaign = await session.get(Campaign, UUID(campaign_id))
-        assert campaign is not None
-        assert campaign.workspace_id is not None
-        return str(campaign.workspace_id)
-
-
 async def add_workspace_member(token: str, workspace_id: str) -> None:
     user_id = UUID(decode_access_token(token)["sub"])
     async with SessionLocal() as session:
@@ -76,27 +66,8 @@ async def add_workspace_member(token: str, workspace_id: str) -> None:
         await session.commit()
 
 
-async def conversion_auth_headers(token: str, campaign_id: str) -> dict[str, str]:
-    workspace_id = await campaign_workspace_id(campaign_id)
-    await add_workspace_member(token, workspace_id)
-    return {
-        **auth_headers(token),
-        WORKSPACE_ID_HEADER: workspace_id,
-    }
-
-
-async def join_campaign(client, token: str, campaign_id: str):
-    """Enroll the caller's affiliate in a campaign using its workspace header."""
-    headers = await conversion_auth_headers(token, campaign_id)
-    return await client.post(
-        f"{API_PREFIX}/affiliates/join-campaign",
-        headers=headers,
-        json={"campaign_id": campaign_id},
-    )
-
-
 @pytest.mark.asyncio
-async def test_public_registration_always_creates_affiliate_and_rejects_role(client):
+async def test_public_registration_always_creates_user_and_rejects_role(client):
     email = f"public-{uuid4().hex[:8]}@example.com"
     response = await client.post(
         f"{API_PREFIX}/auth/register",
@@ -107,9 +78,9 @@ async def test_public_registration_always_creates_affiliate_and_rejects_role(cli
         },
     )
     assert response.status_code == 201
-    assert response.json()["role"] == "affiliate"
+    assert response.json()["role"] == "user"
 
-    for role in ("admin", "advertiser"):
+    for role in ("admin", "advertiser", "affiliate"):
         privileged_response = await client.post(
             f"{API_PREFIX}/auth/register",
             json={
@@ -122,7 +93,7 @@ async def test_public_registration_always_creates_affiliate_and_rejects_role(cli
         assert privileged_response.status_code == 422
 
 
-async def register_and_login(client, role: str = "affiliate") -> tuple[str, str]:
+async def register_and_login(client, role: str = "user") -> tuple[str, str]:
     email = f"test-{role}-{uuid4().hex[:6]}@example.com"
     await provision_test_user(
         email=email,
@@ -160,59 +131,15 @@ async def create_product(client, token: str) -> dict:
     return response.json()
 
 
-async def create_campaign(client, token: str) -> dict:
-    payload = {
-        "name": "Test Campaign",
-        "description": "A campaign used by tests",
-        "payout_amount": 25.0,
-        "currency": "USD",
-        "landing_url": "https://example.com/landing",
-        "starts_at": datetime.now(UTC).isoformat(),
-        "ends_at": (datetime.now(UTC) + timedelta(days=30)).isoformat(),
-    }
-    response = await client.post(
-        f"{API_PREFIX}/campaigns",
-        headers=await workspace_auth_headers(token),
-        json=payload,
-    )
-    assert response.status_code == 201
-    return response.json()
-
-
-async def activate_campaign(client, token: str, campaign_id: str) -> dict:
-    response = await client.patch(
-        f"{API_PREFIX}/campaigns/{campaign_id}",
-        headers=await workspace_auth_headers(token),
-        json={"status": "active"},
-    )
-    assert response.status_code == 200
-    return response.json()
-
-
-async def create_affiliate_profile(client, token: str) -> dict:
-    payload = {
-        "company_name": "Test Affiliate Co.",
-        "website": "https://affiliate.example.com",
-        "payout_details": "Bank transfer",
-    }
-    response = await client.post(
-        f"{API_PREFIX}/affiliates",
-        headers=auth_headers(token),
-        json=payload,
-    )
-    assert response.status_code == 201
-    return response.json()
-
-
 @pytest.mark.asyncio
 async def test_auth_register_login_and_profile_endpoints(client):
-    _, token = await register_and_login(client, role="affiliate")
+    _, token = await register_and_login(client, role="user")
 
     response = await client.get(f"{API_PREFIX}/auth/me", headers=auth_headers(token))
     assert response.status_code == 200
     body = response.json()
     assert body["email"].endswith("@example.com")
-    assert body["role"] == "affiliate"
+    assert body["role"] == "user"
     assert body["is_active"] is True
     assert body["default_workspace_id"] is None
 
@@ -234,230 +161,9 @@ async def test_auth_register_login_and_profile_endpoints(client):
 
 
 @pytest.mark.asyncio
-async def test_affiliate_profile_crud_and_admin_listing(client):
-    _, admin_token = await register_and_login(client, role="admin")
-    _, affiliate_token = await register_and_login(client, role="affiliate")
-
-    unauth_resp = await client.get(f"{API_PREFIX}/affiliates/me")
-    assert unauth_resp.status_code == 401
-
-    profile_resp = await client.post(
-        f"{API_PREFIX}/affiliates",
-        headers=auth_headers(affiliate_token),
-        json={
-            "company_name": "Affiliate Test",
-            "website": "https://test.example.com",
-            "payout_details": "PayPal",
-        },
-    )
-    assert profile_resp.status_code == 201
-    affiliate_profile = profile_resp.json()
-    assert affiliate_profile["user_id"]
-    assert affiliate_profile["referral_code"]
-    assert affiliate_profile["status"] == "pending"
-
-    update_resp = await client.patch(
-        f"{API_PREFIX}/affiliates/{affiliate_profile['id']}",
-        headers=auth_headers(affiliate_token),
-        json={"company_name": "Affiliate Updated"},
-    )
-    assert update_resp.status_code == 200
-    assert update_resp.json()["company_name"] == "Affiliate Updated"
-
-    for privileged_update in (
-        {"status": "active"},
-        {"commission_rate": 25},
-    ):
-        forbidden_update = await client.patch(
-            f"{API_PREFIX}/affiliates/{affiliate_profile['id']}",
-            headers=auth_headers(affiliate_token),
-            json=privileged_update,
-        )
-        assert forbidden_update.status_code == 403
-
-    admin_update = await client.patch(
-        f"{API_PREFIX}/affiliates/{affiliate_profile['id']}",
-        headers=auth_headers(admin_token),
-        json={"status": "active", "commission_rate": 17.5},
-    )
-    assert admin_update.status_code == 200
-    assert admin_update.json()["status"] == "active"
-    assert float(admin_update.json()["commission_rate"]) == 17.5
-
-    list_resp = await client.get(
-        f"{API_PREFIX}/affiliates",
-        headers=auth_headers(admin_token),
-    )
-    assert list_resp.status_code == 200
-    assert any(item["id"] == affiliate_profile["id"] for item in list_resp.json())
-
-    forbidden_resp = await client.get(
-        f"{API_PREFIX}/affiliates",
-        headers=auth_headers(affiliate_token),
-    )
-    assert forbidden_resp.status_code == 403
-
-
-@pytest.mark.asyncio
-async def test_affiliate_join_campaign_workflow(client):
-    _, admin_token = await register_and_login(client, role="admin")
-    _, affiliate_token = await register_and_login(client, role="affiliate")
-
-    await create_affiliate_profile(client, affiliate_token)
-    campaign = await create_campaign(client, admin_token)
-    campaign = await activate_campaign(client, admin_token, campaign["id"])
-
-    join_resp = await join_campaign(client, affiliate_token, campaign["id"])
-    assert join_resp.status_code == 201
-    assert join_resp.json()["campaign_id"] == campaign["id"]
-    assert "tracking_link" in join_resp.json()
-
-    duplicate_resp = await join_campaign(client, affiliate_token, campaign["id"])
-    assert duplicate_resp.status_code == 409
-
-
-@pytest.mark.asyncio
-async def test_campaign_endpoints_with_role_based_access(client):
-    _, admin_token = await register_and_login(client, role="admin")
-    _, advertiser_token = await register_and_login(client, role="advertiser")
-    _, affiliate_token = await register_and_login(client, role="affiliate")
-
-    admin_campaign = await create_campaign(client, admin_token)
-    advertiser_campaign = await create_campaign(client, advertiser_token)
-
-    denied_resp = await client.post(
-        f"{API_PREFIX}/campaigns",
-        headers=await workspace_auth_headers(affiliate_token),
-        json={
-            "name": "Forbidden Campaign",
-            "landing_url": "https://example.com",
-            "payout_amount": 5.0,
-            "currency": "USD",
-        },
-    )
-    assert denied_resp.status_code == 403
-
-    active_campaign = await activate_campaign(client, admin_token, admin_campaign["id"])
-    assert active_campaign["status"] == "active"
-
-    admin_headers = await workspace_auth_headers(admin_token)
-    advertiser_headers = await workspace_auth_headers(advertiser_token)
-
-    active_list = await client.get(f"{API_PREFIX}/campaigns/active", headers=admin_headers)
-    assert active_list.status_code == 200
-    assert any(item["id"] == admin_campaign["id"] for item in active_list.json())
-
-    fetch_resp = await client.get(
-        f"{API_PREFIX}/campaigns/{admin_campaign['id']}",
-        headers=admin_headers,
-    )
-    assert fetch_resp.status_code == 200
-    assert fetch_resp.json()["id"] == admin_campaign["id"]
-
-    admin_list_resp = await client.get(
-        f"{API_PREFIX}/campaigns",
-        headers=admin_headers,
-    )
-    assert admin_list_resp.status_code == 200
-    admin_list_ids = {item["id"] for item in admin_list_resp.json()}
-    assert admin_campaign["id"] in admin_list_ids
-    assert advertiser_campaign["id"] not in admin_list_ids
-
-    forbidden_list = await client.get(
-        f"{API_PREFIX}/campaigns",
-        headers=await workspace_auth_headers(affiliate_token),
-    )
-    assert forbidden_list.status_code == 403
-
-    update_resp = await client.patch(
-        f"{API_PREFIX}/campaigns/{advertiser_campaign['id']}",
-        headers=advertiser_headers,
-        json={"description": "Updated by advertiser"},
-    )
-    assert update_resp.status_code == 200
-    assert update_resp.json()["description"] == "Updated by advertiser"
-
-
-@pytest.mark.asyncio
-async def test_conversion_endpoints_and_admin_status_update(client):
-    _, admin_token = await register_and_login(client, role="admin")
-    _, affiliate_token = await register_and_login(client, role="affiliate")
-
-    affiliate_profile = await create_affiliate_profile(client, affiliate_token)
-    campaign = await create_campaign(client, admin_token)
-    campaign = await activate_campaign(client, admin_token, campaign["id"])
-
-    join_resp = await join_campaign(client, affiliate_token, campaign["id"])
-    assert join_resp.status_code == 201
-
-    conversion_headers = await conversion_auth_headers(affiliate_token, campaign["id"])
-    conversion_resp = await client.post(
-        f"{API_PREFIX}/conversions",
-        headers=conversion_headers,
-        json={
-            "affiliate_id": affiliate_profile["id"],
-            "campaign_id": campaign["id"],
-            "external_order_id": f"order-{uuid4().hex[:8]}",
-            "amount": 125.50,
-            "currency": "USD",
-            "click_id": "click123",
-        },
-    )
-    assert conversion_resp.status_code == 201
-    conversion = conversion_resp.json()
-    assert conversion["status"] == "pending"
-
-    duplicate_resp = await client.post(
-        f"{API_PREFIX}/conversions",
-        headers=conversion_headers,
-        json={
-            "affiliate_id": affiliate_profile["id"],
-            "campaign_id": campaign["id"],
-            "external_order_id": conversion["external_order_id"],
-            "amount": 125.50,
-            "currency": "USD",
-        },
-    )
-    assert duplicate_resp.status_code == 409
-
-    me_resp = await client.get(
-        f"{API_PREFIX}/conversions/me",
-        headers=conversion_headers,
-    )
-    assert me_resp.status_code == 200
-    assert any(item["id"] == conversion["id"] for item in me_resp.json())
-
-    admin_headers = {
-        **auth_headers(admin_token),
-        WORKSPACE_ID_HEADER: conversion_headers[WORKSPACE_ID_HEADER],
-    }
-    admin_list_resp = await client.get(
-        f"{API_PREFIX}/conversions",
-        headers=admin_headers,
-    )
-    assert admin_list_resp.status_code == 200
-    assert any(item["id"] == conversion["id"] for item in admin_list_resp.json())
-
-    status_resp = await client.patch(
-        f"{API_PREFIX}/conversions/{conversion['id']}",
-        headers=admin_headers,
-        json={"status": "approved"},
-    )
-    assert status_resp.status_code == 200
-    assert status_resp.json()["status"] == "approved"
-
-    forbidden_update = await client.patch(
-        f"{API_PREFIX}/conversions/{conversion['id']}",
-        headers=conversion_headers,
-        json={"status": "paid"},
-    )
-    assert forbidden_update.status_code == 403
-
-
-@pytest.mark.asyncio
 async def test_product_crud_and_search_filters(client):
     _, admin_token = await register_and_login(client, role="admin")
-    _, affiliate_token = await register_and_login(client, role="affiliate")
+    _, user_token = await register_and_login(client, role="user")
 
     product = await create_product(client, admin_token)
 
@@ -493,7 +199,7 @@ async def test_product_crud_and_search_filters(client):
 
     forbidden_resp = await client.post(
         f"{API_PREFIX}/products",
-        headers=auth_headers(affiliate_token),
+        headers=auth_headers(user_token),
         json={
             "title": "Invalid Product",
             "price": 5.0,
@@ -506,7 +212,7 @@ async def test_product_crud_and_search_filters(client):
 
 @pytest.mark.asyncio
 async def test_telegram_channel_crud_and_auth(client, mock_telegram_permissions):
-    _, token = await register_and_login(client, role="affiliate")
+    _, token = await register_and_login(client, role="user")
     headers = await workspace_auth_headers(token)
 
     create_resp = await client.post(
@@ -549,9 +255,9 @@ async def test_telegram_channel_crud_and_auth(client, mock_telegram_permissions)
 
 @pytest.mark.asyncio
 async def test_ai_content_generation_with_product_and_url(client, mock_ai_provider):
-    _, token = await register_and_login(client, role="affiliate")
+    _, token = await register_and_login(client, role="user")
 
-    admin_email, admin_token = await register_and_login(client, role="admin")
+    _admin_email, admin_token = await register_and_login(client, role="admin")
     product = await create_product(client, admin_token)
 
     response = await client.post(
@@ -583,7 +289,7 @@ async def test_ai_content_generation_with_product_and_url(client, mock_ai_provid
 
 @pytest.mark.asyncio
 async def test_queue_endpoints_and_publish(client, mock_queue_publish):
-    _, token = await register_and_login(client, role="affiliate")
+    _, token = await register_and_login(client, role="user")
     headers = await workspace_auth_headers(token)
 
     create_resp = await client.post(
@@ -634,7 +340,7 @@ async def test_queue_endpoints_and_publish(client, mock_queue_publish):
 @pytest.mark.asyncio
 async def test_aliexpress_import_endpoint_admin_only_and_validation(client, monkeypatch):
     _, admin_token = await register_and_login(client, role="admin")
-    _, affiliate_token = await register_and_login(client, role="affiliate")
+    _, user_token = await register_and_login(client, role="user")
 
     async def fake_import_product(self, url=None, product_id=None):
         return AliExpressImportResponse(
@@ -673,7 +379,7 @@ async def test_aliexpress_import_endpoint_admin_only_and_validation(client, monk
 
     forbidden_resp = await client.post(
         f"{API_PREFIX}/aliexpress/import",
-        headers=auth_headers(affiliate_token),
+        headers=auth_headers(user_token),
         json={"url": "https://aliexpress.com/item/1234567890.html"},
     )
     assert forbidden_resp.status_code == 403

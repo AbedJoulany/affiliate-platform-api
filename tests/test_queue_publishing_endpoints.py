@@ -13,7 +13,7 @@ API_PREFIX = "/api/v1"
 PASSWORD = "StrongP@ssw0rd"
 
 
-async def register_and_login(client, role: str = "affiliate") -> tuple[str, str]:
+async def register_and_login(client, role: str = "user") -> tuple[str, str]:
     email = f"pub-{role}-{uuid4().hex[:6]}@example.com"
     await provision_test_user(
         email=email,

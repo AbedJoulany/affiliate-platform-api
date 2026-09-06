@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib.util
-from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
 
@@ -12,7 +11,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import QueueStatus
-from app.models.campaign import Campaign
 from app.models.channel import TelegramChannel
 from app.models.queue import QueueItem
 from app.models.workspace import Workspace
@@ -45,19 +43,6 @@ async def _create_workspace(session: AsyncSession) -> Workspace:
 
 
 @pytest.mark.asyncio
-async def test_campaign_without_workspace_id_is_rejected(session: AsyncSession):
-    session.add(
-        Campaign(
-            name="No workspace",
-            payout_amount=Decimal("10.00"),
-            landing_url="https://example.com/landing",
-        )
-    )
-    with pytest.raises(IntegrityError):
-        await session.flush()
-
-
-@pytest.mark.asyncio
 async def test_queue_item_without_workspace_id_is_rejected(session: AsyncSession):
     session.add(QueueItem(title="No workspace", content="content", status=QueueStatus.DRAFT))
     with pytest.raises(IntegrityError):
@@ -69,21 +54,6 @@ async def test_telegram_channel_without_workspace_id_is_rejected(session: AsyncS
     session.add(TelegramChannel(telegram_channel_id=f"@nows{uuid4().hex[:8]}"))
     with pytest.raises(IntegrityError):
         await session.flush()
-
-
-@pytest.mark.asyncio
-async def test_campaign_with_workspace_id_is_accepted(session: AsyncSession):
-    workspace = await _create_workspace(session)
-    campaign = Campaign(
-        name="Owned campaign",
-        payout_amount=Decimal("12.00"),
-        landing_url="https://example.com/owned",
-        workspace_id=workspace.id,
-    )
-    session.add(campaign)
-    await session.flush()
-    await session.refresh(campaign)
-    assert campaign.workspace_id == workspace.id
 
 
 @pytest.mark.asyncio

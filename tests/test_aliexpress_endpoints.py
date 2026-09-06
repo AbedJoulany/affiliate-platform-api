@@ -223,7 +223,7 @@ async def test_products_import_is_admin_only_and_ignores_missing_workspace_heade
 ):
     from tests.test_api_endpoints import register_and_login
 
-    _, affiliate_token = await register_and_login(client, role="affiliate")
+    _, affiliate_token = await register_and_login(client, role="user")
     forbidden = await client.post(
         f"{API_PREFIX}/products/import",
         headers=auth_headers(affiliate_token),

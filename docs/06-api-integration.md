@@ -1,7 +1,9 @@
 # API Integration Guide
 
-**Document Version:** 2.13  
-**Last Updated:** 2026-09-04
+**Document Version:** 2.14  
+**Last Updated:** 2026-09-06
+
+**2026-09-06 revision (Product B removal):** The affiliate-network layer is gone. There are no `/affiliates`, `/campaigns`, `/conversions`, `/clicks`, or `/analytics` routes. Registration creates `user` (not `affiliate`). Product A catalog fields `affiliate_url` and `commission_rate` remain. Historical notes below that describe Product B APIs are superseded by this revision.
 
 **2026-09-04 revision (Phase E Task 14):** Editable workspace settings (`GET/PATCH /workspace-settings`) and self-service `PATCH /auth/me`. Secrets stay env-only; responses expose connection booleans. See §4.11.
 

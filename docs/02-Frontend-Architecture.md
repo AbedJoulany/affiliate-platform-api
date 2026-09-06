@@ -187,33 +187,20 @@ api-client attaches X-Workspace-Id on tenant paths only
 | --- | --- |
 | `lib/workspace.ts` | Read/write active workspace id; `isWorkspaceScopedPath`; `workspaceScopedQueryKey` |
 | `services/session.ts` | Stores `affiliate_active_workspace_id`; cleared on logout |
-| `services/api-client.ts` | Interceptor: attach header on `/dashboard`, `/queues`, `/channels`, `/campaigns`, `/conversions`, `/affiliates/join-campaign`, `/analytics`, `/workspace-settings`; strip elsewhere |
-| `features/*/hooks` | Dashboard, queue, channels, analytics, settings hooks gate on `useActiveWorkspaceId()` |
+| `services/api-client.ts` | Interceptor: attach header on `/dashboard`, `/queues`, `/channels`, `/workspace-settings`; strip elsewhere |
+| `features/*/hooks` | Dashboard, queue, channels, settings hooks gate on `useActiveWorkspaceId()` |
 
-**Workspace-scoped in the frontend:** Dashboard, queue list/detail/SSE, channels, analytics, settings.
+**Workspace-scoped in the frontend:** Dashboard, queue list/detail/SSE, channels, settings.
 
-**Global in the frontend:** Products catalog, Discovery (including image search), affiliate profile (`/profile`, `PATCH /auth/me`), public click redirects (no SPA).
+**Global in the frontend:** Products catalog, Discovery (including image search), profile (`/profile`, `PATCH /auth/me`).
 
 Logout clears tokens, workspace id, middleware cookie, and TanStack Query cache, then redirects to `/login`. There is **no workspace selector UI** in this milestone.
-
-### 4.7 Analytics (`features/analytics`)
-
-| Piece | Role |
-| --- | --- |
-| `AnalyticsView` | Date range, KPI strip, overview chart, campaign funnel selector |
-| `useAnalyticsOverview` / `useCampaignFunnel` | TanStack Query; keys include workspace id + `from`/`to` |
-| `AnalyticsOverviewCards` | Clicks, conversions, rate, revenue |
-| `ClickConversionChart` / `CampaignFunnelChart` | `recharts`; SVG `dir="ltr"` for axis geometry |
-
-Workspace-scoped. Missing workspace id shows `NoActiveWorkspaceState`; charts are not rendered without an active workspace.
-
----
 
 ## 5. State Management
 
 ### Server state (TanStack Query)
 
-Products, discovery results, queue, channels, dashboard, analytics, auth `/me`, categories.
+Products, discovery results, queue, channels, dashboard, auth `/me`, categories.
 
 Query keys include all server-side filter parameters. Mutations invalidate the smallest relevant key prefix.
 
@@ -240,7 +227,7 @@ Login → POST /auth/login (form) → store access_token + refresh_token in sess
 Protected route → middleware cookie check → AuthGuard → GET /auth/me
   → apply default_workspace_id to sessionStorage when present
 Protected API → Authorization: Bearer <access_token>
-  → X-Workspace-Id on tenant-scoped paths only (dashboard, queues, channels, campaigns, conversions, join-campaign)
+  → X-Workspace-Id on tenant-scoped paths only (dashboard, queues, channels, workspace-settings)
 401 (non-auth-session) → single-flight POST /auth/refresh → store rotated pair → retry once
 Refresh failure / missing refresh → clear session → redirect /login
 403 → surface forbidden; no refresh; no auto-logout

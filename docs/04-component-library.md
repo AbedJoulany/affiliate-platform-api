@@ -3,9 +3,7 @@
 **Document Version:** 2.3  
 **Last Updated:** 2026-09-04
 
-**2026-09-04 revision:** Settings forms (`WorkspaceSettingsView`, connection badges) and editable `CapabilityView` sections. Analytics components remain registered.
-
-**2026-09-04 revision:** Analytics feature components (`AnalyticsView`, KPI cards, charts) registered.
+**2026-09-06 revision:** Product B analytics components (`AnalyticsView`, campaign funnel, click/conversion charts) were removed. The dashboard remains the Product A operational MEASURE surface.
 
 **2026-08-04 revision:** Phase A.1 frontend wiring shipped — `QueueOperationalStats`, `QueueHealthBadge`, and `QueueDetailsDrawer` notes below updated from "planned" to implemented backend-truth behavior.
 
@@ -184,18 +182,7 @@ Interactive score cell with:
 | `DashboardView` | Implemented — stat cards, activity, system status |
 | `CapabilityView` | Implemented — re-exports `WorkspaceSettingsView`; per-section editable forms |
 
-## 10.1 Analytics
-
-| Component | Status | Description |
-| --- | --- | --- |
-| `AnalyticsView` | Implemented | PageContainer + PageHeader, date range, workspace gating (`NoActiveWorkspaceState`) |
-| `AnalyticsOverviewCards` | Implemented | KPI strip (clicks, conversions, rate, revenue) — same visual pattern as `QueueOperationalStats` |
-| `ClickConversionChart` | Implemented | `recharts` line chart of `by_day`; SVG wrapped `dir="ltr"`; colors from CSS tokens |
-| `CampaignFunnelChart` | Implemented | Per-campaign funnel steps + daily series; selector uses `GET /campaigns/active` |
-
-Loading/empty/error use shared `LoadingState` / `EmptyState` / `ErrorState`. No new state components.
-
-## 10.2 Settings
+## 10.1 Settings
 
 | Component | Status | Description |
 | --- | --- | --- |

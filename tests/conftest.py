@@ -11,7 +11,6 @@ from app.auth.security import hash_password
 from app.core.database import Base, get_db
 from app.core.enums import BotPermissionStatus, UserRole
 from app.main import app as fastapi_app
-from app.models.click import Click  # noqa: F401 — register metadata
 from app.models.refresh_token import RefreshToken  # noqa: F401 — register metadata
 from app.models.workspace import Workspace, WorkspaceMembership  # noqa: F401 — register metadata
 from app.models.workspace_settings import WorkspaceSettings  # noqa: F401 — register metadata

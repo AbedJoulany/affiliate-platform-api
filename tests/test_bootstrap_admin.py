@@ -119,9 +119,9 @@ async def test_existing_non_admin_is_not_promoted(session):
     session.add(
         User(
             email=email,
-            hashed_password=hash_password("affiliate-pass"),
-            full_name="Existing Affiliate",
-            role=UserRole.AFFILIATE,
+            hashed_password=hash_password("user-pass"),
+            full_name="Existing User",
+            role=UserRole.USER,
         )
     )
     await session.flush()
@@ -136,7 +136,7 @@ async def test_existing_non_admin_is_not_promoted(session):
 
     user = await UserRepository(session).get_by_email(email)
     assert user is not None
-    assert user.role == UserRole.AFFILIATE
+    assert user.role == UserRole.USER
     assert await _creator_workspaces(session, user.id) == []
     assert await _membership_count(session, user.id) == 0
 

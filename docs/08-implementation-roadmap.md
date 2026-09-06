@@ -1,7 +1,9 @@
 # Implementation Roadmap
 
-**Document Version:** 3.2  
-**Last Updated:** 2026-09-04
+**Document Version:** 3.3  
+**Last Updated:** 2026-09-06
+
+**2026-09-06 revision (Product B removal):** Affiliate, Campaign, AffiliateCampaign, Click, Conversion, and campaign analytics were removed. Product A MEASURE is the operational dashboard. Historical Phase D/E notes below that describe those APIs are superseded.
 
 **2026-09-04 revision (CI hardening):** Platform foundation — Ruff CI gate is the full first-party Python tree; Playwright smoke runs as GitHub Actions job `e2e` (not a required branch-protection check yet). See [10-production-readiness.md](./10-production-readiness.md) §3.
 
@@ -644,11 +646,11 @@ Depends on Phases A.1–D being substantially complete. JWT refresh tokens are *
 | Dashboard + readiness                     | ✅                     |
 | Celery publishing                         | ✅                     |
 | Celery worker/Beat health + Flower ops    | ✅ Phase B             |
-| Affiliates/campaigns/conversions          | ✅ API + Phase D authz |
+| Affiliates/campaigns/conversions          | ❌ Removed (Product B) |
 | Refresh tokens                            | ✅ Phase D (migration 009) |
 | Rate limiting (route dependencies)        | ✅ Phase D + E (login/refresh/conversions/clicks) |
 | Public click tracking                     | ✅ Phase E Task 11 (migration 014) |
-| Analytics (overview + campaign funnel)    | ✅ Phase E Tasks 12–13 (migration 015) |
+| Analytics (overview + campaign funnel)    | ❌ Removed (Product B). Product A MEASURE is the dashboard |
 | Workspace settings + profile PATCH        | ✅ Phase E Task 14 (migration 016) |
 | CI/CD full lint gate                      | ✅ Ruff `check .` (iop vendor excluded) |
 | Publish attempt/event tracking (Telegram) | ✅ Phase A.1 backend   |

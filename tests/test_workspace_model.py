@@ -16,7 +16,7 @@ async def _create_user(session, *, email: str) -> User:
         email=email,
         hashed_password=hash_password("test-password"),
         full_name="Workspace Tester",
-        role=UserRole.AFFILIATE,
+        role=UserRole.USER,
     )
     session.add(user)
     await session.flush()

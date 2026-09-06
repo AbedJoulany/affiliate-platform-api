@@ -98,7 +98,7 @@ async def test_unauthenticated_queue_request_is_401(client):
 
 @pytest.mark.asyncio
 async def test_missing_workspace_header_is_rejected(client):
-    _, token = await register_and_login(client, role="affiliate")
+    _, token = await register_and_login(client, role="user")
     response = await client.get(QUEUES, headers=auth_headers(token))
     assert response.status_code == 403
     assert response.json() == {"detail": "Insufficient permissions"}
@@ -106,7 +106,7 @@ async def test_missing_workspace_header_is_rejected(client):
 
 @pytest.mark.asyncio
 async def test_malformed_and_unknown_workspace_are_rejected(client):
-    _, token = await register_and_login(client, role="affiliate")
+    _, token = await register_and_login(client, role="user")
     malformed = await client.get(QUEUES, headers=_headers(token, "not-a-uuid"))
     unknown = await client.get(QUEUES, headers=_headers(token, str(uuid4())))
     assert malformed.status_code == 403
@@ -115,8 +115,8 @@ async def test_malformed_and_unknown_workspace_are_rejected(client):
 
 @pytest.mark.asyncio
 async def test_non_member_workspace_is_rejected(client):
-    _, owner_token = await register_and_login(client, role="affiliate")
-    _, stranger_token = await register_and_login(client, role="affiliate")
+    _, owner_token = await register_and_login(client, role="user")
+    _, stranger_token = await register_and_login(client, role="user")
     workspace_id = await _create_workspace_for_user(owner_token, name="Private queues")
     response = await client.get(QUEUES, headers=_headers(stranger_token, workspace_id))
     assert response.status_code == 403
@@ -124,7 +124,7 @@ async def test_non_member_workspace_is_rejected(client):
 
 @pytest.mark.asyncio
 async def test_list_and_get_are_workspace_scoped(client):
-    _, token = await register_and_login(client, role="affiliate")
+    _, token = await register_and_login(client, role="user")
     workspace_a = await _create_workspace_for_user(token, name="Queue A")
     workspace_b = await _create_workspace_for_user(token, name="Queue B")
     item_a = await _create_queue(client, token, workspace_a, content="A item")
@@ -148,8 +148,8 @@ async def test_list_and_get_are_workspace_scoped(client):
 
 @pytest.mark.asyncio
 async def test_cross_workspace_patch_delete_and_publish_are_404(client):
-    _, token_a = await register_and_login(client, role="affiliate")
-    _, token_b = await register_and_login(client, role="affiliate")
+    _, token_a = await register_and_login(client, role="user")
+    _, token_b = await register_and_login(client, role="user")
     workspace_a = await _create_workspace_for_user(token_a, name="Patch A")
     workspace_b = await _create_workspace_for_user(token_b, name="Patch B")
     item = await _create_queue(client, token_a, workspace_a)
@@ -175,7 +175,7 @@ async def test_cross_workspace_patch_delete_and_publish_are_404(client):
 
 @pytest.mark.asyncio
 async def test_create_assigns_workspace_from_header_not_body(client):
-    _, token = await register_and_login(client, role="affiliate")
+    _, token = await register_and_login(client, role="user")
     workspace_a = await _create_workspace_for_user(token, name="Create A")
     workspace_b = await _create_workspace_for_user(token, name="Create B")
 
@@ -201,7 +201,7 @@ async def test_create_assigns_workspace_from_header_not_body(client):
 
 @pytest.mark.asyncio
 async def test_queue_without_channel_remains_valid(client):
-    _, token = await register_and_login(client, role="affiliate")
+    _, token = await register_and_login(client, role="user")
     workspace_id = await _create_workspace_for_user(token, name="No channel")
     created = await _create_queue(client, token, workspace_id, content="Draft only")
     assert created["channel_id"] is None
@@ -212,8 +212,8 @@ async def test_queue_channel_attachment_must_share_workspace(
     client,
     mock_telegram_permissions,
 ):
-    _, token_a = await register_and_login(client, role="affiliate")
-    _, token_b = await register_and_login(client, role="affiliate")
+    _, token_a = await register_and_login(client, role="user")
+    _, token_b = await register_and_login(client, role="user")
     workspace_a = await _create_workspace_for_user(token_a, name="Pair A")
     workspace_b = await _create_workspace_for_user(token_b, name="Pair B")
     channel_a = await _create_channel(client, token_a, workspace_a, suffix="pa")
@@ -271,8 +271,8 @@ async def test_queue_channel_attachment_must_share_workspace(
 
 @pytest.mark.asyncio
 async def test_publish_attempts_require_parent_queue_authorization(client, session):
-    _, token_a = await register_and_login(client, role="affiliate")
-    _, token_b = await register_and_login(client, role="affiliate")
+    _, token_a = await register_and_login(client, role="user")
+    _, token_b = await register_and_login(client, role="user")
     workspace_a = await _create_workspace_for_user(token_a, name="Attempts A")
     workspace_b = await _create_workspace_for_user(token_b, name="Attempts B")
     item = await create_publishable_queue_item(
@@ -299,8 +299,8 @@ async def test_publish_attempts_require_parent_queue_authorization(client, sessi
 
 @pytest.mark.asyncio
 async def test_admin_can_operate_without_membership_but_stays_scoped(client):
-    _, owner_token = await register_and_login(client, role="affiliate")
-    _, other_token = await register_and_login(client, role="affiliate")
+    _, owner_token = await register_and_login(client, role="user")
+    _, other_token = await register_and_login(client, role="user")
     _, admin_token = await register_and_login(client, role="admin")
     workspace_a = await _create_workspace_for_user(owner_token, name="Admin queues")
     workspace_b = await _create_workspace_for_user(other_token, name="Other queues")
@@ -372,8 +372,8 @@ async def test_worker_scans_remain_global(session):
 
 @pytest.mark.asyncio
 async def test_sse_workspace_auth_and_admin_resolution(client, session):
-    _, member_token = await register_and_login(client, role="affiliate")
-    _, stranger_token = await register_and_login(client, role="affiliate")
+    _, member_token = await register_and_login(client, role="user")
+    _, stranger_token = await register_and_login(client, role="user")
     _, admin_token = await register_and_login(client, role="admin")
     workspace_id = await _create_workspace_for_user(member_token, name="SSE workspace")
 
@@ -455,7 +455,7 @@ async def test_sse_subscribers_are_isolated_by_workspace():
 
 @pytest.mark.asyncio
 async def test_dashboard_scopes_queue_and_channel_but_not_products(client, session):
-    _, token = await register_and_login(client, role="affiliate")
+    _, token = await register_and_login(client, role="user")
     workspace_a = await _create_workspace_for_user(token, name="Dash A")
     workspace_b = await _create_workspace_for_user(token, name="Dash B")
 

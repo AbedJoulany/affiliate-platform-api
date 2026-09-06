@@ -69,7 +69,7 @@ describe("apiClient authentication", () => {
     expect(authorization).toBe("Bearer access-old");
   });
 
-  it("sends POST /conversions with the access token", async () => {
+  it("sends POST /queues with the access token", async () => {
     let authorization: string | undefined;
     let method: string | undefined;
     let url: string | undefined;
@@ -77,12 +77,12 @@ describe("apiClient authentication", () => {
       authorization = headerValue(config, "Authorization");
       method = config.method;
       url = config.url;
-      return { status: 201, data: { id: "conv-1" } };
+      return { status: 201, data: { id: "queue-1" } };
     });
 
-    await apiClient.post("/conversions", { affiliate_id: "aff-1", amount: 10 });
+    await apiClient.post("/queues", { content: "Publish me" });
     expect(method).toBe("post");
-    expect(url).toBe("/conversions");
+    expect(url).toBe("/queues");
     expect(authorization).toBe("Bearer access-old");
   });
 
@@ -150,7 +150,7 @@ describe("apiClient authentication", () => {
     const pending = Promise.all([
       apiClient.get("/queues"),
       apiClient.get("/products"),
-      apiClient.post("/conversions", { affiliate_id: "aff-1", amount: 25 }),
+      apiClient.post("/channels", { telegram_channel_id: "@demo", title: "Demo" }),
     ]);
 
     await vi.waitFor(() => expect(refreshCalls).toBe(1));
@@ -158,7 +158,7 @@ describe("apiClient authentication", () => {
     await pending;
 
     expect(refreshCalls).toBe(1);
-    expect(retriedAuth).toEqual(new Set(["/queues", "/products", "/conversions"]));
+    expect(retriedAuth).toEqual(new Set(["/queues", "/products", "/channels"]));
     expect(session.getAccessToken()).toBe("access-new");
     expect(session.getRefreshToken()).toBe("refresh-new");
   });
@@ -264,7 +264,7 @@ describe("apiClient authentication", () => {
     });
 
     await expect(
-      apiClient.post("/conversions", { affiliate_id: "other", amount: 10 }),
+      apiClient.post("/queues", { content: "forbidden" }),
     ).rejects.toMatchObject({ status: 403 });
     expect(refreshCalls).toBe(0);
     expect(session.getAccessToken()).toBe("access-old");

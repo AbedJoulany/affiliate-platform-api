@@ -129,10 +129,9 @@ Execute with staging admin:
 | JWT secret (non-dev) | Reject repository default; reject length &lt; 32; fail-fast; no secret in error text |
 | Refresh tokens | Opaque; SHA-256 hash in PostgreSQL; rotate; single-use; reuse revocation; logout revoke; migration `009` |
 | Rate limiting | Redis fixed-window via FastAPI route dependencies (not middleware); fail-open; policies below |
-| Conversion create | Authenticated + affiliate ownership (or ADMIN); 401/403; amount integrity still client/PENDING review |
 | Admin operations | Import, delete — backend + UI role check |
-| Tenancy | Queue/channel HTTP APIs, dashboard queue/channel aggregates, **analytics**, **workspace settings**, and `GET /queues/stream` are **workspace-scoped** via `X-Workspace-Id`. Analytics derives click/conversion scope through `Campaign.workspace_id` (no `workspace_id` on `clicks` or `conversions`; migration `015` adds query indexes only). `workspace_settings.workspace_id` is **NOT NULL** with `ON DELETE CASCADE` (migration `016`). `campaigns.workspace_id`, `queue_items.workspace_id`, and `telegram_channels.workspace_id` are **NOT NULL** with `ON DELETE RESTRICT` (migration `013`). Product remains a **global shared catalog** (no `workspace_id`). Affiliate remains a **global user-owned 1:1 profile** (no `workspace_id`). `PATCH /auth/me` is user-global (no workspace header). `POST /affiliates/join-campaign` requires `X-Workspace-Id`. Public **`GET /clicks/{affiliate_campaign_id}`** is global — no JWT, no workspace header (Task 11). Discovery and **`POST /products/search/image`** remain global (Task 10). Frontend workspace init: `/auth/me` → `default_workspace_id` → `sessionStorage` (Task 9). |
-| Public / unauthenticated | Discovery read, product list, public click redirect; `POST /conversions` is **no longer** anonymous |
+| Tenancy | Queue/channel HTTP APIs, dashboard queue/channel aggregates, **workspace settings**, and `GET /queues/stream` are **workspace-scoped** via `X-Workspace-Id`. `workspace_settings.workspace_id` is **NOT NULL** with `ON DELETE CASCADE` (migration `016`). `queue_items.workspace_id` and `telegram_channels.workspace_id` are **NOT NULL** with `ON DELETE RESTRICT` (migration `013`). Product remains a **global shared catalog** (no `workspace_id`). `PATCH /auth/me` is user-global (no workspace header). Discovery and **`POST /products/search/image`** remain global. Frontend workspace init: `/auth/me` → `default_workspace_id` → `sessionStorage`. |
+| Public / unauthenticated | Discovery read, product list |
 | `/ready` | Dependency state only (database + redis) — no secrets; not Celery liveness |
 | `/worker/health` | Celery Beat→worker pipeline heartbeat only — no secrets; not task-failure metrics |
 | Auth service | No password/credential logging in `app/auth/service.py` or `app/auth/security.py` (verified 2026-07-29) |
@@ -143,8 +142,6 @@ Execute with staging admin:
 | --- | --- | --- | --- |
 | `POST /auth/login` | 10 | 5 minutes | client IP (`request.client.host`) |
 | `POST /auth/refresh` | 20 | 5 minutes | client IP |
-| `POST /conversions` | 30 | 1 minute | user id when valid access Bearer present; else IP |
-| `GET /clicks/{affiliate_campaign_id}` | 30 | 60 seconds | client IP (`request.client.host`) |
 
 429 includes `Retry-After`. No claim of `X-Forwarded-For` / trusted-proxy IP handling.
 
@@ -332,7 +329,7 @@ Shipped 2026-08-13. Design: [planning/phase-d-auth-security-design.md](./plannin
 
 **Open follow-up:** OpenAPI route metadata for click endpoint still documents primarily **302**; **404** and **429** belong in code-level OpenAPI when application metadata is next touched.
 
-**Still out of scope:** Analytics, funnel metrics, payouts, Product↔Campaign redesign, workspace selector UI.
+**Still out of scope:** Workspace selector UI. Product B campaign analytics and payouts were removed.
 
 ---
 

@@ -19,7 +19,6 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import dispose_async_engine, get_async_session_maker
-from app.models.campaign import Campaign
 from app.models.channel import TelegramChannel
 from app.models.queue import QueueItem
 from app.models.workspace import Workspace
@@ -27,13 +26,12 @@ from app.models.workspace import Workspace
 
 @dataclass(frozen=True, slots=True)
 class NullCounts:
-    campaigns: int
     queue_items: int
     telegram_channels: int
 
     @property
     def total(self) -> int:
-        return self.campaigns + self.queue_items + self.telegram_channels
+        return self.queue_items + self.telegram_channels
 
 
 async def count_null_workspace_rows(session: AsyncSession) -> NullCounts:
@@ -44,7 +42,6 @@ async def count_null_workspace_rows(session: AsyncSession) -> NullCounts:
         return int(result.scalar_one())
 
     return NullCounts(
-        campaigns=await _count(Campaign),
         queue_items=await _count(QueueItem),
         telegram_channels=await _count(TelegramChannel),
     )
@@ -89,11 +86,6 @@ async def assign_legacy_workspace_ids(
         .where(QueueItem.workspace_id.is_(None))
         .values(workspace_id=workspace_id)
     )
-    await session.execute(
-        update(Campaign)
-        .where(Campaign.workspace_id.is_(None))
-        .values(workspace_id=workspace_id)
-    )
     await session.flush()
     return await count_null_workspace_rows(session)
 
@@ -101,7 +93,7 @@ async def assign_legacy_workspace_ids(
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Assign leftover NULL workspace_id values on campaigns, queue_items, "
+            "Assign leftover NULL workspace_id values on queue_items "
             "and telegram_channels to one existing workspace. Required before "
             "alembic revision 013. Does not run inside the migration."
         )
@@ -137,7 +129,6 @@ async def _run(args: argparse.Namespace) -> int:
             if args.dry_run:
                 print(
                     "Dry run — NULL rows: "
-                    f"campaigns={remaining.campaigns}, "
                     f"queue_items={remaining.queue_items}, "
                     f"telegram_channels={remaining.telegram_channels}"
                 )
@@ -146,7 +137,6 @@ async def _run(args: argparse.Namespace) -> int:
                 print(
                     "Assigned NULL tenant rows to workspace "
                     f"{workspace_id}. Remaining NULLs: "
-                    f"campaigns={remaining.campaigns}, "
                     f"queue_items={remaining.queue_items}, "
                     f"telegram_channels={remaining.telegram_channels}"
                 )

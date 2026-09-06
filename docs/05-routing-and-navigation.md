@@ -40,7 +40,6 @@ app/(dashboard)/     → Protected (AuthGuard + middleware cookie)
 ├── discovery
 ├── ai                      ← ?product= | ?url= query params
 ├── queue
-├── analytics
 ├── channels
 ├── settings
 │   ├── general
@@ -74,10 +73,6 @@ AI Content Studio (`ContentWorkspaceView`). Accepts `?product={uuid}` or `?url=�
 
 Publishing Operations Center. KPI strip at top. **Drawer boundary:** `QueueDetailsDrawer` for post inspection. **Dialog boundary:** `QueueSchedulingDialog` for bulk/single schedule.
 
-### `/analytics`
-
-Workspace-scoped click and conversion KPIs. Date range controls, overview line chart, optional campaign funnel (`GET /campaigns/active` selector). Gated on active workspace id like Dashboard/Queue/Channels.
-
 ### `/channels`
 
 Telegram channel registry. Full-page CRUD (no drawer).
@@ -100,7 +95,6 @@ Products
 Discovery
 AI Studio
 Queue
-Analytics
 Channels
 Settings
 ```
@@ -112,7 +106,6 @@ Settings
 | Discovery | `/discovery` | |
 | AI Studio | `/ai` | |
 | Queue | `/queue` | |
-| Analytics | `/analytics` | Workspace-scoped; between Queue and Channels |
 | Channels | `/channels` | |
 | Settings | `/settings/general` | Parent redirects to general |
 
