@@ -12,6 +12,15 @@ export function LoadingState({ rows = 4 }: { rows?: number }) {
   );
 }
 
+export function NoActiveWorkspaceState() {
+  return (
+    <EmptyState
+      title="لا توجد مساحة عمل نشطة"
+      description="لا يمكن تحميل بيانات مساحة العمل دون عضوية واحدة. اطلب من المسؤول إضافتك إلى مساحة عمل، أو سجّل الدخول بحساب يملك عضوية واحدة."
+    />
+  );
+}
+
 export function EmptyState({
   title,
   description,

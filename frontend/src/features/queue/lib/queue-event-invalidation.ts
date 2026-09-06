@@ -1,5 +1,6 @@
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import { queueAttemptsKey, queueKey } from "../hooks/useQueue";
+import { getActiveWorkspaceId, normalizeWorkspaceId } from "@/lib/workspace";
 import {
   QUEUE_EVENT_NAMES,
   isQueueEventName,
@@ -15,18 +16,23 @@ export const QUEUE_EVENT_INVALIDATION_DEBOUNCE_MS = 300;
  */
 export function getQueryKeysForQueueEvent(
   event: QueueEventEnvelope,
+  workspaceId: string | null = getActiveWorkspaceId(),
 ): QueryKey[] {
   if (!event || typeof event.event !== "string") return [];
   if (!isQueueEventName(event.event)) return [];
+  if (!workspaceId) return [];
 
-  const keys: QueryKey[] = [queueKey];
+  const eventWorkspace = normalizeWorkspaceId(event.workspace_id);
+  if (eventWorkspace && eventWorkspace !== workspaceId) return [];
+
+  const keys: QueryKey[] = [queueKey(workspaceId)];
 
   switch (event.event) {
     case QUEUE_EVENT_NAMES.ATTEMPT_STARTED:
     case QUEUE_EVENT_NAMES.ATTEMPT_SUCCEEDED:
     case QUEUE_EVENT_NAMES.ATTEMPT_FAILED: {
       const queueId = normalizeQueueId(event.queue_id);
-      if (queueId) keys.push(queueAttemptsKey(queueId));
+      if (queueId) keys.push(queueAttemptsKey(workspaceId, queueId));
       break;
     }
     case QUEUE_EVENT_NAMES.STATUS_CHANGED:

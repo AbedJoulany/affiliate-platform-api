@@ -37,7 +37,7 @@ async def _register_and_login(client) -> tuple[str, str, str]:
         email=email,
         password=PASSWORD,
         full_name="Refresh Token User",
-        role="affiliate",
+        role="user",
     )
     response = await client.post(
         f"{API_PREFIX}/auth/login",
@@ -202,7 +202,7 @@ async def test_expired_refresh_token_is_rejected(client):
         email=email,
         password=PASSWORD,
         full_name="Expired Token User",
-        role="affiliate",
+        role="user",
     )
     login = await client.post(
         f"{API_PREFIX}/auth/login",

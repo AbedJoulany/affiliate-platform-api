@@ -1,7 +1,17 @@
 # Implementation Roadmap
 
-**Document Version:** 2.8  
-**Last Updated:** 2026-08-13
+**Document Version:** 3.3  
+**Last Updated:** 2026-09-06
+
+**2026-09-06 revision (Product B removal):** Affiliate, Campaign, AffiliateCampaign, Click, Conversion, and campaign analytics were removed. Product A MEASURE is the operational dashboard. Historical Phase D/E notes below that describe those APIs are superseded.
+
+**2026-09-04 revision (CI hardening):** Platform foundation — Ruff CI gate is the full first-party Python tree; Playwright smoke runs as GitHub Actions job `e2e` (not a required branch-protection check yet). See [10-production-readiness.md](./10-production-readiness.md) §3.
+
+**2026-09-04 revision (Phase E Task 14):** Editable workspace settings + `PATCH /auth/me`. See Phase E Task 14 below.
+
+**2026-09-04 revision (Phase E Tasks 12–13):** Analytics slice 1 + click/funnel metrics complete. See Phase E Tasks 12–13 below.
+
+**2026-09-04 revision (Phase E Tasks 9–11 closeout):** Frontend workspace runtime (Task 9), Discovery image search UI (Task 10), and public click tracking backend (Task 11) marked complete. Phase E remains open for payouts and remaining design items.
 
 Consolidated feature tracker (replaces empty `PROJECT_STATUS.md`). See [06-api-integration.md](./06-api-integration.md) for endpoint-level status.
 
@@ -19,7 +29,9 @@ Consolidated feature tracker (replaces empty `PROJECT_STATUS.md`). See [06-api-i
 
 **2026-08-09 revision (Phase C' closeout):** Phase C' — Non-Telegram retry hardening is **COMPLETE** (Tasks 0–5). Design record: [phase-c-prime-retry-hardening-design.md](./planning/phase-c-prime-retry-hardening-design.md). Shipped: AliExpress client-retry coverage + discovery exception hygiene; OpenAI/Gemini provider-layer retry (`app/ai/retry.py`); no-nested-Celery-HTTP-retry regression guards; API/integration regression validation. **No** Celery HTTP autoretry for AliExpress discovery, **no** Celery path for AI generation, **no** DB/SSE/frontend changes.
 
-**2026-08-13 revision (Phase D closeout):** Phase D — Authentication & Public-Endpoint Security is **COMPLETE** (Tasks 0–6). Design record: [phase-d-auth-security-design.md](./planning/phase-d-auth-security-design.md). Shipped: JWT secret validation (non-dev), refresh tokens (`refresh_tokens` / migration `009`), route-scoped Redis rate limits (login/refresh/conversions; fail-open; not middleware), `POST /conversions` ownership authorization, frontend refresh + single-flight 401 handling. **No** A.1/A.2/B/C' behavior changes. **Next milestone:** Form & schema validation standardization (formerly listed as Phase D before the auth-security phase was selected).
+**2026-08-13 revision (Phase D closeout):** Phase D — Authentication & Public-Endpoint Security is **COMPLETE** (Tasks 0–6). Design record: [phase-d-auth-security-design.md](./planning/phase-d-auth-security-design.md). Shipped: JWT secret validation (non-dev), refresh tokens (`refresh_tokens` / migration `009`), route-scoped Redis rate limits (login/refresh/conversions; fail-open; not middleware), `POST /conversions` ownership authorization, frontend refresh + single-flight 401 handling. **No** A.1/A.2/B/C' behavior changes.
+
+**2026-08-14 revision (Form & schema validation closeout):** Form & Schema Validation Standardization is **COMPLETE** (Tasks 0–6). Design record: [form-schema-validation-standardization-design.md](./planning/form-schema-validation-standardization-design.md). Shipped: queue scheduling Zod discriminated union + RHF dialog; product status schema/label consolidation; `channelAssignmentSchema` (no standalone assignment UI); shared Arabic Zod message helpers. **No** API/backend/DB/dependency changes. **Next milestone: Phase E — Platform expansion (V2).**
 
 ---
 
@@ -27,7 +39,7 @@ Consolidated feature tracker (replaces empty `PROJECT_STATUS.md`). See [06-api-i
 
 ## 1. Executive Summary
 
-The frontend has completed a **workspace UI transformation** (July 2026): drawer-based inspection, operational queue center, inventory grid controls, AI content studio overhaul, and shared score/toast components. Backend integration is **live-first** — no mock API layers in production paths. **Phase A.1 — Publishing Reliability & Status Truth** (2026-08-04) closed the last major reliability gap: Telegram publish attempts, retries, idempotency, and dead-letter handling are now backend-owned and fully consumed by the queue UI. **Phase A.2 — Real-time Queue Updates** (2026-08-08) adds SSE push + polling fallback so the queue workspace stays authoritative without redesigning REST or inventing client-owned state. **Phase B — Background workers & queue execution** (2026-08-08) adds Worker/Beat pipeline liveness (`GET /worker/health`) and optional Flower task observability without changing A.1/A.2 business behavior. **Phase C' — Non-Telegram retry hardening** (2026-08-09) preserves AliExpress client-owned HTTP retries, adds provider-owned OpenAI/Gemini retries, and explicitly forbids nested Celery HTTP retries for those same failures — without new APIs, migrations, or frontend work. **Phase D — Authentication & Public-Endpoint Security** (2026-08-13) hardens JWT configuration, adds opaque refresh tokens, route-scoped rate limits, and conversion ownership checks — without disrupting A.1/A.2/B/C'.
+The frontend has completed a **workspace UI transformation** (July 2026): drawer-based inspection, operational queue center, inventory grid controls, AI content studio overhaul, and shared score/toast components. Backend integration is **live-first** — no mock API layers in production paths. **Phase A.1 — Publishing Reliability & Status Truth** (2026-08-04) closed the last major reliability gap: Telegram publish attempts, retries, idempotency, and dead-letter handling are now backend-owned and fully consumed by the queue UI. **Phase A.2 — Real-time Queue Updates** (2026-08-08) adds SSE push + polling fallback so the queue workspace stays authoritative without redesigning REST or inventing client-owned state. **Phase B — Background workers & queue execution** (2026-08-08) adds Worker/Beat pipeline liveness (`GET /worker/health`) and optional Flower task observability without changing A.1/A.2 business behavior. **Phase C' — Non-Telegram retry hardening** (2026-08-09) preserves AliExpress client-owned HTTP retries, adds provider-owned OpenAI/Gemini retries, and explicitly forbids nested Celery HTTP retries for those same failures — without new APIs, migrations, or frontend work. **Phase D — Authentication & Public-Endpoint Security** (2026-08-13) hardens JWT configuration, adds opaque refresh tokens, route-scoped rate limits, and conversion ownership checks — without disrupting A.1/A.2/B/C'. **Form & Schema Validation Standardization** (2026-08-14) extends the existing React Hook Form + Zod pattern to queue scheduling and consolidates product-status / channel-assignment schemas — frontend UX validation only; backend contracts unchanged.
 
 ---
 
@@ -45,11 +57,14 @@ Legend: ✅ Done · 🟡 Partial · ⬜ Planned
 | Next.js App Router + feature folders | ✅      |                      |
 | TanStack Query + Axios client        | ✅      |                      |
 | Auth login + JWT session             | ✅      | Access + refresh; single-flight refresh |
+| Active workspace runtime (Task 9)    | ✅      | `/auth/me` → `default_workspace_id` → `sessionStorage`; Axios `X-Workspace-Id` on tenant paths |
 | AppShell + sidebar navigation        | ✅      |                      |
 | RTL + dark mode                      | ✅      |                      |
 | Shared loading/empty/error states    | ✅      |                      |
 | Drawer + Popover primitives          | ✅      |                      |
 | ToastOverlay feedback                | ✅      | Custom; not sonner   |
+| CI: Ruff first-party Python tree     | ✅      | `ruff check .`; vendored `iop/` excluded |
+| CI: Playwright smoke job             | ✅      | Job `e2e`; not a required branch-protection check yet |
 | Shared DataTable extraction          | ⬜      | Feature-local tables |
 | Registration UI                      | ⬜      | API exists           |
 
@@ -83,7 +98,7 @@ Legend: ✅ Done · 🟡 Partial · ⬜ Planned
 | Bulk selection + batch import                           | ✅      | Admin only                            |
 | CSV export                                              | ✅      |                                       |
 | Session persistence (filters/UI prefs)                  | ✅      | sessionStorage                        |
-| Image search UI                                         | ⬜      | Backend `POST /products/search/image` |
+| Image search UI                                         | ✅      | Global `POST /products/search/image`; no workspace header |
 | Persist toggle (`persist=true`)                         | ⬜      | API only                              |
 | Full paging UI for all modes                            | 🟡     | page/page_size in advanced drawer     |
 
@@ -148,7 +163,7 @@ Legend: ✅ Done · 🟡 Partial · ⬜ Planned
 | Publish failure tracking                | ✅      | Backend owns `queue_publish_attempts` + dead-letter codes; UI resolves via `resolveQueueFailure` (backend-first, client map only as short-lived fallback) |
 | Publish attempt/event history            | ✅      | `GET /queues/{id}/attempts` wired in `QueueDetailsDrawer` via `useQueuePublishAttempts`; `QueueRead` summary on `GET /queues/{id}`                     |
 | Telegram retry policy                    | ✅      | In-process retries + Celery `autoretry_for` / `max_retries=3`; non-retryable 4xx marked terminal immediately |
-| Real-time status updates                | ✅      | Phase A.2 COMPLETE — SSE `GET /queues/stream` + TanStack Query invalidation; polling fallback 5s→30s when SSE unavailable |
+| Real-time status updates                | ✅      | Phase A.2 + Task 9 — SSE `GET /queues/stream` with workspace header; polling fallback 5s→30s when SSE unavailable |
 | Dedicated retry orchestration           | ✅      | Shared claim/idempotency guard; manual + Celery share path; terminal → `dead_letter`; status-drift healing on guard-suppressed success |
 
 
@@ -199,10 +214,13 @@ Phase C' — Non-Telegram retry hardening (AliExpress, AI providers)   ✅ COMPL
 Phase D — Authentication & Public-Endpoint Security   ✅ COMPLETE
         │
         ▼
-Form & schema validation standardization   ← NEXT MILESTONE
+Form & schema validation standardization   ✅ COMPLETE
         │
         ▼
-Phase E — Platform expansion (V2)
+Phase E — Platform expansion (V2)   ← IN PROGRESS (Tasks 9–13 complete)
+        │
+        ▼
+Phase E remainder — Editable settings · Payouts   ← OPEN
 ```
 
 
@@ -489,22 +507,127 @@ Hardens authentication and public endpoints without disrupting A.1 publishing re
 
 **Explicit non-goals:** MFA, password reset, device dashboards, HttpOnly refresh cookies, proxy-aware client IP, conversion amount fraud verification, global rate-limit middleware.
 
-### Form & schema validation standardization   ← NEXT MILESTONE
+### Form & Schema Validation Standardization ✅ COMPLETE
 
-(Previously labeled “Phase D” on the mechanical roadmap before auth-security Phase D was selected and completed.)
+**Status:** COMPLETE  
+**Completed:** 2026-08-14 (Tasks 0–6). Design record: [form-schema-validation-standardization-design.md](./planning/form-schema-validation-standardization-design.md).
 
-- Shared Zod schemas in `features/*/lib/schemas.ts` mirroring Pydantic
-- Drawer inline edits: product status, queue schedule, channel assignment
-- React Hook Form + zodResolver for scheduling dialog
-- Validation error copy in Arabic
+This is **not** Phase D and **not** Phase E. It sits between completed Phase D (auth/security) and Phase E (platform expansion). Formerly listed as the mechanical “Phase D” before auth-security Phase D was selected.
 
+React Hook Form, Zod, and `@hookform/resolvers` were **already** in the project (`LoginForm`, ChannelsView add-channel). This milestone extended that pattern; it did not introduce a new form stack.
 
+| Task | Scope | Status |
+| ---- | ----- | ------ |
+| 0 | Architecture / analysis / planning | ✅ COMPLETE |
+| 1 | Queue Scheduling Zod schema (`queueSchedulingSchema`) | ✅ COMPLETE |
+| 2 | React Hook Form + `zodResolver` for `QueueSchedulingDialog` | ✅ COMPLETE |
+| 3 | Product Status schema / label consolidation | ✅ COMPLETE |
+| 4 | Channel Assignment schema (`channelAssignmentSchema`; no standalone UI) | ✅ COMPLETE |
+| 5 | Shared Arabic Zod validation message helper | ✅ COMPLETE |
+| 6 | Documentation closeout | ✅ COMPLETE |
 
-### Phase E — Platform expansion (V2)
+**Shipped (schema standardization, not new business capabilities):**
+
+| Area | Behavior |
+| --- | --- |
+| Queue scheduling | Discriminated union `schedule` / `publish_now`; `channelId` always required; `scheduledAt` only for `schedule`; form-domain `datetime-local` string; API map in existing submit path |
+| Scheduling dialog | RHF + `zodResolver`; `register()`; presets `setValue(..., { shouldValidate: true })`; `handleSubmit`; `scheduledAt` → `scheduled_at`, `channelId` → `channel_id` |
+| Product status | Canonical `PRODUCT_STATUSES` (`draft`/`active`/`inactive`/`archived`); `productStatusSchema`; centralized Arabic labels. **No status editor.** |
+| Channel assignment | UUID schema used by the scheduling dialog. **No assignment drawer.** Queue items may still have `channel_id: null` at rest. Telegram `@handle` is not an assignment UUID. |
+| Arabic messages | `frontend/src/lib/validation/messages.ts`: `requiredField`, `invalidUuid`, `invalidDateTime`. Queue schemas adopted it; product status did not need it; Login/Channels not retrofitted. Not i18n. |
+
+**UNCHANGED:** `PATCH /queues/{id}` and `PATCH /products/{id}` contracts; Pydantic; database; dependencies; authentication; rate limiting; A.2 SSE / F4 / F6; Phase B; Phase C'.
+
+**Explicit non-goals:** independent Channel Assignment UI; product status mutation UI; backend validation framework; global i18n; `useValidatedMutation`. Frontend Zod is UX/input validation, not a security control.
+
+**Task 5 validation (that task’s run):** focused tests **36** passed; full frontend tests **136** passed; typecheck PASS; lint PASS (pre-existing warnings only); build PASS.
+
+### Phase E — Platform expansion (V2)   ← IN PROGRESS
 
 Multi-workspace tenancy · Analytics `/analytics` · Editable settings · Image search UI · Admin bootstrap CLI · Click tracking · Payout module
 
 Depends on Phases A.1–D being substantially complete. JWT refresh tokens are **done in Phase D** (not deferred here).
+
+#### Phase E Task 9 — Frontend workspace context plumbing ✅ COMPLETE
+
+**Completed:** 2026-09-04. Design: [planning/phase-e-platform-expansion-design.md](./planning/phase-e-platform-expansion-design.md) §18 Task 9.
+
+**Shipped:**
+
+| Area | Behavior |
+| --- | --- |
+| Workspace init | `GET /auth/me` → `default_workspace_id` (single membership) → `affiliate_active_workspace_id` in `sessionStorage` |
+| Axios interceptor | Attaches `X-Workspace-Id` only on workspace-scoped paths (`/dashboard`, `/queues`, `/channels`, `/campaigns`, `/conversions`, `/affiliates/join-campaign`, `/analytics`, `/workspace-settings`); strips header elsewhere |
+| Query keys | `workspaceScopedQueryKey` for `dashboard`, `queue`, `channels`, `analytics`, `workspace-settings`; cache cleared on logout |
+| SSE | `useQueueEventStream` sends JWT + workspace header; no stream without both |
+| UI gating | Dashboard, queue, channels, analytics views show no-workspace state when id absent |
+| Logout | Clears tokens, workspace id, cookie, query cache → `/login` |
+
+**Explicit non-goals (unchanged):** workspace selector UI; new routes/pages; workspace-scoping of Products, Discovery, or Image Search.
+
+**Tests:** `api-client.workspace.test.ts`, dashboard/queue/SSE workspace gating tests.
+
+#### Phase E Task 10 — Image search UI ✅ COMPLETE
+
+**Completed:** 2026-08-22 (UI); documented 2026-09-04. Independent of workspace tenancy.
+
+**Shipped:**
+
+| Area | Behavior |
+| --- | --- |
+| UI | `ImageSearchPanel` inside Discovery — image URL input or file upload (≤5MB, `image/*`) |
+| API | `POST /products/search/image` via `discovery.api.ts`; **no** `X-Workspace-Id` |
+| Results | Reuses `DiscoveryResultsTable`, pagination, and `DiscoveryProductInspector` |
+| Gallery handoff | Inspector `onSearchByImage` re-runs image search from a product image URL |
+| Gating | Backend env `ALIEXPRESS_ENABLE_DS_IMAGE_SEARCH` (unchanged) |
+
+**Explicit non-goals:** workspace-scoped product catalog; backend/API changes to the image search endpoint.
+
+#### Phase E Task 11 — Click tracking ✅ COMPLETE
+
+**Completed:** 2026-08-23 (backend); live-verified 2026-09-04. Design: [planning/phase-e-platform-expansion-design.md](./planning/phase-e-platform-expansion-design.md) §18 Task 11.
+
+**Shipped:**
+
+| Area | Behavior |
+| --- | --- |
+| Model | `Click` → `AffiliateCampaign`; unique server `click_id`; no `workspace_id` |
+| Migration | `014_add_clicks.py` (revises `013`; `010`–`013` unchanged) |
+| Public route | `GET /api/v1/clicks/{affiliate_campaign_id}` → persist click, **302** to `tracking_link` |
+| Security | Redirect from stored link only; blank/unsafe schemes rejected (**422**, no row) |
+| Rate limit | Phase D primitive — **30** / **60s** per IP → **429** + `Retry-After` |
+| Conversions | Optional `click_id`; enrollment match enforced when Click exists |
+| Frontend | None (server-to-browser redirect) |
+
+**Verified live:** 302 + persistence; public scope; unsafe link rejection; conversion correlation; tenant/SSE regression intact.
+
+**Explicit non-goals:** analytics/funnel metrics shipped in Tasks 12–13; bot filtering beyond rate limit; Product↔Campaign redesign.
+
+**Still open in Phase E:** Task 15 payout module · workspace selector UI.
+
+#### Phase E Task 12 — Analytics slice 1 (aggregate KPIs) ✅ COMPLETE
+
+**Completed:** 2026-09-04.
+
+**Shipped:** `GET /api/v1/analytics/overview?from=&to=` — workspace-scoped totals (`total_clicks`, `total_conversions`, `conversion_rate`, `total_revenue` from `Conversion.amount`, `by_day`). Auth + `X-Workspace-Id`. Default last 30 days; max 1 year. Frontend `/analytics` KPI strip + line chart (`recharts`).
+
+**Tenancy:** derived via Campaign FK chain. No `workspace_id` on clicks/conversions.
+
+#### Phase E Task 13 — Click/funnel analytics ✅ COMPLETE
+
+**Completed:** 2026-09-04.
+
+**Shipped:** `GET /api/v1/analytics/campaigns/{campaign_id}/funnel` — per-campaign click→conversion series + `attributed_conversions`. Cross-workspace campaign id → **404**. Migration `015_add_analytics_indexes` (revises `014`). Campaign selector uses `GET /campaigns/active`.
+
+**Explicit non-goals:** payouts; Product↔Campaign redesign.
+
+#### Phase E Task 14 — Editable settings ✅ COMPLETE
+
+**Completed:** 2026-09-04.
+
+**Shipped:** `GET/PATCH /api/v1/workspace-settings` (Bearer + `X-Workspace-Id`; PATCH admin or workspace OWNER). `PATCH /auth/me` for `full_name`/`email` only (no workspace header; cannot change `role`/`is_active`). Table `workspace_settings` (migration `016`, revises `015`, `ON DELETE CASCADE`). Connection booleans only — no secret values. Frontend section forms in `features/settings/` with feature-local Zod + RHF; profile form in `features/auth/`.
+
+**Explicit non-goals:** exposing JWT/Telegram/AliExpress/OpenAI/Gemini secrets; editing `QueueStatus`/`ProductStatus`; celery worker cadence.
 
 ---
 
@@ -523,10 +646,13 @@ Depends on Phases A.1–D being substantially complete. JWT refresh tokens are *
 | Dashboard + readiness                     | ✅                     |
 | Celery publishing                         | ✅                     |
 | Celery worker/Beat health + Flower ops    | ✅ Phase B             |
-| Affiliates/campaigns/conversions          | ✅ API + Phase D authz |
+| Affiliates/campaigns/conversions          | ❌ Removed (Product B) |
 | Refresh tokens                            | ✅ Phase D (migration 009) |
-| Rate limiting (route dependencies)        | ✅ Phase D (login/refresh/conversions) |
-| CI/CD full lint gate                      | 🟡 Partial Ruff scope |
+| Rate limiting (route dependencies)        | ✅ Phase D + E (login/refresh/conversions/clicks) |
+| Public click tracking                     | ✅ Phase E Task 11 (migration 014) |
+| Analytics (overview + campaign funnel)    | ❌ Removed (Product B). Product A MEASURE is the dashboard |
+| Workspace settings + profile PATCH        | ✅ Phase E Task 14 (migration 016) |
+| CI/CD full lint gate                      | ✅ Ruff `check .` (iop vendor excluded) |
 | Publish attempt/event tracking (Telegram) | ✅ Phase A.1 backend   |
 | Telegram retry + idempotency policy       | ✅ Phase A.1 backend   |
 | Real-time queue SSE + polling fallback    | ✅ Phase A.2           |
@@ -556,4 +682,5 @@ A feature is complete when: correct folder structure · reusable components · l
 - [planning/phase-b-worker-observability-design.md](./planning/phase-b-worker-observability-design.md) — Phase B Task 0 design + Tasks 1–4 closeout (COMPLETE 2026-08-08)
 - [planning/phase-c-prime-retry-hardening-design.md](./planning/phase-c-prime-retry-hardening-design.md) — Phase C' design + Tasks 0–5 closeout (COMPLETE 2026-08-09)
 - [planning/phase-d-auth-security-design.md](./planning/phase-d-auth-security-design.md) — Phase D auth/security design + Tasks 0–6 closeout (COMPLETE 2026-08-13)
+- [planning/form-schema-validation-standardization-design.md](./planning/form-schema-validation-standardization-design.md) — Form & schema validation design + Tasks 0–6 closeout (COMPLETE 2026-08-14)
 

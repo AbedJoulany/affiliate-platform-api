@@ -1,16 +1,18 @@
 from datetime import UTC, datetime
 from decimal import Decimal
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import delete
 
 from app.core.enums import ProductStatus, QueueStatus
+from app.core.workspace import WORKSPACE_ID_HEADER
 from app.models.aliexpress_category import AliExpressCategory
 from app.models.channel import TelegramChannel
 from app.models.product import Product
 from app.models.queue import QueueItem
 from app.services.health import ReadinessService
+from tests.test_api_endpoints import workspace_auth_headers
 
 API_PREFIX = "/api/v1"
 PASSWORD = "StrongP@ssw0rd"
@@ -80,6 +82,11 @@ async def test_dashboard_returns_canonical_aggregates(client, session):
     await session.execute(delete(Product))
     await session.execute(delete(TelegramChannel))
 
+    auth = await authenticated_headers(client)
+    token = auth["Authorization"].removeprefix("Bearer ")
+    headers = await workspace_auth_headers(token)
+    workspace_id = UUID(headers[WORKSPACE_ID_HEADER])
+
     products = [
         Product(
             title="Active product",
@@ -97,14 +104,29 @@ async def test_dashboard_returns_canonical_aggregates(client, session):
         ),
     ]
     channels = [
-        TelegramChannel(telegram_channel_id="@active", title="Active", is_active=True),
-        TelegramChannel(telegram_channel_id="@inactive", title="Inactive", is_active=False),
+        TelegramChannel(
+            telegram_channel_id="@active",
+            title="Active",
+            is_active=True,
+            workspace_id=workspace_id,
+        ),
+        TelegramChannel(
+            telegram_channel_id="@inactive",
+            title="Inactive",
+            is_active=False,
+            workspace_id=workspace_id,
+        ),
     ]
     session.add_all([*products, *channels])
     await session.flush()
     session.add_all(
         [
-            QueueItem(title=f"{status.value} item", content="content", status=status)
+            QueueItem(
+                title=f"{status.value} item",
+                content="content",
+                status=status,
+                workspace_id=workspace_id,
+            )
             for status in QueueStatus
         ]
     )
@@ -116,7 +138,7 @@ async def test_dashboard_returns_canonical_aggregates(client, session):
     response = await client.get(
         f"{API_PREFIX}/dashboard",
         params={"activity_limit": 3},
-        headers=await authenticated_headers(client),
+        headers=headers,
     )
     assert response.status_code == 200
     body = response.json()

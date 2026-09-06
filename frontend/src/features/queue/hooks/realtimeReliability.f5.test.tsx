@@ -5,8 +5,10 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { StrictMode, createElement, type ReactNode } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { session } from "@/services/session";
+import { setActiveWorkspaceId } from "@/lib/workspace";
+import { WORKSPACE_A } from "@/test/workspace";
 import { queueAttemptsKey, queueKey } from "../hooks/useQueue";
 import { useQueueEventStream } from "../hooks/useQueueEventStream";
 import { useQueueRealtimeInvalidation } from "../hooks/useQueueRealtimeInvalidation";
@@ -24,6 +26,10 @@ vi.mock("../lib/sse-client", () => ({
 import { createQueueEventStream } from "../lib/sse-client";
 
 const createStreamMock = vi.mocked(createQueueEventStream);
+
+beforeEach(() => {
+  setActiveWorkspaceId(WORKSPACE_A);
+});
 
 function wrapper(client: QueryClient, strict = false) {
   return function Wrapper({ children }: { children: ReactNode }) {
@@ -228,9 +234,9 @@ describe("F5 — invalidation deduplication", () => {
     await vi.advanceTimersByTimeAsync(300);
 
     expect(invalidateQueries).toHaveBeenCalledTimes(2);
-    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: queueKey });
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: queueKey(WORKSPACE_A) });
     expect(invalidateQueries).toHaveBeenCalledWith({
-      queryKey: queueAttemptsKey("q-1"),
+      queryKey: queueAttemptsKey(WORKSPACE_A, "q-1"),
     });
 
     invalidator.dispose();
@@ -240,10 +246,10 @@ describe("F5 — invalidation deduplication", () => {
   it("maps attempt events to queue + attempts keys and ignores unknown events", () => {
     expect(
       getQueryKeysForQueueEvent(envelope(QUEUE_EVENT_NAMES.ATTEMPT_FAILED)),
-    ).toEqual([queueKey, queueAttemptsKey("q-1")]);
+    ).toEqual([queueKey(WORKSPACE_A), queueAttemptsKey(WORKSPACE_A, "q-1")]);
     expect(
       getQueryKeysForQueueEvent(envelope(QUEUE_EVENT_NAMES.DELETED)),
-    ).toEqual([queueKey]);
+    ).toEqual([queueKey(WORKSPACE_A)]);
     expect(
       getQueryKeysForQueueEvent(envelope("queue.unknown_event")),
     ).toEqual([]);
@@ -271,14 +277,14 @@ describe("F5 — reconnect invalidation", () => {
     );
 
     await waitFor(() => expect(result.current.status).toBe("connected"));
-    expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: queueKey });
+    expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: queueKey(WORKSPACE_A) });
 
     captured!.onReconnect?.(1, 5);
     await waitFor(() => expect(result.current.status).toBe("connecting"));
     captured!.onOpen?.();
     await waitFor(() => expect(result.current.status).toBe("connected"));
     await waitFor(() =>
-      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: queueKey }),
+      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: queueKey(WORKSPACE_A) }),
     );
 
     unmount();
@@ -348,7 +354,7 @@ describe("F5 — reconnect invalidation", () => {
     );
     // Allow status effects from StrictMode double-invoke to settle.
     await new Promise((resolve) => setTimeout(resolve, 30));
-    expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: queueKey });
+    expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: queueKey(WORKSPACE_A) });
     unmount();
   });
 });

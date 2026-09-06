@@ -3,8 +3,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.api.deps import get_queue_service
-from app.auth.dependencies import CurrentUser
+from app.api.deps import HttpWorkspaceId, get_queue_service
 from app.core.enums import QueueStatus
 from app.models.queue import QueueItem
 from app.schemas.common import MessageResponse
@@ -25,30 +24,35 @@ router = APIRouter()
 @router.post("", response_model=QueueRead, status_code=status.HTTP_201_CREATED)
 async def create_queue_item(
     payload: QueueCreate,
-    _: CurrentUser,
+    workspace_id: HttpWorkspaceId,
     service: Annotated[QueueService, Depends(get_queue_service)],
 ) -> QueueItem:
     try:
-        return await service.create(payload)
+        return await service.create(payload, workspace_id)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
 
 @router.get("", response_model=QueueListResponse)
 async def list_queue_items(
-    _: CurrentUser,
+    workspace_id: HttpWorkspaceId,
     service: Annotated[QueueService, Depends(get_queue_service)],
     status: QueueStatus | None = Query(default=None, description="Filter by queue status"),
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=200),
 ) -> QueueListResponse:
-    return await service.list_items(status=status, skip=skip, limit=limit)
+    return await service.list_items(
+        workspace_id,
+        status=status,
+        skip=skip,
+        limit=limit,
+    )
 
 
 @router.get("/{queue_id}/attempts", response_model=QueuePublishAttemptListResponse)
 async def list_queue_publish_attempts(
     queue_id: UUID,
-    _: CurrentUser,
+    workspace_id: HttpWorkspaceId,
     service: Annotated[QueueService, Depends(get_queue_service)],
 ) -> QueuePublishAttemptListResponse:
     """Return Telegram publish attempt history for a queue item, newest first.
@@ -58,7 +62,7 @@ async def list_queue_publish_attempts(
     rows; those are surfaced as HTTP 409 from ``POST /queues/{id}/publish``.
     """
     try:
-        return await service.list_publish_attempts(queue_id)
+        return await service.list_publish_attempts(queue_id, workspace_id)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
@@ -66,11 +70,11 @@ async def list_queue_publish_attempts(
 @router.get("/{queue_id}", response_model=QueueRead)
 async def get_queue_item(
     queue_id: UUID,
-    _: CurrentUser,
+    workspace_id: HttpWorkspaceId,
     service: Annotated[QueueService, Depends(get_queue_service)],
 ) -> QueueRead:
     try:
-        return await service.get_read(queue_id)
+        return await service.get_read(queue_id, workspace_id)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
@@ -79,11 +83,11 @@ async def get_queue_item(
 async def update_queue_item(
     queue_id: UUID,
     payload: QueueUpdate,
-    _: CurrentUser,
+    workspace_id: HttpWorkspaceId,
     service: Annotated[QueueService, Depends(get_queue_service)],
 ) -> QueueItem:
     try:
-        return await service.update(queue_id, payload)
+        return await service.update(queue_id, payload, workspace_id)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
@@ -91,7 +95,7 @@ async def update_queue_item(
 @router.post("/{queue_id}/publish", response_model=PublishQueueResponse)
 async def publish_queue_item(
     queue_id: UUID,
-    _: CurrentUser,
+    workspace_id: HttpWorkspaceId,
     service: Annotated[QueueService, Depends(get_queue_service)],
 ) -> PublishQueueResponse:
     """Publish a queue item to Telegram.
@@ -101,7 +105,7 @@ async def publish_queue_item(
     the guard suppresses a duplicate publish.
     """
     try:
-        return await service.publish(queue_id)
+        return await service.publish(queue_id, workspace_id)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
@@ -109,11 +113,11 @@ async def publish_queue_item(
 @router.delete("/{queue_id}", response_model=MessageResponse)
 async def delete_queue_item(
     queue_id: UUID,
-    _: CurrentUser,
+    workspace_id: HttpWorkspaceId,
     service: Annotated[QueueService, Depends(get_queue_service)],
 ) -> MessageResponse:
     try:
-        await service.delete(queue_id)
+        await service.delete(queue_id, workspace_id)
         return MessageResponse(message="Queue item deleted successfully")
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc

@@ -19,15 +19,9 @@ import type {
   ProductTableColumn,
   ProductTableDensity,
 } from "../types/api";
+import { productStatusLabels } from "../lib/schemas";
 import { ProductActionsMenu } from "./ProductActionsMenu";
 import { ProductHealthBadges } from "./ProductHealthBadges";
-
-const STATUS_LABELS = {
-  draft: "مسودة",
-  active: "نشط",
-  inactive: "غير نشط",
-  archived: "مؤرشف",
-} as const;
 
 export function ProductsTable({
   items,
@@ -208,7 +202,7 @@ export function ProductsTable({
                   <td className={cellPadding}>
                     <div className="space-y-1.5">
                       <Badge tone={product.status === "active" ? "success" : "neutral"}>
-                        {STATUS_LABELS[product.status]}
+                        {productStatusLabels[product.status]}
                       </Badge>
                       <ProductHealthBadges state={pipelineState} />
                     </div>

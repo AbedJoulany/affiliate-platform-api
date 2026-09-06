@@ -1,7 +1,7 @@
 # Project Overview
 
-**Document Version:** 2.0  
-**Last Updated:** 2026-07-29
+**Document Version:** 2.1  
+**Last Updated:** 2026-09-04
 
 ---
 
@@ -22,7 +22,7 @@ AliExpress Discovery → Product Scoring → Inventory Review
         ↓
 AI Content Studio → Publishing Queue → Telegram Dispatch
         ↓
-Performance Analytics (planned)
+Operational dashboard (queue / channel / product activity)
 ```
 
 ---
@@ -43,7 +43,7 @@ Long-term vision: an **affiliate automation operating system** supporting multi-
 | **Admin operators** | Import products, manage catalog lifecycle, configure channels |
 | **Future — Teams & businesses** | Shared workspaces, roles, analytics, automation rules |
 
-Public registration creates `affiliate` users only. Admin accounts must be provisioned operationally before catalog import is available.
+Public registration creates `user` accounts only. Admin accounts must be provisioned operationally before catalog import is available.
 
 ---
 
@@ -135,7 +135,7 @@ AliExpress Affiliate API (IOP SDK) · OpenAI · Gemini · Telegram Bot API
 
 ### Discovery workspace (`/discovery`)
 
-Browse AliExpress products by intent (hot, deals, trending, category, general). Filter, sort, bulk-select, inspect in a slide-over drawer, import (admin), and hand off to AI Studio or queue.
+Browse AliExpress products by intent (hot, deals, trending, category, general). Filter, sort, bulk-select, inspect in a slide-over drawer, import (admin), and hand off to AI Studio or queue. **Image search** (URL or uploaded file) calls global `POST /products/search/image` and renders through the same discovery results/inspector — no workspace header.
 
 ### Products inventory (`/products`)
 
@@ -151,15 +151,21 @@ KPI summary cards, filterable table, **QueueDetailsDrawer**, inline scheduling d
 
 ### Channels & settings
 
-Telegram channel management; read-only settings/capability screens backed by `/ready`.
+Telegram channel management; workspace settings forms (`/workspace-settings`) plus `/ready` for database/Redis badges.
 
 ---
 
 ## 7. MVP Scope & Boundaries
 
-**In scope today:** Login, dashboard, discovery, products inventory, AI studio, queue operations, channels, read-only settings.
+**In scope today:** Login (with workspace runtime for tenant routes), dashboard, discovery (including image search), products inventory, AI studio, queue operations, channels, editable workspace settings.
 
-**Partial / roadmap:** Real-time queue streaming, tenant isolation, refresh tokens, analytics route, editable settings, image search UI, full discovery filter surface, server-side AI variant persistence.
+**Partial / roadmap:** Workspace selector UI, full discovery filter surface, server-side AI variant persistence.
+
+**Phase E boundary (implemented vs open):**
+
+| Global APIs | Workspace-scoped APIs |
+| --- | --- |
+| Products · Discovery · Image search | Dashboard · Queue · Channels · Queue SSE · Workspace settings |
 
 ---
 

@@ -1,40 +1,104 @@
 "use client";
 
+import { useEffect } from "react";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Send } from "lucide-react";
+import { useForm, type Resolver } from "react-hook-form";
 import { Button, Input, Select } from "@/components/ui/primitives";
 import type { Channel } from "@/features/channels/types/api";
 import { getSchedulePreset } from "../lib/operations";
+import {
+  queueSchedulingSchema,
+  type QueueSchedulingFormValues,
+} from "../lib/schemas";
+
+/** Form working values: both fields are always present in the UI. */
+type QueueSchedulingFormFields = {
+  intent: QueueSchedulingFormValues["intent"];
+  channelId: string;
+  scheduledAt: string;
+};
+
+export type QueueScheduleSubmitValues = Extract<
+  QueueSchedulingFormValues,
+  { intent: "schedule" }
+>;
+export type QueuePublishNowSubmitValues = Extract<
+  QueueSchedulingFormValues,
+  { intent: "publish_now" }
+>;
 
 export function QueueSchedulingDialog({
   open,
   itemCount,
-  channelId,
-  scheduledAt,
+  defaultValues,
   channels,
   busy,
-  onChannelChange,
-  onScheduledAtChange,
+  onSchedule,
   onPublishNow,
-  onApply,
   onClose,
 }: {
   open: boolean;
   itemCount: number;
-  channelId: string;
-  scheduledAt: string;
+  defaultValues: { channelId: string; scheduledAt: string };
   channels: Channel[];
   busy: boolean;
-  onChannelChange: (value: string) => void;
-  onScheduledAtChange: (value: string) => void;
-  onPublishNow: () => void;
-  onApply: () => void;
+  onSchedule: (values: QueueScheduleSubmitValues) => void;
+  onPublishNow: (values: QueuePublishNowSubmitValues) => void;
   onClose: () => void;
 }) {
-  if (!open) return null;
+  const {
+    register,
+    handleSubmit,
+    reset,
+    setValue,
+    watch,
+    formState: { errors },
+  } = useForm<QueueSchedulingFormFields, unknown, QueueSchedulingFormValues>({
+    resolver: zodResolver(queueSchedulingSchema) as Resolver<
+      QueueSchedulingFormFields,
+      unknown,
+      QueueSchedulingFormValues
+    >,
+    defaultValues: {
+      intent: "schedule",
+      channelId: defaultValues.channelId,
+      scheduledAt: defaultValues.scheduledAt,
+    },
+    mode: "onTouched",
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    reset({
+      intent: "schedule",
+      channelId: defaultValues.channelId,
+      scheduledAt: defaultValues.scheduledAt,
+    });
+  }, [open, defaultValues.channelId, defaultValues.scheduledAt, reset]);
+
+  const channelId = watch("channelId");
+  const scheduledAt = watch("scheduledAt");
 
   const setPreset = (preset: "hour" | "tomorrow_morning" | "tomorrow_evening") => {
-    onScheduledAtChange(toDateTimeLocal(getSchedulePreset(preset)));
+    setValue("scheduledAt", toDateTimeLocal(getSchedulePreset(preset)), {
+      shouldValidate: true,
+      shouldTouch: true,
+    });
   };
+
+  const submitWithIntent = (intent: QueueSchedulingFormFields["intent"]) => {
+    setValue("intent", intent);
+    void handleSubmit((values) => {
+      if (values.intent === "schedule") {
+        onSchedule(values);
+        return;
+      }
+      onPublishNow(values);
+    })();
+  };
+
+  if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -63,8 +127,8 @@ export function QueueSchedulingDialog({
             </label>
             <Select
               id="queue-channel"
-              value={channelId}
-              onChange={(event) => onChannelChange(event.target.value)}
+              aria-invalid={!!errors.channelId}
+              {...register("channelId")}
             >
               <option value="">اختر قناة Telegram</option>
               {channels
@@ -75,6 +139,9 @@ export function QueueSchedulingDialog({
                   </option>
                 ))}
             </Select>
+            {errors.channelId && (
+              <p className="mt-1 text-sm text-destructive">{errors.channelId.message}</p>
+            )}
           </div>
 
           <div>
@@ -102,7 +169,7 @@ export function QueueSchedulingDialog({
                 variant="secondary"
                 disabled={!channelId || busy}
                 loading={busy}
-                onClick={onPublishNow}
+                onClick={() => submitWithIntent("publish_now")}
               >
                 نشر الآن
               </Button>
@@ -116,10 +183,13 @@ export function QueueSchedulingDialog({
             <Input
               id="queue-custom-date"
               type="datetime-local"
-              value={scheduledAt}
               min={toDateTimeLocal(new Date())}
-              onChange={(event) => onScheduledAtChange(event.target.value)}
+              aria-invalid={!!errors.scheduledAt}
+              {...register("scheduledAt")}
             />
+            {errors.scheduledAt && (
+              <p className="mt-1 text-sm text-destructive">{errors.scheduledAt.message}</p>
+            )}
           </div>
         </div>
 
@@ -131,7 +201,7 @@ export function QueueSchedulingDialog({
             type="button"
             disabled={!channelId || !scheduledAt || busy}
             loading={busy}
-            onClick={onApply}
+            onClick={() => submitWithIntent("schedule")}
           >
             حفظ الجدولة
           </Button>

@@ -117,3 +117,5 @@ class AliExpressImportService:
             return await self.client.get_product_details(aliexpress_id)
         except AliExpressAPIError as exc:
             raise ServiceAliExpressAPIError(exc.message, code=exc.code) from exc
+        except ValueError as exc:
+            raise ServiceAliExpressAPIError(str(exc)) from exc

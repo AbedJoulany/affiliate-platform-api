@@ -6,22 +6,27 @@ Create Date: 2026-06-05
 
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects import postgresql
 
+from alembic import op
+
 revision: str = "006"
-down_revision: Union[str, None] = "005"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "005"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.add_column("products", sa.Column("aliexpress_product_id", sa.String(length=64), nullable=True))
+    op.add_column(
+        "products", sa.Column("aliexpress_product_id", sa.String(length=64), nullable=True)
+    )
     op.add_column("products", sa.Column("description", sa.Text(), nullable=True))
-    op.add_column("products", sa.Column("original_price", sa.Numeric(precision=12, scale=2), nullable=True))
+    op.add_column(
+        "products", sa.Column("original_price", sa.Numeric(precision=12, scale=2), nullable=True)
+    )
     op.add_column(
         "products",
         sa.Column("gallery_images", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
@@ -33,12 +38,16 @@ def upgrade() -> None:
         "products",
         sa.Column("currency", sa.String(length=8), server_default="USD", nullable=False),
     )
-    op.add_column("products", sa.Column("commission_rate", sa.Numeric(precision=6, scale=2), nullable=True))
+    op.add_column(
+        "products", sa.Column("commission_rate", sa.Numeric(precision=6, scale=2), nullable=True)
+    )
     op.add_column(
         "products",
         sa.Column("shipping_info", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
     )
-    op.add_column("products", sa.Column("last_synced_at", sa.DateTime(timezone=True), nullable=True))
+    op.add_column(
+        "products", sa.Column("last_synced_at", sa.DateTime(timezone=True), nullable=True)
+    )
 
     op.create_index(
         op.f("ix_products_aliexpress_product_id"),

@@ -11,7 +11,6 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import UTC, datetime
-from unittest.mock import MagicMock
 from uuid import UUID
 
 import pytest
@@ -28,6 +27,8 @@ from app.events.schemas import QUEUE_STATUS_CHANGED, QueueEventEnvelope
 
 API_PREFIX = "/api/v1"
 QUEUE_ID = UUID("6f9c2e34-2b1a-4b2e-9f0a-1234567890ab")
+STREAM_WORKSPACE_ID = UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+OTHER_WORKSPACE_ID = UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
 OCCURRED_AT = datetime(2026, 8, 7, 9, 40, 12, 483000, tzinfo=UTC)
 
 
@@ -42,13 +43,17 @@ class FakeRequest:
         self._disconnected = True
 
 
-def _sample_envelope(*, event_id: str = "01J9Z8H5F9T4S1R7D8P2K3M4N5") -> QueueEventEnvelope:
+def _sample_envelope(
+    *,
+    event_id: str = "01J9Z8H5F9T4S1R7D8P2K3M4N5",
+    workspace_id: UUID | None = STREAM_WORKSPACE_ID,
+) -> QueueEventEnvelope:
     return QueueEventEnvelope(
         event=QUEUE_STATUS_CHANGED,
         version=1,
         id=event_id,
         occurred_at=OCCURRED_AT,
-        workspace_id=None,
+        workspace_id=str(workspace_id) if workspace_id is not None else None,
         queue_id=QUEUE_ID,
         data={
             "queue_id": str(QUEUE_ID),
@@ -86,7 +91,7 @@ def test_format_sse_event_contains_event_id_and_full_envelope():
 async def test_endpoint_returns_sse_headers(broadcaster):
     response = await stream_queue_events(
         FakeRequest(),  # type: ignore[arg-type]
-        MagicMock(),
+        STREAM_WORKSPACE_ID,
         broadcaster,
         0.05,
     )
@@ -106,7 +111,12 @@ async def test_endpoint_returns_sse_headers(broadcaster):
 async def test_stream_registers_and_delivers_full_envelope(broadcaster):
     request = FakeRequest()
     envelope = _sample_envelope()
-    gen = _event_stream(request, broadcaster, heartbeat_interval_seconds=0.2)
+    gen = _event_stream(
+        request,
+        broadcaster,
+        workspace_id=STREAM_WORKSPACE_ID,
+        heartbeat_interval_seconds=0.2,
+    )
 
     assert broadcaster._subscribers == {}
     next_item = asyncio.create_task(gen.__anext__())
@@ -132,7 +142,12 @@ async def test_stream_registers_and_delivers_full_envelope(broadcaster):
 @pytest.mark.asyncio
 async def test_stream_emits_heartbeat(broadcaster):
     request = FakeRequest()
-    gen = _event_stream(request, broadcaster, heartbeat_interval_seconds=0.05)
+    gen = _event_stream(
+        request,
+        broadcaster,
+        workspace_id=STREAM_WORKSPACE_ID,
+        heartbeat_interval_seconds=0.05,
+    )
     frame = await asyncio.wait_for(gen.__anext__(), timeout=1.0)
     assert frame == SSE_HEARTBEAT_FRAME
     await gen.aclose()
@@ -142,8 +157,18 @@ async def test_stream_emits_heartbeat(broadcaster):
 @pytest.mark.asyncio
 async def test_multiple_stream_subscribers_receive_independently(broadcaster):
     envelope = _sample_envelope(event_id="01J9Z8H5F9T4S1R7D8P2K3M4N6")
-    gen_a = _event_stream(FakeRequest(), broadcaster, heartbeat_interval_seconds=1.0)
-    gen_b = _event_stream(FakeRequest(), broadcaster, heartbeat_interval_seconds=1.0)
+    gen_a = _event_stream(
+        FakeRequest(),
+        broadcaster,
+        workspace_id=STREAM_WORKSPACE_ID,
+        heartbeat_interval_seconds=1.0,
+    )
+    gen_b = _event_stream(
+        FakeRequest(),
+        broadcaster,
+        workspace_id=STREAM_WORKSPACE_ID,
+        heartbeat_interval_seconds=1.0,
+    )
 
     task_a = asyncio.create_task(gen_a.__anext__())
     task_b = asyncio.create_task(gen_b.__anext__())
@@ -168,7 +193,12 @@ async def test_multiple_stream_subscribers_receive_independently(broadcaster):
 
 @pytest.mark.asyncio
 async def test_cancelled_stream_unsubscribes(broadcaster):
-    gen = _event_stream(FakeRequest(), broadcaster, heartbeat_interval_seconds=60.0)
+    gen = _event_stream(
+        FakeRequest(),
+        broadcaster,
+        workspace_id=STREAM_WORKSPACE_ID,
+        heartbeat_interval_seconds=60.0,
+    )
     anext_task = asyncio.create_task(gen.__anext__())
     for _ in range(50):
         if broadcaster._subscribers:
@@ -187,7 +217,12 @@ async def test_cancelled_stream_unsubscribes(broadcaster):
 @pytest.mark.asyncio
 async def test_disconnect_flag_unsubscribes(broadcaster):
     request = FakeRequest()
-    gen = _event_stream(request, broadcaster, heartbeat_interval_seconds=0.05)
+    gen = _event_stream(
+        request,
+        broadcaster,
+        workspace_id=STREAM_WORKSPACE_ID,
+        heartbeat_interval_seconds=0.05,
+    )
     first = asyncio.create_task(gen.__anext__())
     for _ in range(50):
         if broadcaster._subscribers:
@@ -211,3 +246,31 @@ async def test_disconnect_flag_unsubscribes(broadcaster):
 async def test_sse_requires_authentication(client):
     response = await client.get(f"{API_PREFIX}/queues/stream")
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_stream_filters_events_to_active_workspace(broadcaster):
+    own = _sample_envelope(event_id="01J9Z8H5F9T4S1R7D8P2K3M4N7")
+    other = _sample_envelope(
+        event_id="01J9Z8H5F9T4S1R7D8P2K3M4N8",
+        workspace_id=OTHER_WORKSPACE_ID,
+    )
+    gen = _event_stream(
+        FakeRequest(),
+        broadcaster,
+        workspace_id=STREAM_WORKSPACE_ID,
+        heartbeat_interval_seconds=1.0,
+    )
+    next_item = asyncio.create_task(gen.__anext__())
+    for _ in range(50):
+        if broadcaster._subscribers:
+            break
+        await asyncio.sleep(0.01)
+
+    await broadcaster.publish(other)
+    await broadcaster.publish(own)
+    frame = await asyncio.wait_for(next_item, timeout=1.0)
+    assert f"id: {own.id}" in frame
+    assert other.id not in frame
+    await gen.aclose()
+

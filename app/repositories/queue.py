@@ -31,6 +31,37 @@ class QueueRepository(BaseRepository[QueueItem]):
         )
         return result.scalar_one_or_none()
 
+    async def get_by_id_in_workspace(
+        self,
+        queue_id: UUID,
+        workspace_id: UUID,
+    ) -> QueueItem | None:
+        result = await self.session.execute(
+            select(QueueItem).where(
+                QueueItem.id == queue_id,
+                QueueItem.workspace_id == workspace_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def get_with_relations_in_workspace(
+        self,
+        queue_id: UUID,
+        workspace_id: UUID,
+    ) -> QueueItem | None:
+        result = await self.session.execute(
+            select(QueueItem)
+            .options(
+                selectinload(QueueItem.channel),
+                selectinload(QueueItem.product),
+            )
+            .where(
+                QueueItem.id == queue_id,
+                QueueItem.workspace_id == workspace_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
     async def get_with_relations_for_update(self, queue_id: UUID) -> QueueItem | None:
         """Lock the queue row, then load relations for the claim transaction.
 
@@ -47,23 +78,26 @@ class QueueRepository(BaseRepository[QueueItem]):
 
     async def list_items(
         self,
+        workspace_id: UUID,
         *,
         status: QueueStatus | None = None,
         skip: int = 0,
         limit: int = 100,
     ) -> tuple[list[QueueItem], int]:
         filters = self._build_filters(status=status)
+        filters.append(QueueItem.workspace_id == workspace_id)
 
-        count_query = select(func.count()).select_from(QueueItem)
-        if filters:
-            count_query = count_query.where(*filters)
+        count_query = select(func.count()).select_from(QueueItem).where(*filters)
         total_result = await self.session.execute(count_query)
         total = total_result.scalar_one()
 
-        items_query = select(QueueItem)
-        if filters:
-            items_query = items_query.where(*filters)
-        items_query = items_query.order_by(QueueItem.created_at.desc()).offset(skip).limit(limit)
+        items_query = (
+            select(QueueItem)
+            .where(*filters)
+            .order_by(QueueItem.created_at.desc())
+            .offset(skip)
+            .limit(limit)
+        )
 
         result = await self.session.execute(items_query)
         return list(result.scalars().all()), total

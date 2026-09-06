@@ -1,7 +1,7 @@
 # Routing and Navigation
 
-**Document Version:** 2.0  
-**Last Updated:** 2026-07-29
+**Document Version:** 2.1  
+**Last Updated:** 2026-09-04
 
 ---
 
@@ -51,7 +51,7 @@ app/(dashboard)/     → Protected (AuthGuard + middleware cookie)
 └── profile                 ← header user menu only
 ```
 
-**Deferred:** `/analytics`, `/register`, workspace routes
+**Deferred:** `/register`, workspace routes
 
 ---
 
@@ -79,11 +79,11 @@ Telegram channel registry. Full-page CRUD (no drawer).
 
 ### `/settings/*`
 
-Read-only capability screens. No editable forms.
+Workspace-scoped editable forms (`GET/PATCH /workspace-settings`). Secret/env status is read-only badges. Gated on active workspace id; PATCH requires admin or workspace OWNER (`can_edit`).
 
 ### `/profile`
 
-Read-only account info from `/auth/me`.
+User-global profile form (`GET/PATCH /auth/me`). Role and account status are read-only.
 
 ---
 
@@ -109,7 +109,7 @@ Settings
 | Channels | `/channels` | |
 | Settings | `/settings/general` | Parent redirects to general |
 
-**Not in sidebar:** Profile (header menu), Analytics (deferred), Workspace switcher (hidden)
+**Not in sidebar:** Profile (header menu), Workspace switcher (hidden)
 
 ---
 
@@ -179,7 +179,6 @@ Request → middleware (session cookie present?)
 ## 12. Future Routing
 
 ```text
-/analytics
 /workspace/[id]/products
 /automation/workflows/[id]
 /integrations

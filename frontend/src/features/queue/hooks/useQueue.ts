@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useActiveWorkspaceId, workspaceScopedQueryKey } from "@/lib/workspace";
 import type { ApiError } from "@/services/api-client";
 import {
   createQueueItem,
@@ -23,9 +24,11 @@ import type {
 } from "../types/api";
 import { useQueueRealtimePollingEnabled } from "./QueueRealtimePollingContext";
 
-export const queueKey = ["queue"] as const;
-export const queueAttemptsKey = (id: string) =>
-  [...queueKey, "attempts", id] as const;
+export const queueKey = (workspaceId: string) =>
+  workspaceScopedQueryKey("queue", workspaceId);
+
+export const queueAttemptsKey = (workspaceId: string, id: string) =>
+  [...queueKey(workspaceId), "attempts", id] as const;
 
 const ENRICHMENT_CONCURRENCY = 5;
 
@@ -77,6 +80,7 @@ async function mapWithConcurrency<T, R>(
 }
 
 export function useQueue(status?: QueueStatus, limit = 20, skip = 0) {
+  const workspaceId = useActiveWorkspaceId();
   const pollingEnabled = useQueueRealtimePollingEnabled();
   const refetchInterval = useMemo(
     () => (pollingEnabled ? createQueuePollIntervalSelector() : false),
@@ -84,8 +88,11 @@ export function useQueue(status?: QueueStatus, limit = 20, skip = 0) {
   );
 
   return useQuery({
-    queryKey: [...queueKey, status, limit, skip],
+    queryKey: workspaceId
+      ? [...queueKey(workspaceId), status, limit, skip]
+      : (["queue", "none", status, limit, skip] as const),
     queryFn: () => getQueue(status, limit, skip),
+    enabled: Boolean(workspaceId),
     refetchInterval,
   });
 }
@@ -165,6 +172,7 @@ export function useQueueAttemptSummaryEnrichment(items: QueueItem[]) {
 }
 
 export function useQueuePublishAttempts(queueId: string | null, enabled: boolean) {
+  const workspaceId = useActiveWorkspaceId();
   const pollingEnabled = useQueueRealtimePollingEnabled();
   const refetchInterval = useMemo(
     () => (pollingEnabled ? createQueuePollIntervalSelector() : false),
@@ -172,46 +180,60 @@ export function useQueuePublishAttempts(queueId: string | null, enabled: boolean
   );
 
   return useQuery({
-    queryKey: queueId ? queueAttemptsKey(queueId) : [...queueKey, "attempts", "idle"],
+    queryKey:
+      workspaceId && queueId
+        ? queueAttemptsKey(workspaceId, queueId)
+        : (["queue", workspaceId ?? "none", "attempts", queueId ?? "idle"] as const),
     queryFn: () => getQueuePublishAttempts(queueId!),
-    enabled: enabled && Boolean(queueId),
+    enabled: enabled && Boolean(queueId) && Boolean(workspaceId),
     refetchInterval: enabled ? refetchInterval : false,
   });
 }
 
 export function useCreateQueueItem() {
   const client = useQueryClient();
+  const workspaceId = useActiveWorkspaceId();
   return useMutation({
     mutationFn: createQueueItem,
-    onSuccess: () => client.invalidateQueries({ queryKey: queueKey }),
+    onSuccess: () => {
+      if (workspaceId) void client.invalidateQueries({ queryKey: queueKey(workspaceId) });
+    },
   });
 }
 
 export function usePublishQueueItem() {
   const client = useQueryClient();
+  const workspaceId = useActiveWorkspaceId();
   return useMutation({
     mutationFn: publishQueueItem,
     onSuccess: (_data, id) => {
-      void client.invalidateQueries({ queryKey: queueKey });
-      void client.invalidateQueries({ queryKey: queueAttemptsKey(id) });
+      if (!workspaceId) return;
+      void client.invalidateQueries({ queryKey: queueKey(workspaceId) });
+      void client.invalidateQueries({ queryKey: queueAttemptsKey(workspaceId, id) });
     },
   });
 }
 
 export function useUpdateQueueItem() {
   const client = useQueryClient();
+  const workspaceId = useActiveWorkspaceId();
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: QueueUpdate }) =>
       updateQueueItem(id, input),
-    onSuccess: () => client.invalidateQueries({ queryKey: queueKey }),
+    onSuccess: () => {
+      if (workspaceId) void client.invalidateQueries({ queryKey: queueKey(workspaceId) });
+    },
   });
 }
 
 export function useDeleteQueueItem() {
   const client = useQueryClient();
+  const workspaceId = useActiveWorkspaceId();
   return useMutation({
     mutationFn: deleteQueueItem,
-    onSuccess: () => client.invalidateQueries({ queryKey: queueKey }),
+    onSuccess: () => {
+      if (workspaceId) void client.invalidateQueries({ queryKey: queueKey(workspaceId) });
+    },
   });
 }
 
@@ -232,6 +254,7 @@ export type PublishBatchResult = {
  */
 export function useQueuePublishingOperations() {
   const client = useQueryClient();
+  const workspaceId = useActiveWorkspaceId();
   const [publishingIds, setPublishingIds] = useState<string[]>([]);
   const [failures, setFailures] = useState<Record<string, QueuePublishFailure>>({});
 
@@ -255,7 +278,11 @@ export function useQueuePublishingOperations() {
             delete next[id];
             return next;
           });
-          void client.invalidateQueries({ queryKey: queueAttemptsKey(id) });
+          if (workspaceId) {
+            void client.invalidateQueries({
+              queryKey: queueAttemptsKey(workspaceId, id),
+            });
+          }
         } catch (error) {
           const message = getApiErrorMessage(error, "تعذر النشر.");
           if (isConflictError(error)) {
@@ -278,10 +305,12 @@ export function useQueuePublishingOperations() {
         }
       }
 
-      await client.invalidateQueries({ queryKey: queueKey });
+      if (workspaceId) {
+        await client.invalidateQueries({ queryKey: queueKey(workspaceId) });
+      }
       return { published, failed, conflicts, conflictMessage, failureMessage };
     },
-    [client],
+    [client, workspaceId],
   );
 
   const clearFailure = useCallback((id: string) => {

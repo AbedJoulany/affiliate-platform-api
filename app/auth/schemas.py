@@ -43,3 +43,13 @@ class UserRead(TimestampSchema):
     full_name: str
     role: UserRole
     is_active: bool
+    default_workspace_id: UUID | None = None
+
+
+class UserProfileUpdate(BaseModel):
+    """Self-service profile fields. Role and is_active are not writable here."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    full_name: str | None = Field(default=None, min_length=1, max_length=255)
+    email: EmailStr | None = None

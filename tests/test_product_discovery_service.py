@@ -53,7 +53,9 @@ def test_dedupe_products(discovery_service):
 
 def test_apply_filters(discovery_service):
     products = [
-        _product("1", rating=Decimal("4.80"), sales=500, discount=Decimal("30"), price=Decimal("10")),
+        _product(
+            "1", rating=Decimal("4.80"), sales=500, discount=Decimal("30"), price=Decimal("10")
+        ),
         _product("2", rating=Decimal("3.00"), sales=50, discount=Decimal("5"), price=Decimal("50")),
     ]
     query = ProductDiscoveryQuery(

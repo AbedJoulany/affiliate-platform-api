@@ -10,11 +10,12 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
 from starlette.responses import StreamingResponse
 
-from app.auth.dependencies import CurrentUser
+from app.api.deps import HttpWorkspaceId
 from app.events.broadcaster import EventBroadcaster
 from app.events.deps import get_event_broadcaster
 from app.events.schemas import QueueEventEnvelope
@@ -53,6 +54,7 @@ async def _event_stream(
     request: Request,
     broadcaster: EventBroadcaster,
     *,
+    workspace_id: UUID,
     heartbeat_interval_seconds: float,
 ) -> AsyncIterator[str]:
     """Yield SSE frames until the client disconnects or the buffer overflows."""
@@ -60,8 +62,11 @@ async def _event_stream(
         maxsize=SSE_CLIENT_QUEUE_MAXSIZE
     )
     closed = asyncio.Event()
+    workspace_key = str(workspace_id)
 
     async def on_event(envelope: QueueEventEnvelope) -> None:
+        if envelope.workspace_id != workspace_key:
+            return
         if closed.is_set():
             return
         try:
@@ -121,7 +126,7 @@ async def _event_stream(
 @router.get("/stream")
 async def stream_queue_events(
     request: Request,
-    _: CurrentUser,
+    workspace_id: HttpWorkspaceId,
     broadcaster: Annotated[EventBroadcaster, Depends(get_event_broadcaster)],
     heartbeat_interval_seconds: Annotated[
         float, Depends(get_sse_heartbeat_interval_seconds)
@@ -132,6 +137,7 @@ async def stream_queue_events(
         _event_stream(
             request,
             broadcaster,
+            workspace_id=workspace_id,
             heartbeat_interval_seconds=heartbeat_interval_seconds,
         ),
         media_type="text/event-stream",

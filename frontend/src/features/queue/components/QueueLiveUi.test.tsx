@@ -2,7 +2,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { renderHook } from "@testing-library/react";
 import { createElement, useEffect, useState, type ReactNode } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setActiveWorkspaceId } from "@/lib/workspace";
+import { session } from "@/services/session";
+import { WORKSPACE_A } from "@/test/workspace";
 import {
   queueAttemptsKey,
   queueKey,
@@ -58,6 +61,11 @@ function wrapper(client: QueryClient) {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  session.clear();
+});
+
+beforeEach(() => {
+  setActiveWorkspaceId(WORKSPACE_A);
 });
 
 describe("F3 — QueueOperationalStats live updates from queue list data", () => {
@@ -257,7 +265,7 @@ describe("F3 — QueueDetailsDrawer attempt query behavior", () => {
         queue_id: "q-1",
         data: {},
       }),
-    ).toEqual([queueKey, queueAttemptsKey("q-1")]);
+    ).toEqual([queueKey(WORKSPACE_A), queueAttemptsKey(WORKSPACE_A, "q-1")]);
     invalidator.dispose();
   });
 });
@@ -309,6 +317,6 @@ describe("F3 — mutation invalidation remains compatible with realtime keys", (
       queue_id: "q-1",
       data: {},
     });
-    expect(statusKeys).toEqual([queueKey]);
+    expect(statusKeys).toEqual([queueKey(WORKSPACE_A)]);
   });
 });

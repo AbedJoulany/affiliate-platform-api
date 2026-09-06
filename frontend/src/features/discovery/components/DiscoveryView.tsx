@@ -8,16 +8,27 @@ import { useCategories } from "@/features/categories/hooks/useCategories";
 import { useCurrentUser } from "@/features/auth/hooks/useAuth";
 import { generateContent } from "@/features/ai/api/ai.api";
 import { createQueueItem } from "@/features/queue/api/queue.api";
+import { getApiErrorMessage } from "@/services/api-client";
 import { exportDiscoveryProductsCsv } from "../lib/export";
 import { DEFAULT_VISIBLE_COLUMNS, normalizeUiPrefs } from "../lib/ui-prefs";
 import {
+  imageSearchFingerprint,
+  rememberImageSearchBody,
   useDiscoveryQuery,
   useDiscoverySelection,
   useDiscoverySession,
+  useImageSearchQuery,
   useImportProduct,
   useImportProductsBatch,
 } from "../hooks/useDiscovery";
-import type { DiscoveryMode, DiscoveryParams, DiscoveryProduct, DiscoveryTableColumn } from "../types/api";
+import type {
+  DiscoveryMode,
+  DiscoveryParams,
+  DiscoveryProduct,
+  DiscoveryTableColumn,
+  ProductImageSearchKey,
+  ProductImageSearchRequest,
+} from "../types/api";
 import { validateDiscoveryDraft } from "./DiscoveryFilterPanel";
 import { DiscoveryAdvancedFiltersDrawer } from "./DiscoveryAdvancedFiltersDrawer";
 import { DiscoveryEmptyState } from "./DiscoveryEmptyState";
@@ -28,6 +39,7 @@ import { DiscoveryProductInspector } from "./DiscoveryProductInspector";
 import { DiscoveryResultsTable } from "./DiscoveryResultsTable";
 import { DiscoveryResultsToolbar } from "./DiscoveryResultsToolbar";
 import { DiscoverySelectionBar } from "./DiscoverySelectionBar";
+import { ImageSearchPanel } from "./ImageSearchPanel";
 
 export function DiscoveryView() {
   const router = useRouter();
@@ -51,12 +63,15 @@ export function DiscoveryView() {
   const [batchBusy, setBatchBusy] = useState(false);
   const [inspectorId, setInspectorId] = useState<string | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [imageSearchInput, setImageSearchInput] = useState<ProductImageSearchKey | null>(null);
 
   const draft = session.draftParams;
   const committed = session.committedParams;
   const uiPrefs = normalizeUiPrefs(session.uiPrefs);
-  const shouldFetch = runToken > 0 && committed != null;
+  const imageSearchActive = imageSearchInput != null;
+  const shouldFetch = !imageSearchActive && runToken > 0 && committed != null;
   const discovery = useDiscoveryQuery(committed, shouldFetch);
+  const imageSearch = useImageSearchQuery(imageSearchInput, imageSearchActive);
   const singleImport = useImportProduct();
   const batchImport = useImportProductsBatch();
 
@@ -64,14 +79,16 @@ export function DiscoveryView() {
   const draftError = validateDiscoveryDraft(draft);
 
   useEffect(() => {
+    if (imageSearchActive) return;
     if (!discovery.isFetching && runToken > 0 && committed) {
       if (discovery.isSuccess && discovery.data) {
         markSuccess(committed, discovery.data);
       } else if (discovery.isError) {
-        markError(discovery.error instanceof Error ? discovery.error.message : "تعذر تشغيل الاكتشاف.");
+        markError(getApiErrorMessage(discovery.error, "تعذر تشغيل الاكتشاف."));
       }
     }
   }, [
+    imageSearchActive,
     discovery.isFetching,
     discovery.isSuccess,
     discovery.isError,
@@ -83,10 +100,47 @@ export function DiscoveryView() {
     markError,
   ]);
 
+  useEffect(() => {
+    if (!imageSearchActive || imageSearch.isFetching || !imageSearchInput) return;
+    if (imageSearch.isSuccess && imageSearch.data) {
+      markSuccess(
+        {
+          mode: committed?.mode ?? draft.mode ?? "hot",
+          page: imageSearchInput.page,
+          page_size: 20,
+        },
+        imageSearch.data,
+      );
+    } else if (imageSearch.isError) {
+      markError(getApiErrorMessage(imageSearch.error, "تعذر البحث بالصورة."));
+    }
+  }, [
+    imageSearchActive,
+    imageSearch.isFetching,
+    imageSearch.isSuccess,
+    imageSearch.isError,
+    imageSearch.data,
+    imageSearch.error,
+    imageSearchInput,
+    committed?.mode,
+    draft.mode,
+    markSuccess,
+    markError,
+  ]);
+
   const items = useMemo(() => {
+    if (imageSearchActive) {
+      return imageSearch.data?.items ?? [];
+    }
     if (discovery.isSuccess && discovery.data) return discovery.data.items;
     return session.lastResponse?.items ?? [];
-  }, [discovery.isSuccess, discovery.data, session.lastResponse]);
+  }, [
+    imageSearchActive,
+    imageSearch.data,
+    discovery.isSuccess,
+    discovery.data,
+    session.lastResponse,
+  ]);
 
   const filteredItems = useMemo(() => {
     const q = uiPrefs.resultSearch.trim().toLowerCase();
@@ -94,7 +148,9 @@ export function DiscoveryView() {
     return items.filter((item) => item.title.toLowerCase().includes(q));
   }, [items, uiPrefs.resultSearch]);
 
-  const response = discovery.data ?? session.lastResponse;
+  const response = imageSearchActive
+    ? (imageSearch.data ?? session.lastResponse)
+    : (discovery.data ?? session.lastResponse);
   const importedIds = useMemo(() => new Set(session.importedIds), [session.importedIds]);
   const pendingReview = items.filter((item) => !importedIds.has(item.aliexpress_product_id)).length;
   const selection = useDiscoverySelection(filteredItems);
@@ -110,6 +166,7 @@ export function DiscoveryView() {
       }
       setActionError(null);
       setActionMessage(null);
+      setImageSearchInput(null);
       const next = { ...params, page: params.page ?? 1, page_size: params.page_size ?? 20 };
       markRunning(next);
       setRunToken((value) => value + 1);
@@ -118,7 +175,50 @@ export function DiscoveryView() {
     [draft, markRunning, clearSelection],
   );
 
+  const runImageSearch = useCallback(
+    (payload: ProductImageSearchRequest, file?: File) => {
+      setActionError(null);
+      setActionMessage(null);
+      setInspectorId(null);
+      const page = payload.page ?? 1;
+      let next: ProductImageSearchKey;
+      if (payload.image_url) {
+        next = { source: "url", image_url: payload.image_url, page };
+      } else if (payload.image_base64 && file) {
+        const fingerprint = imageSearchFingerprint(file);
+        rememberImageSearchBody(fingerprint, payload.image_base64);
+        next = { source: "upload", fingerprint, page };
+      } else {
+        setActionError("أدخل رابط صورة أو ارفع ملفًا.");
+        return;
+      }
+      setImageSearchInput((prev) => {
+        if (
+          prev &&
+          prev.source === next.source &&
+          prev.image_url === next.image_url &&
+          prev.fingerprint === next.fingerprint &&
+          prev.page === next.page
+        ) {
+          return prev;
+        }
+        return next;
+      });
+      markRunning({
+        mode: draft.mode ?? "hot",
+        page,
+        page_size: 20,
+      });
+      clearSelection();
+    },
+    [draft.mode, markRunning, clearSelection],
+  );
+
   const onPageChange = (page: number) => {
+    if (imageSearchInput) {
+      setImageSearchInput({ ...imageSearchInput, page });
+      return;
+    }
     if (!committed) return;
     runDiscovery({ ...committed, page });
   };
@@ -131,7 +231,7 @@ export function DiscoveryView() {
       trackImported([product.aliexpress_product_id]);
       setActionMessage(`تم استيراد: ${product.title}`);
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : "تعذر الاستيراد.");
+      setActionError(getApiErrorMessage(error, "تعذر الاستيراد."));
     }
   };
 
@@ -148,7 +248,7 @@ export function DiscoveryView() {
       );
       selection.clear();
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : "تعذر الاستيراد الجماعي.");
+      setActionError(getApiErrorMessage(error, "تعذر الاستيراد الجماعي."));
     } finally {
       setBatchBusy(false);
     }
@@ -179,7 +279,7 @@ export function DiscoveryView() {
       setActionMessage(`تمت إضافة ${products.length.toLocaleString("ar")} مسودة إلى قائمة النشر.`);
       selection.clear();
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : "تعذر الإضافة إلى قائمة النشر.");
+      setActionError(getApiErrorMessage(error, "تعذر الإضافة إلى قائمة النشر."));
     } finally {
       setBatchBusy(false);
     }
@@ -204,7 +304,7 @@ export function DiscoveryView() {
       setActionMessage(`تم توليد AI وإضافة ${success.toLocaleString("ar")} مسودة إلى القائمة.`);
       selection.clear();
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : "تعذر توليد المحتوى.");
+      setActionError(getApiErrorMessage(error, "تعذر توليد المحتوى."));
     } finally {
       setBatchBusy(false);
     }
@@ -236,11 +336,24 @@ export function DiscoveryView() {
     });
   };
 
-  const showInitialEmpty = hydrated && !session.lastResponse && !shouldFetch && !discovery.isFetching;
-  const showLoading = discovery.isFetching || session.lastRunStatus === "running";
+  const activeFetching = imageSearchActive ? imageSearch.isFetching : discovery.isFetching;
+  const showInitialEmpty =
+    hydrated &&
+    !session.lastResponse &&
+    !shouldFetch &&
+    !imageSearchActive &&
+    !activeFetching;
+  const showLoading = activeFetching || session.lastRunStatus === "running";
   const showError =
-    !discovery.isFetching &&
-    ((runToken > 0 && discovery.isError) || session.lastRunStatus === "error") &&
+    !activeFetching &&
+    ((imageSearchActive && imageSearch.isError) ||
+      (!imageSearchActive && runToken > 0 && discovery.isError) ||
+      session.lastRunStatus === "error") &&
+    items.length === 0;
+  const showNoImages =
+    imageSearchActive &&
+    !activeFetching &&
+    imageSearch.isSuccess &&
     items.length === 0;
 
   return (
@@ -248,12 +361,12 @@ export function DiscoveryView() {
       <DiscoveryHeader
         lastRunAt={session.lastRunAt}
         lastRunStatus={
-          session.lastRunStatus === "running" && discovery.isFetching
+          session.lastRunStatus === "running" && activeFetching
             ? "running"
             : session.lastRunStatus
         }
-        canRun={!draftError && !discovery.isFetching}
-        running={discovery.isFetching}
+        canRun={!draftError && !activeFetching}
+        running={activeFetching}
         onRun={() => runDiscovery({ ...draft, page: 1 })}
         totalDiscovered={response?.total ?? 0}
         pendingReview={pendingReview}
@@ -271,6 +384,10 @@ export function DiscoveryView() {
             })
           }
         />
+        <ImageSearchPanel searching={imageSearch.isFetching} onSearch={runImageSearch} />
+        {imageSearchActive ? (
+          <p className="text-sm text-muted-foreground">نتائج البحث بالصورة من الكتالوج العالمي.</p>
+        ) : null}
       </div>
 
       <div className="mt-4 space-y-4" aria-label="نتائج الاكتشاف">
@@ -303,11 +420,17 @@ export function DiscoveryView() {
           search={uiPrefs.resultSearch}
           density={uiPrefs.density}
           visibleColumns={uiPrefs.visibleColumns}
-          refreshing={discovery.isFetching}
+          refreshing={activeFetching}
           onSearchChange={(value) => updateUiPrefs({ resultSearch: value })}
           onDensityChange={(value) => updateUiPrefs({ density: value })}
           onToggleColumn={toggleColumn}
-          onRefresh={() => committed && runDiscovery(committed)}
+          onRefresh={() => {
+            if (imageSearchInput) {
+              void imageSearch.refetch();
+              return;
+            }
+            if (committed) runDiscovery(committed);
+          }}
           onPageChange={onPageChange}
         />
 
@@ -323,7 +446,25 @@ export function DiscoveryView() {
         ) : showError ? (
           <ErrorState
             message={session.lastError ?? "تعذر تشغيل الاكتشاف."}
-            onRetry={() => committed && runDiscovery(committed)}
+            onRetry={() => {
+              if (imageSearchInput) {
+                void imageSearch.refetch();
+                return;
+              }
+              if (committed) runDiscovery(committed);
+            }}
+          />
+        ) : showNoImages ? (
+          <DiscoveryEmptyState
+            variant="no-images"
+            onRun={() => {
+              if (imageSearchInput) void imageSearch.refetch();
+            }}
+            onResetFilters={() => {
+              setImageSearchInput(null);
+              resetDraftFilters();
+            }}
+            onSwitchMode={switchMode}
           />
         ) : items.length === 0 ? (
           <DiscoveryEmptyState
@@ -396,6 +537,9 @@ export function DiscoveryView() {
         onImport={(product) => void handleImportOne(product)}
         onGenerateAi={(product) => void handleGenerateAi([product])}
         onAddToQueue={(product) => void handleAddToQueue([product])}
+        onSearchByImage={(imageUrl) =>
+          runImageSearch({ image_url: imageUrl, page: 1, page_size: 20 })
+        }
       />
     </PageContainer>
   );

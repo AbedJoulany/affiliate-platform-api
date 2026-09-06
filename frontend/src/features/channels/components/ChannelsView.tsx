@@ -4,10 +4,12 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { Bot } from "lucide-react";
-import { EmptyState, ErrorState, LoadingState } from "@/components/common/states";
+import { EmptyState, ErrorState, LoadingState, NoActiveWorkspaceState } from "@/components/common/states";
 import { PageContainer, PageHeader } from "@/components/layout/page";
 import { Badge, Button, Card, Input } from "@/components/ui/primitives";
 import { useChannels, useCreateChannel, useUpdateChannel } from "../hooks/useChannels";
+import { getApiErrorMessage } from "@/services/api-client";
+import { useActiveWorkspaceId } from "@/lib/workspace";
 
 const schema = z.object({
   telegram_channel_id: z.string().min(1, "معرّف القناة مطلوب").max(64),
@@ -16,10 +18,19 @@ const schema = z.object({
 type Values = z.infer<typeof schema>;
 
 export function ChannelsView() {
+  const workspaceId = useActiveWorkspaceId();
   const channels = useChannels();
   const create = useCreateChannel();
   const update = useUpdateChannel();
   const { register, handleSubmit, reset, formState: { errors } } = useForm<Values>({ resolver: zodResolver(schema) });
+  if (!workspaceId) {
+    return (
+      <PageContainer>
+        <PageHeader title="قنوات Telegram" description="أدر وجهات النشر وصلاحيات البوت." />
+        <NoActiveWorkspaceState />
+      </PageContainer>
+    );
+  }
   return (
     <PageContainer>
       <PageHeader title="قنوات Telegram" description="أدر وجهات النشر وصلاحيات البوت." />
@@ -30,9 +41,9 @@ export function ChannelsView() {
           <div><label className="mb-1.5 block text-sm" htmlFor="channelTitle">الاسم (اختياري)</label><Input id="channelTitle" {...register("title")} /></div>
           <Button className="self-end" loading={create.isPending} type="submit">إضافة القناة</Button>
         </form>
-        {create.isError && <p className="mt-3 text-sm text-destructive" role="alert">{create.error.message}</p>}
+        {create.isError && <p className="mt-3 text-sm text-destructive" role="alert">{getApiErrorMessage(create.error, "تعذر إضافة القناة.")}</p>}
       </Card>
-      {channels.isPending ? <LoadingState /> : channels.isError ? <ErrorState onRetry={() => void channels.refetch()} /> : channels.data.items.length === 0 ? <EmptyState title="لا توجد قنوات" description="أضف قناة Telegram لبدء النشر." /> : (
+      {channels.isPending ? <LoadingState /> : channels.isError ? <ErrorState message={getApiErrorMessage(channels.error, "تعذر تحميل القنوات.")} onRetry={() => void channels.refetch()} /> : channels.data.items.length === 0 ? <EmptyState title="لا توجد قنوات" description="أضف قناة Telegram لبدء النشر." /> : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {channels.data.items.map((channel) => (
             <Card key={channel.id}>

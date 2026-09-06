@@ -2,15 +2,25 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
-import { getCurrentUser, login } from "../api/auth.api";
-import type { LoginInput, TokenResponse } from "../types/api";
+import { getCurrentUser, login, logout, updateCurrentUser } from "../api/auth.api";
+import type { LoginInput, TokenResponse, User } from "../types/api";
 import { session } from "@/services/session";
 import type { ApiError } from "@/services/api-client";
+import { applyDefaultWorkspaceFromUser } from "@/lib/workspace";
 
 export const authKeys = { me: ["auth", "me"] as const };
 
 export function useCurrentUser(enabled = true) {
-  return useQuery({ queryKey: authKeys.me, queryFn: getCurrentUser, enabled, retry: false });
+  return useQuery({
+    queryKey: authKeys.me,
+    queryFn: async () => {
+      const user = await getCurrentUser();
+      applyDefaultWorkspaceFromUser(user);
+      return user;
+    },
+    enabled,
+    retry: false,
+  });
 }
 
 export function useLogin() {
@@ -19,8 +29,8 @@ export function useLogin() {
   const queryClient = useQueryClient();
   return useMutation<TokenResponse, ApiError, LoginInput>({
     mutationFn: (input: LoginInput) => login(input),
-    onSuccess: ({ access_token }) => {
-      session.setAccessToken(access_token);
+    onSuccess: ({ access_token, refresh_token }) => {
+      session.setTokens(access_token, refresh_token);
       void queryClient.invalidateQueries({ queryKey: authKeys.me });
       const next = searchParams.get("next");
       router.replace(next?.startsWith("/") && !next.startsWith("//") ? next : "/dashboard");
@@ -32,8 +42,26 @@ export function useLogout() {
   const router = useRouter();
   const queryClient = useQueryClient();
   return () => {
-    session.clear();
-    queryClient.clear();
-    router.replace("/login");
+    const refreshToken = session.getRefreshToken();
+    const finish = () => {
+      session.clear();
+      queryClient.clear();
+      router.replace("/login");
+    };
+    if (!refreshToken) {
+      finish();
+      return;
+    }
+    void logout(refreshToken).catch(() => undefined).finally(finish);
   };
+}
+
+export function useUpdateProfile() {
+  const queryClient = useQueryClient();
+  return useMutation<User, ApiError, { full_name?: string; email?: string }>({
+    mutationFn: updateCurrentUser,
+    onSuccess: (user) => {
+      queryClient.setQueryData(authKeys.me, user);
+    },
+  });
 }

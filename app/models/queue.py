@@ -30,6 +30,7 @@ from app.core.model_mixins import TimestampMixin, UUIDPrimaryKeyMixin
 if TYPE_CHECKING:
     from app.models.channel import TelegramChannel
     from app.models.product import Product
+    from app.models.workspace import Workspace
 
 
 class _ContentHashFormatCheck(ColumnElement[bool]):
@@ -93,6 +94,12 @@ class QueueItem(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         nullable=True,
         index=True,
     )
+    workspace_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
     image_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     button_text: Mapped[str | None] = mapped_column(String(128), nullable=True)
     button_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
@@ -100,6 +107,10 @@ class QueueItem(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     channel: Mapped["TelegramChannel | None"] = relationship("TelegramChannel")
     product: Mapped["Product | None"] = relationship("Product")
+    workspace: Mapped["Workspace"] = relationship(
+        "Workspace",
+        foreign_keys=[workspace_id],
+    )
     publish_attempts: Mapped[list["QueuePublishAttempt"]] = relationship(
         "QueuePublishAttempt",
         back_populates="queue_item",

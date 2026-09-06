@@ -1,21 +1,19 @@
 """MVP API coverage for attempt history, publish conflict, and attempt summary."""
 
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
+from app.core.workspace import WORKSPACE_ID_HEADER
 from tests.conftest import provision_test_user
 from tests.factories.queue_publishing import create_attempt, create_publishable_queue_item
+from tests.test_api_endpoints import workspace_auth_headers
 
 API_PREFIX = "/api/v1"
 PASSWORD = "StrongP@ssw0rd"
 
 
-def auth_headers(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
-
-
-async def register_and_login(client, role: str = "affiliate") -> tuple[str, str]:
+async def register_and_login(client, role: str = "user") -> tuple[str, str]:
     email = f"pub-{role}-{uuid4().hex[:6]}@example.com"
     await provision_test_user(
         email=email,
@@ -31,11 +29,11 @@ async def register_and_login(client, role: str = "affiliate") -> tuple[str, str]
     return email, login_resp.json()["access_token"]
 
 
-async def _create_channel_via_api(client, token: str) -> dict:
+async def _create_channel_via_api(client, headers: dict[str, str]) -> dict:
     suffix = uuid4().hex[:8]
     response = await client.post(
         f"{API_PREFIX}/channels",
-        headers=auth_headers(token),
+        headers=headers,
         json={"telegram_channel_id": f"@pub{suffix}", "title": f"Pub {suffix}"},
     )
     assert response.status_code == 201
@@ -45,14 +43,20 @@ async def _create_channel_via_api(client, token: str) -> dict:
 @pytest.mark.asyncio
 async def test_get_queue_attempts_returns_history_newest_first(client, session):
     _, token = await register_and_login(client)
-    item = await create_publishable_queue_item(session, content="Attempt history")
+    headers = await workspace_auth_headers(token)
+    workspace_id = UUID(headers[WORKSPACE_ID_HEADER])
+    item = await create_publishable_queue_item(
+        session,
+        content="Attempt history",
+        workspace_id=workspace_id,
+    )
     await create_attempt(session, item.id, attempt_number=1, status="failed")
     await create_attempt(session, item.id, attempt_number=2, status="succeeded")
     await session.commit()
 
     response = await client.get(
         f"{API_PREFIX}/queues/{item.id}/attempts",
-        headers=auth_headers(token),
+        headers=headers,
     )
 
     assert response.status_code == 200
@@ -71,11 +75,12 @@ async def test_publish_conflict_returns_409(
     mock_telegram_publisher_success,
 ):
     _, token = await register_and_login(client)
-    channel = await _create_channel_via_api(client, token)
+    headers = await workspace_auth_headers(token)
+    channel = await _create_channel_via_api(client, headers)
 
     create_resp = await client.post(
         f"{API_PREFIX}/queues",
-        headers=auth_headers(token),
+        headers=headers,
         json={
             "content": "Conflict publish content",
             "status": "queued",
@@ -87,13 +92,13 @@ async def test_publish_conflict_returns_409(
 
     first = await client.post(
         f"{API_PREFIX}/queues/{queue_id}/publish",
-        headers=auth_headers(token),
+        headers=headers,
     )
     assert first.status_code == 200
 
     second = await client.post(
         f"{API_PREFIX}/queues/{queue_id}/publish",
-        headers=auth_headers(token),
+        headers=headers,
     )
     assert second.status_code == 409
 
@@ -105,11 +110,12 @@ async def test_get_queue_exposes_attempt_summary(
     mock_telegram_publisher_failure,
 ):
     _, token = await register_and_login(client)
-    channel = await _create_channel_via_api(client, token)
+    headers = await workspace_auth_headers(token)
+    channel = await _create_channel_via_api(client, headers)
 
     create_resp = await client.post(
         f"{API_PREFIX}/queues",
-        headers=auth_headers(token),
+        headers=headers,
         json={
             "content": "Summary after failure",
             "status": "queued",
@@ -121,13 +127,13 @@ async def test_get_queue_exposes_attempt_summary(
 
     publish_resp = await client.post(
         f"{API_PREFIX}/queues/{queue_id}/publish",
-        headers=auth_headers(token),
+        headers=headers,
     )
     assert publish_resp.status_code == 502
 
     get_resp = await client.get(
         f"{API_PREFIX}/queues/{queue_id}",
-        headers=auth_headers(token),
+        headers=headers,
     )
     assert get_resp.status_code == 200
     body = get_resp.json()

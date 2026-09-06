@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { discoverProducts, importProduct, importProductsBatch } from "../api/discovery.api";
+import {
+  discoverProducts,
+  importProduct,
+  importProductsBatch,
+  searchProductsByImage,
+} from "../api/discovery.api";
 import { loadDiscoverySession, saveDiscoverySession } from "../lib/session";
 import type {
   DiscoveryParams,
@@ -10,6 +15,8 @@ import type {
   DiscoverySessionSnapshot,
   DiscoveryProduct,
   DiscoveryUiPrefs,
+  ProductImageSearchKey,
+  ProductImageSearchRequest,
 } from "../types/api";
 import { productKeys } from "@/features/products/hooks/useProducts";
 import type { ApiError } from "@/services/api-client";
@@ -113,6 +120,45 @@ export function useDiscoveryQuery(params: DiscoveryParams | null, enabled: boole
     queryFn: () => discoverProducts(params as DiscoveryParams),
     enabled: enabled && params != null,
     retry: false,
+  });
+}
+
+export const imageSearchKeys = {
+  all: ["product-image-search"] as const,
+  search: (input: ProductImageSearchKey) => ["product-image-search", input] as const,
+};
+
+const imageSearchBodies = new Map<string, string>();
+
+export function rememberImageSearchBody(fingerprint: string, imageBase64: string): void {
+  imageSearchBodies.set(fingerprint, imageBase64);
+}
+
+export function imageSearchFingerprint(file: File): string {
+  return `upload:${file.name}:${file.size}:${file.lastModified}`;
+}
+
+export function toImageSearchRequest(input: ProductImageSearchKey): ProductImageSearchRequest {
+  const page = input.page || 1;
+  if (input.source === "url") {
+    return { image_url: input.image_url, page, page_size: 20 };
+  }
+  const image_base64 = input.fingerprint ? imageSearchBodies.get(input.fingerprint) : undefined;
+  return { image_base64, page, page_size: 20 };
+}
+
+export function useImageSearchQuery(input: ProductImageSearchKey | null, enabled: boolean) {
+  const canRun =
+    input != null &&
+    (input.source === "url"
+      ? Boolean(input.image_url)
+      : Boolean(input.fingerprint && imageSearchBodies.get(input.fingerprint)));
+  return useQuery({
+    queryKey: input ? imageSearchKeys.search(input) : imageSearchKeys.all,
+    queryFn: () => searchProductsByImage(toImageSearchRequest(input as ProductImageSearchKey)),
+    enabled: enabled && canRun,
+    retry: false,
+    staleTime: 5 * 60 * 1000,
   });
 }
 

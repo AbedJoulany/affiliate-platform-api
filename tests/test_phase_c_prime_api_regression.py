@@ -45,7 +45,7 @@ async def _login_affiliate(client) -> str:
         email=email,
         password=PASSWORD,
         full_name="CPrime User",
-        role="affiliate",
+        role="user",
     )
     login = await client.post(
         f"{API_PREFIX}/auth/login",

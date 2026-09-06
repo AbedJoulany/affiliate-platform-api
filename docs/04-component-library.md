@@ -1,7 +1,9 @@
 # Component Library
 
-**Document Version:** 2.2  
-**Last Updated:** 2026-08-04
+**Document Version:** 2.3  
+**Last Updated:** 2026-09-04
+
+**2026-09-06 revision:** Product B analytics components (`AnalyticsView`, campaign funnel, click/conversion charts) were removed. The dashboard remains the Product A operational MEASURE surface.
 
 **2026-08-04 revision:** Phase A.1 frontend wiring shipped — `QueueOperationalStats`, `QueueHealthBadge`, and `QueueDetailsDrawer` notes below updated from "planned" to implemented backend-truth behavior.
 
@@ -178,7 +180,17 @@ Interactive score cell with:
 | --- | --- |
 | `ChannelsView` | Implemented — list, create, permission badges, active toggle |
 | `DashboardView` | Implemented — stat cards, activity, system status |
-| `CapabilityView` | Implemented — read-only settings sections |
+| `CapabilityView` | Implemented — re-exports `WorkspaceSettingsView`; per-section editable forms |
+
+## 10.1 Settings
+
+| Component | Status | Description |
+| --- | --- | --- |
+| `WorkspaceSettingsView` | Implemented | Section forms (general, AliExpress, AI, Telegram, discovery, scheduling); workspace gating; admin/OWNER `can_edit` |
+| `ConnectionStatusBadges` | Implemented | Env-derived connected/not-connected only — never secret values |
+| `CapabilityView` | Implemented | Alias of `WorkspaceSettingsView` used by `/settings/*` pages |
+
+Submit uses `ToastOverlay`. 422 field errors map onto RHF. Shared `Input`/`Select` primitives only.
 
 ---
 
@@ -208,6 +220,6 @@ Before adding a component:
 
 ## 13. Future Components
 
-`WorkspaceSwitcher` · `CommandPalette` · `NotificationCenter` · `AnalyticsChart` · `WorkflowBuilder` · `AIChatAssistant`
+`WorkspaceSwitcher` · `CommandPalette` · `NotificationCenter` · `WorkflowBuilder` · `AIChatAssistant`
 
 Do not render `WorkspaceSwitcher` until multi-workspace backend exists.

@@ -233,3 +233,40 @@ async def test_succeeded_attempt_heals_scheduled_status_drift(
     await session.refresh(item)
     assert item.status == QueueStatus.PUBLISHED
     assert item.telegram_message_id == 26
+
+
+@pytest.mark.asyncio
+async def test_missing_channel_dead_letter_keeps_attempt_queue_id(session):
+    """Validation failure after claim must not UPDATE queue_id to NULL."""
+    from app.models.queue import QueueItem
+    from app.models.workspace import Workspace
+    from app.services.exceptions import ValidationError
+
+    workspace = Workspace(name="No-channel publish workspace")
+    session.add(workspace)
+    await session.flush()
+    item = QueueItem(
+        title="Orphan queued item",
+        content="Must fail before Telegram",
+        status=QueueStatus.QUEUED,
+        channel_id=None,
+        workspace_id=workspace.id,
+    )
+    session.add(item)
+    await session.flush()
+
+    session.autoflush = False
+    service = TelegramPublishingService(session)
+
+    with pytest.raises(ValidationError, match="channel assigned"):
+        await service.publish_queue_item(item.id)
+
+    latest = await QueuePublishAttemptRepository(session).latest_attempt(item.id)
+    assert latest is not None
+    assert latest.queue_id == item.id
+    assert latest.status == "failed"
+    assert latest.error_code == DEAD_LETTER_ERROR_CODE
+    assert "channel assigned" in (latest.error_message or "")
+
+    await session.refresh(item)
+    assert item.status == QueueStatus.QUEUED

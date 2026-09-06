@@ -2,6 +2,7 @@
 
 import { Button, Select } from "@/components/ui/primitives";
 import type { ProductStatus } from "../types/api";
+import { productStatusOptions } from "../lib/schemas";
 
 export function ProductsSelectionBar({
   count,
@@ -56,10 +57,11 @@ export function ProductsSelectionBar({
             }}
           >
             <option value="">تغيير الحالة…</option>
-            <option value="draft">مسودة</option>
-            <option value="active">نشط</option>
-            <option value="inactive">غير نشط</option>
-            <option value="archived">مؤرشف</option>
+            {productStatusOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </Select>
           <Button
             type="button"

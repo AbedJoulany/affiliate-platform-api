@@ -11,8 +11,6 @@ from starlette.requests import Request
 
 from app.auth.security import generate_refresh_token
 from app.core.rate_limit import (
-    CONVERSION_LIMIT,
-    CONVERSION_WINDOW_SECONDS,
     LOGIN_LIMIT,
     LOGIN_WINDOW_SECONDS,
     REFRESH_LIMIT,
@@ -21,7 +19,6 @@ from app.core.rate_limit import (
     increment_fixed_window,
     limit_auth_login,
     limit_auth_refresh,
-    limit_conversions,
     resolve_identity,
 )
 from app.main import app as fastapi_app
@@ -126,16 +123,6 @@ def fake_redis(monkeypatch) -> FakeRedis:
     return store
 
 
-def _conversion_payload() -> dict:
-    return {
-        "affiliate_id": str(uuid4()),
-        "campaign_id": str(uuid4()),
-        "external_order_id": f"order-{uuid4().hex[:8]}",
-        "amount": 10.0,
-        "currency": "USD",
-    }
-
-
 @pytest.mark.asyncio
 async def test_increment_sets_ttl_only_on_first_request():
     redis = FakeRedis()
@@ -168,8 +155,6 @@ def test_task_0_policy_constants():
     assert LOGIN_WINDOW_SECONDS == 300
     assert REFRESH_LIMIT == 20
     assert REFRESH_WINDOW_SECONDS == 300
-    assert CONVERSION_LIMIT == 30
-    assert CONVERSION_WINDOW_SECONDS == 60
 
 
 def test_login_and_refresh_identity_is_client_ip_not_forwarded_header():
@@ -198,7 +183,7 @@ def test_login_and_refresh_identity_is_client_ip_not_forwarded_header():
     assert identity != "198.51.100.2"
 
 
-def test_conversion_falls_back_to_ip_without_user():
+def test_user_or_ip_falls_back_to_ip_without_user():
     kind, identity = resolve_identity(_fake_request(), "user_or_ip")
     assert kind == "ip"
     assert identity == "203.0.113.10"
@@ -214,20 +199,8 @@ def test_rate_limit_keys_are_isolated_by_route_and_identity():
     refresh_a = build_rate_limit_key(
         route="refresh", identity_kind="ip", identity="203.0.113.10", window_seconds=300
     )
-    conv_ip = build_rate_limit_key(
-        route="conversions",
-        identity_kind="ip",
-        identity="203.0.113.10",
-        window_seconds=60,
-    )
-    conv_user = build_rate_limit_key(
-        route="conversions",
-        identity_kind="user",
-        identity="11111111-1111-1111-1111-111111111111",
-        window_seconds=60,
-    )
-    keys = {login_a, login_b, refresh_a, conv_ip, conv_user}
-    assert len(keys) == 5
+    keys = {login_a, login_b, refresh_a}
+    assert len(keys) == 3
     assert all(key.startswith("ratelimit:") for key in keys)
 
 
@@ -287,89 +260,6 @@ async def test_refresh_allows_up_to_limit_then_returns_429(client, fake_redis):
     assert token not in str(blocked.json())
     assert any(key.startswith("ratelimit:refresh:ip:") for key in fake_redis.counts)
     assert fake_redis.expire_calls[0][1] == REFRESH_WINDOW_SECONDS
-
-
-@pytest.mark.asyncio
-async def test_conversion_allows_up_to_limit_then_returns_429(client, fake_redis):
-    for _ in range(CONVERSION_LIMIT):
-        response = await client.post(
-            f"{API_PREFIX}/conversions",
-            json=_conversion_payload(),
-        )
-        assert response.status_code == 404
-
-    blocked = await client.post(
-        f"{API_PREFIX}/conversions",
-        json=_conversion_payload(),
-    )
-    assert blocked.status_code == 429
-    assert blocked.json() == {"detail": "Rate limit exceeded"}
-    assert any(key.startswith("ratelimit:conversions:ip:") for key in fake_redis.counts)
-    assert fake_redis.expire_calls[0][1] == CONVERSION_WINDOW_SECONDS
-
-
-@pytest.mark.asyncio
-async def test_conversion_uses_user_id_when_access_token_present(client, fake_redis):
-    email = f"rl-{uuid4().hex[:10]}@example.com"
-    await provision_test_user(
-        email=email,
-        password=PASSWORD,
-        full_name="Rate Limit User",
-        role="affiliate",
-    )
-    login = await client.post(
-        f"{API_PREFIX}/auth/login",
-        data={"username": email, "password": PASSWORD},
-    )
-    assert login.status_code == 200
-    access_token = login.json()["access_token"]
-    refresh_token = login.json()["refresh_token"]
-
-    response = await client.post(
-        f"{API_PREFIX}/conversions",
-        headers={"Authorization": f"Bearer {access_token}"},
-        json=_conversion_payload(),
-    )
-    assert response.status_code == 404
-    user_keys = [k for k in fake_redis.counts if k.startswith("ratelimit:conversions:user:")]
-    ip_keys = [k for k in fake_redis.counts if k.startswith("ratelimit:conversions:ip:")]
-    assert user_keys
-    assert not ip_keys
-    joined = "".join(fake_redis.counts)
-    assert access_token not in joined
-    assert refresh_token not in joined
-
-
-@pytest.mark.asyncio
-async def test_conversion_user_buckets_are_isolated(client, fake_redis):
-    tokens = []
-    for _ in range(2):
-        email = f"rl-{uuid4().hex[:10]}@example.com"
-        await provision_test_user(
-            email=email,
-            password=PASSWORD,
-            full_name="Rate Limit User",
-            role="affiliate",
-        )
-        login = await client.post(
-            f"{API_PREFIX}/auth/login",
-            data={"username": email, "password": PASSWORD},
-        )
-        assert login.status_code == 200
-        tokens.append(login.json()["access_token"])
-
-    for token in tokens:
-        response = await client.post(
-            f"{API_PREFIX}/conversions",
-            headers={"Authorization": f"Bearer {token}"},
-            json=_conversion_payload(),
-        )
-        assert response.status_code == 404
-
-    user_keys = [k for k in fake_redis.counts if k.startswith("ratelimit:conversions:user:")]
-    assert len(user_keys) == 2
-    assert fake_redis.counts[user_keys[0]] == 1
-    assert fake_redis.counts[user_keys[1]] == 1
 
 
 @pytest.mark.asyncio
@@ -433,7 +323,7 @@ async def test_successful_login_and_refresh_contract_unchanged(client, fake_redi
         email=email,
         password=PASSWORD,
         full_name="Rate Limit User",
-        role="affiliate",
+        role="user",
     )
     login = await client.post(
         f"{API_PREFIX}/auth/login",
@@ -452,23 +342,15 @@ async def test_successful_login_and_refresh_contract_unchanged(client, fake_redi
     assert set(refreshed.json()) >= {"access_token", "token_type", "refresh_token"}
 
 
-@pytest.mark.asyncio
-async def test_conversion_validation_unchanged_under_limiter(client, fake_redis):
-    response = await client.post(f"{API_PREFIX}/conversions", json={"amount": 1})
-    assert response.status_code == 422
-
-
 def test_rate_limit_dependency_only_on_selected_routes():
     assert _rate_limit_routes_on(f"{API_PREFIX}/auth/login", "POST") == {"login"}
     assert _rate_limit_routes_on(f"{API_PREFIX}/auth/refresh", "POST") == {"refresh"}
-    assert _rate_limit_routes_on(f"{API_PREFIX}/conversions", "POST") == {"conversions"}
     assert _rate_limit_routes_on(f"{API_PREFIX}/queues/stream", "GET") == set()
     assert _rate_limit_routes_on("/health", "GET") == set()
     assert _rate_limit_routes_on("/ready", "GET") == set()
     assert _rate_limit_routes_on("/worker/health", "GET") == set()
     assert limit_auth_login.__rate_limit_route__ == "login"
     assert limit_auth_refresh.__rate_limit_route__ == "refresh"
-    assert limit_conversions.__rate_limit_route__ == "conversions"
 
 
 def test_no_global_rate_limit_middleware():

@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,8 +19,16 @@ class DashboardService:
     def __init__(self, session: AsyncSession) -> None:
         self.dashboard_repo = DashboardRepository(session)
 
-    async def get_dashboard(self, *, activity_limit: int = 10) -> DashboardResponse:
-        snapshot = await self.dashboard_repo.get_snapshot(activity_limit=activity_limit)
+    async def get_dashboard(
+        self,
+        workspace_id: UUID,
+        *,
+        activity_limit: int = 10,
+    ) -> DashboardResponse:
+        snapshot = await self.dashboard_repo.get_snapshot(
+            workspace_id,
+            activity_limit=activity_limit,
+        )
         product_counts = {
             status: snapshot.product_counts.get(status, 0) for status in ProductStatus
         }

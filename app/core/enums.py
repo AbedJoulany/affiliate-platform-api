@@ -3,29 +3,7 @@ from enum import StrEnum
 
 class UserRole(StrEnum):
     ADMIN = "admin"
-    AFFILIATE = "affiliate"
-    ADVERTISER = "advertiser"
-
-
-class AffiliateStatus(StrEnum):
-    PENDING = "pending"
-    ACTIVE = "active"
-    SUSPENDED = "suspended"
-    REJECTED = "rejected"
-
-
-class CampaignStatus(StrEnum):
-    DRAFT = "draft"
-    ACTIVE = "active"
-    PAUSED = "paused"
-    COMPLETED = "completed"
-
-
-class ConversionStatus(StrEnum):
-    PENDING = "pending"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-    PAID = "paid"
+    USER = "user"
 
 
 class ProductStatus(StrEnum):
@@ -86,3 +64,8 @@ class QueueStatus(StrEnum):
     QUEUED = "queued"
     SCHEDULED = "scheduled"
     PUBLISHED = "published"
+
+
+class WorkspaceMembershipRole(StrEnum):
+    OWNER = "owner"
+    MEMBER = "member"

@@ -2,19 +2,33 @@
 
 import Link from "next/link";
 import { BrainCircuit, Compass, Package, Radio, Send } from "lucide-react";
-import { ErrorState, LoadingState } from "@/components/common/states";
+import { ErrorState, LoadingState, NoActiveWorkspaceState } from "@/components/common/states";
 import { PageContainer, PageHeader } from "@/components/layout/page";
 import { Card } from "@/components/ui/primitives";
 import { useDashboard } from "../hooks/useDashboard";
+import { getApiErrorMessage } from "@/services/api-client";
+import { useActiveWorkspaceId } from "@/lib/workspace";
 
 export function DashboardView() {
+  const workspaceId = useActiveWorkspaceId();
   const overview = useDashboard();
+  if (!workspaceId) {
+    return (
+      <PageContainer>
+        <PageHeader title="لوحة التحكم" description="نظرة عامة على مساحة الأتمتة." />
+        <NoActiveWorkspaceState />
+      </PageContainer>
+    );
+  }
   if (overview.isPending) return <PageContainer><LoadingState rows={6} /></PageContainer>;
   if (overview.isError) {
     return (
       <PageContainer>
         <PageHeader title="لوحة التحكم" description="نظرة عامة على مساحة الأتمتة." />
-        <ErrorState message="واجهة ملخص لوحة التحكم غير متاحة بعد." onRetry={() => void overview.refetch()} />
+        <ErrorState
+          message={getApiErrorMessage(overview.error, "تعذر تحميل لوحة التحكم.")}
+          onRetry={() => void overview.refetch()}
+        />
       </PageContainer>
     );
   }

@@ -30,6 +30,7 @@ ENV/
 # Environment
 .env
 .env.local
+login_body.txt
 
 # IDE
 .idea/

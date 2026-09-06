@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.models import User
 from app.auth.refresh_token_repository import RefreshTokenRepository
 from app.auth.repository import UserRepository
-from app.auth.schemas import TokenResponse, UserLogin, UserRegister
+from app.auth.schemas import TokenResponse, UserLogin, UserProfileUpdate, UserRegister
 from app.auth.security import (
     create_access_token,
     generate_refresh_token,
@@ -44,7 +44,7 @@ class AuthService:
             email=payload.email,
             hashed_password=hash_password(payload.password),
             full_name=payload.full_name,
-            role=UserRole.AFFILIATE,
+            role=UserRole.USER,
         )
         return await self.users.create(user)
 
@@ -142,3 +142,16 @@ class AuthService:
 
     async def get_user_by_id(self, user_id: UUID) -> User | None:
         return await self.users.get_by_id(user_id)
+
+    async def update_profile(self, user: User, payload: UserProfileUpdate) -> User:
+        data = payload.model_dump(exclude_unset=True)
+        if "email" in data and data["email"] != user.email:
+            existing = await self.users.get_by_email(data["email"])
+            if existing is not None and existing.id != user.id:
+                raise ConflictError("Email already registered")
+            user.email = data["email"]
+        if "full_name" in data:
+            user.full_name = data["full_name"]
+        await self.session.flush()
+        await self.session.refresh(user)
+        return user

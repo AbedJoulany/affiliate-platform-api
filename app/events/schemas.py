@@ -26,7 +26,8 @@ class QueueEventEnvelope(BaseModel):
     """Versioned envelope shared by every Phase A.2 queue event.
 
     ``data`` holds the event-specific payload (see models below). ``workspace_id``
-    is reserved for future multi-tenancy and is always ``null`` today.
+    is the owning workspace of the QueueItem that produced the event, or ``null``
+    for rows that have not been assigned a workspace (Stage-1 nullable column).
     """
 
     model_config = ConfigDict(extra="forbid")

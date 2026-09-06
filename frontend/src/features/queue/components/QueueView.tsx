@@ -4,13 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
-import { EmptyState, ErrorState, LoadingState } from "@/components/common/states";
+import { EmptyState, ErrorState, LoadingState, NoActiveWorkspaceState } from "@/components/common/states";
 import { ToastOverlay } from "@/components/common/ToastOverlay";
 import { PageContainer, PageHeader } from "@/components/layout/page";
 import { Button } from "@/components/ui/primitives";
-import type { ApiError } from "@/services/api-client";
+import { getApiErrorMessage } from "@/services/api-client";
 import { useChannels } from "@/features/channels/hooks/useChannels";
 import { useProducts } from "@/features/products/hooks/useProducts";
+import { useActiveWorkspaceId } from "@/lib/workspace";
 import { getQueueOperationalStats } from "../lib/operations";
 import {
   useDeleteQueueItem,
@@ -27,7 +28,11 @@ import type { QueueItem, QueueStatus } from "../types/api";
 import { QueueDetailsDrawer } from "./QueueDetailsDrawer";
 import { QueueOperationalStats } from "./QueueOperationalStats";
 import { QueueRealtimeStatusBadge } from "./QueueRealtimeStatusBadge";
-import { QueueSchedulingDialog } from "./QueueSchedulingDialog";
+import {
+  QueueSchedulingDialog,
+  type QueuePublishNowSubmitValues,
+  type QueueScheduleSubmitValues,
+} from "./QueueSchedulingDialog";
 import { QueueSelectionBar } from "./QueueSelectionBar";
 import { QueueTable } from "./QueueTable";
 import { QueueToolbar } from "./QueueToolbar";
@@ -42,19 +47,6 @@ type ToastState = {
   message: string;
   tone: "success" | "error";
 } | null;
-
-function getApiErrorMessage(error: unknown, fallback: string): string {
-  if (
-    error &&
-    typeof error === "object" &&
-    "message" in error &&
-    typeof (error as ApiError).message === "string" &&
-    (error as ApiError).message.length > 0
-  ) {
-    return (error as ApiError).message;
-  }
-  return fallback;
-}
 
 export function QueueView() {
   // Single workspace-scoped SSE → query invalidation (not in child components).
@@ -73,6 +65,7 @@ function QueueViewBody({
   realtimeStatus: QueueEventStreamStatus;
 }) {
   const router = useRouter();
+  const workspaceId = useActiveWorkspaceId();
   const queue = useQueue(undefined, 200);
   const channels = useChannels();
   const products = useProducts({ limit: 200, skip: 0 });
@@ -190,15 +183,15 @@ function QueueViewBody({
     workspace.clearSelection();
   };
 
-  const saveSchedule = async () => {
-    if (!schedulingDialog?.channelId || !schedulingDialog.scheduledAt) return;
+  const saveSchedule = async (values: QueueScheduleSubmitValues) => {
+    if (!schedulingDialog) return;
     try {
-      const scheduledAt = new Date(schedulingDialog.scheduledAt).toISOString();
+      const scheduledAt = new Date(values.scheduledAt).toISOString();
       for (const id of schedulingDialog.itemIds) {
         await updateQueue.mutateAsync({
           id,
           input: {
-            channel_id: schedulingDialog.channelId,
+            channel_id: values.channelId,
             status: "scheduled",
             scheduled_at: scheduledAt,
           },
@@ -215,8 +208,8 @@ function QueueViewBody({
     }
   };
 
-  const publishFromDialog = async () => {
-    if (!schedulingDialog?.channelId) return;
+  const publishFromDialog = async (values: QueuePublishNowSubmitValues) => {
+    if (!schedulingDialog) return;
     try {
       const selected = enrichedItems.filter((item) =>
         schedulingDialog.itemIds.includes(item.id),
@@ -225,7 +218,7 @@ function QueueViewBody({
         await updateQueue.mutateAsync({
           id: item.id,
           input: {
-            channel_id: schedulingDialog.channelId,
+            channel_id: values.channelId,
             status: "queued",
           },
         });
@@ -234,7 +227,7 @@ function QueueViewBody({
       await publishItems(
         selected.map((item) => ({
           ...item,
-          channel_id: schedulingDialog.channelId,
+          channel_id: values.channelId,
           status: "queued" as const,
         })),
       );
@@ -300,6 +293,18 @@ function QueueViewBody({
     listItems.length > 0 &&
     workspace.filteredItems.length === 0;
 
+  if (!workspaceId) {
+    return (
+      <PageContainer wide>
+        <PageHeader
+          title="مركز عمليات النشر"
+          description="راجع الجاهزية، عيّن القنوات، وجدول وراقب عمليات النشر."
+        />
+        <NoActiveWorkspaceState />
+      </PageContainer>
+    );
+  }
+
   return (
     <PageContainer wide>
       <PageHeader
@@ -348,7 +353,7 @@ function QueueViewBody({
           <LoadingState rows={8} />
         ) : queue.isError ? (
           <ErrorState
-            message="تعذر تحميل عمليات النشر."
+            message={getApiErrorMessage(queue.error, "تعذر تحميل عمليات النشر.")}
             onRetry={() => void queue.refetch()}
           />
         ) : noItems ? (
@@ -456,22 +461,14 @@ function QueueViewBody({
       <QueueSchedulingDialog
         open={schedulingDialog != null}
         itemCount={schedulingDialog?.itemIds.length ?? 0}
-        channelId={schedulingDialog?.channelId ?? ""}
-        scheduledAt={schedulingDialog?.scheduledAt ?? ""}
+        defaultValues={{
+          channelId: schedulingDialog?.channelId ?? "",
+          scheduledAt: schedulingDialog?.scheduledAt ?? "",
+        }}
         channels={channels.data?.items ?? []}
         busy={updateQueue.isPending || publishing.publishingIds.length > 0}
-        onChannelChange={(channelId) =>
-          setSchedulingDialog((previous) =>
-            previous ? { ...previous, channelId } : previous,
-          )
-        }
-        onScheduledAtChange={(scheduledAt) =>
-          setSchedulingDialog((previous) =>
-            previous ? { ...previous, scheduledAt } : previous,
-          )
-        }
-        onPublishNow={() => void publishFromDialog()}
-        onApply={() => void saveSchedule()}
+        onSchedule={(values) => void saveSchedule(values)}
+        onPublishNow={(values) => void publishFromDialog(values)}
         onClose={() => setSchedulingDialog(null)}
       />
 

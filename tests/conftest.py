@@ -12,6 +12,8 @@ from app.core.database import Base, get_db
 from app.core.enums import BotPermissionStatus, UserRole
 from app.main import app as fastapi_app
 from app.models.refresh_token import RefreshToken  # noqa: F401 — register metadata
+from app.models.workspace import Workspace, WorkspaceMembership  # noqa: F401 — register metadata
+from app.models.workspace_settings import WorkspaceSettings  # noqa: F401 — register metadata
 from app.schemas.queue import PublishQueueResponse
 from app.telegram.client import BotPermissionsResult
 
@@ -164,7 +166,7 @@ def mock_ai_provider(monkeypatch):
 @pytest.fixture
 def mock_queue_publish(monkeypatch):
     """Mock QueueService.publish to simulate successful Telegram publishing."""
-    async def fake_publish(self, queue_id):
+    async def fake_publish(self, queue_id, workspace_id=None):
         return PublishQueueResponse(
             queue_id=queue_id,
             telegram_message_id=987654321,

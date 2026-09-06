@@ -1,8 +1,17 @@
 import { expect, test } from "@playwright/test";
 
-test("logs in and renders typed dashboard fixture", async ({ page }) => {
+test("logs in, restores default workspace from /auth/me, and renders dashboard", async ({
+  page,
+}) => {
+  const workspaceId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
   await page.route("**/api/v1/auth/login", async (route) => {
-    await route.fulfill({ json: { access_token: "fixture-token", token_type: "bearer" } });
+    await route.fulfill({
+      json: {
+        access_token: "fixture-token",
+        token_type: "bearer",
+        refresh_token: "fixture-refresh-token",
+      },
+    });
   });
   await page.route("**/api/v1/auth/me", async (route) => {
     await route.fulfill({
@@ -14,10 +23,12 @@ test("logs in and renders typed dashboard fixture", async ({ page }) => {
         is_active: true,
         created_at: "2026-07-16T00:00:00Z",
         updated_at: "2026-07-16T00:00:00Z",
+        default_workspace_id: workspaceId,
       },
     });
   });
   await page.route("**/api/v1/dashboard", async (route) => {
+    expect(route.request().headers()["x-workspace-id"]).toBe(workspaceId);
     await route.fulfill({
       json: {
         products: {
@@ -46,4 +57,7 @@ test("logs in and renders typed dashboard fixture", async ({ page }) => {
   await expect(page).toHaveURL(/\/dashboard$/);
   await expect(page.getByRole("heading", { name: "لوحة التحكم" })).toBeVisible();
   await expect(page.getByText("24", { exact: true })).toBeVisible();
+  expect(
+    await page.evaluate(() => window.sessionStorage.getItem("affiliate_active_workspace_id")),
+  ).toBe(workspaceId);
 });

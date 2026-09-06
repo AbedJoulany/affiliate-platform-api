@@ -1,4 +1,4 @@
-export type UserRole = "admin" | "affiliate" | "advertiser";
+export type UserRole = "admin" | "user";
 
 export interface User {
   id: string;
@@ -8,11 +8,13 @@ export interface User {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  default_workspace_id: string | null;
 }
 
 export interface TokenResponse {
   access_token: string;
-  token_type: "bearer";
+  token_type: string;
+  refresh_token: string;
 }
 
 export interface LoginInput {

@@ -104,6 +104,20 @@ export interface DiscoveryUiPrefs {
   resultSearch: string;
 }
 
+export interface ProductImageSearchRequest {
+  image_url?: string;
+  image_base64?: string;
+  page?: number;
+  page_size?: number;
+}
+
+export interface ProductImageSearchKey {
+  source: "url" | "upload";
+  image_url?: string;
+  fingerprint?: string;
+  page: number;
+}
+
 export interface ProductImportResponse {
   product: Product;
   aliexpress_product_id: string;

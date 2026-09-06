@@ -48,13 +48,10 @@ app/
 
 | Entity | Description |
 |--------|-------------|
-| **User** | Platform users (admin, affiliate, advertiser) |
-| **Affiliate** | Affiliate profile with referral code and commission rate |
-| **Campaign** | Advertiser offers with payout and landing URL |
-| **AffiliateCampaign** | Enrollment linking affiliates to campaigns with tracking links |
-| **Conversion** | Recorded sales/leads with commission calculation |
-| **Product** | Affiliate product catalog with pricing, ratings, and status |
+| **User** | Platform users (`admin` or `user`) |
+| **Product** | Shared product catalog with pricing, AliExpress `affiliate_url`, and `commission_rate` |
 | **TelegramChannel** | Connected Telegram channels with bot permission status |
+| **QueueItem** | Scheduled or published Telegram posts |
 
 ## Quick Start (Docker)
 
@@ -114,12 +111,6 @@ access token expires and require the user to authenticate again.
 | POST | `/api/v1/auth/register` | Register a new user |
 | POST | `/api/v1/auth/login` | Login (OAuth2 form) |
 | GET | `/api/v1/auth/me` | Current user profile |
-| GET | `/api/v1/affiliates/me` | My affiliate profile |
-| POST | `/api/v1/affiliates/join-campaign` | Join a campaign |
-| GET | `/api/v1/campaigns/active` | List active campaigns |
-| POST | `/api/v1/campaigns` | Create campaign (admin/advertiser) |
-| POST | `/api/v1/conversions` | Record a conversion |
-| GET | `/api/v1/conversions/me` | My conversions |
 | GET | `/api/v1/products` | List products (pagination, title search, status filter) |
 | GET | `/api/v1/products/{id}` | Get product by ID |
 | POST | `/api/v1/products` | Create product (admin) |

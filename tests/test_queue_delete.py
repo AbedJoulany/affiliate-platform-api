@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 
 from app.core.enums import QueueStatus
 from app.models.queue import QueueItem, QueuePublishAttempt
+from app.models.workspace import Workspace
 from app.services.queue import QueueService
 from tests.factories.queue_publishing import create_attempt, create_publishable_queue_item
 
@@ -28,9 +29,14 @@ async def test_delete_queue_item_with_attempts(session, status):
 
     await create_attempt(session, item.id, attempt_number=1, status="failed")
     await create_attempt(session, item.id, attempt_number=2, status="started")
+    workspace = Workspace(name="Delete workspace")
+    session.add(workspace)
+    await session.flush()
+    item.workspace_id = workspace.id
+    await session.flush()
     queue_id = item.id
 
-    await QueueService(session).delete(queue_id)
+    await QueueService(session).delete(queue_id, workspace.id)
     await session.commit()
 
     assert await session.get(QueueItem, queue_id) is None
