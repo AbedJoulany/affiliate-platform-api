@@ -461,7 +461,7 @@ Migration **`016_add_workspace_settings`** revises **`015`**. Additive table onl
 
 - **User role:** `admin`, `affiliate`, `advertiser`
 - **Product status:** `draft`, `active`, `inactive`, `archived`
-- **Queue status:** `draft`, `queued`, `scheduled`, `published` — **no `failed` value**
+- **Queue status:** `draft`, `queued`, `scheduled`, `published`, `failed`
 - **Publish attempt status** (attempt-scoped only): `started`, `succeeded`, `failed`
 - **AI provider:** `openai`, `gemini`
 - **Content type:** `social`, `description`, `telegram`, `facebook`, `blog`, `email`

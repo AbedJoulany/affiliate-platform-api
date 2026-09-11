@@ -1,11 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PageContainer, PageHeader } from "@/components/layout/page";
+import { useProduct } from "@/features/products/hooks/useProducts";
 import { useCreateQueueItem, usePublishQueueItem } from "@/features/queue/hooks/useQueue";
+import { useWorkspaceSettings } from "@/features/settings/hooks/useWorkspaceSettings";
 import { useContentSession } from "../hooks/useContentSession";
 import { useGenerateContent } from "../hooks/useGenerateContent";
 import { downloadContent } from "../lib/export";
+import { buildAiQueueCreateInput } from "../lib/queue-payload";
 import { AiSuggestionsPanel } from "./AiSuggestionsPanel";
 import { ConfigControlBoard } from "./ConfigControlBoard";
 import { DistributionHub } from "./DistributionHub";
@@ -29,6 +32,8 @@ export function ContentWorkspaceView({
   const generation = useGenerateContent();
   const createQueue = useCreateQueueItem();
   const publishQueue = usePublishQueueItem();
+  const workspaceSettings = useWorkspaceSettings();
+  const selectedProduct = useProduct(sessionApi.session.productContext.productId ?? "");
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [compareOpen, setCompareOpen] = useState(false);
@@ -44,6 +49,30 @@ export function ContentWorkspaceView({
     }
     return Boolean(session.productContext.url?.trim());
   }, [session.productContext]);
+
+  useEffect(() => {
+    const product = selectedProduct.data;
+    if (!product || product.id !== session.productContext.productId) return;
+    if (
+      session.productContext.imageUrl === (product.image_url || null) &&
+      session.productContext.affiliateUrl === (product.affiliate_url || null) &&
+      session.productContext.productLabel === product.title
+    ) {
+      return;
+    }
+    sessionApi.updateProductContext({
+      imageUrl: product.image_url || null,
+      affiliateUrl: product.affiliate_url,
+      productLabel: product.title,
+    });
+  }, [
+    selectedProduct.data,
+    session.productContext.affiliateUrl,
+    session.productContext.imageUrl,
+    session.productContext.productId,
+    session.productContext.productLabel,
+    sessionApi.updateProductContext,
+  ]);
 
   const comparePair = useMemo(() => {
     if (session.variants.length < 2) return { left: null, right: null };
@@ -103,12 +132,17 @@ export function ContentWorkspaceView({
     if (!activeVariant?.content.trim()) return;
     setActionError(null);
     try {
-      const item = await createQueue.mutateAsync({
-        content: activeVariant.content.trim(),
-        status,
-        product_id: activeVariant.productId,
-        title: session.productContext.productLabel ?? undefined,
-      });
+      const item = await createQueue.mutateAsync(
+        buildAiQueueCreateInput({
+          content: activeVariant.content.trim(),
+          status,
+          productId: activeVariant.productId ?? session.productContext.productId,
+          title: session.productContext.productLabel,
+          channelId: workspaceSettings.data?.default_telegram_channel_id,
+          imageUrl: session.productContext.imageUrl,
+          affiliateUrl: session.productContext.affiliateUrl,
+        }),
+      );
       sessionApi.logDistribution(
         status === "draft" ? "draft_saved" : "queued",
         activeVariant.id,

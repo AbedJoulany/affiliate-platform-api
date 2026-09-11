@@ -79,8 +79,15 @@ def build_marketing_prompt(
         "",
         "معلومات المنتج:",
         f"- العنوان: {context.title}",
-        f"- رابط المنتج: {context.product_url}",
+        f"- رابط صفحة المنتج (ليس رابط التسويق): {context.product_url}",
     ]
+    if context.affiliate_url:
+        lines.append(f"- رابط التسويق (CTA / affiliate): {context.affiliate_url}")
+    else:
+        lines.append(
+            "- رابط التسويق (CTA / affiliate): غير متوفر — "
+            "لا تستخدم رابط صفحة المنتج كرابط تسويق."
+        )
 
     if context.description:
         lines.append(f"- الوصف: {context.description}")
@@ -123,7 +130,8 @@ def build_marketing_prompt(
             "المطلوب:",
             "1. التزم باللغة والنبرة والطول المحددين أعلاه.",
             "2. أبرز فوائد المنتج وسبب الشراء الآن.",
-            "3. أضف call-to-action واضحًا مع الرابط.",
+            "3. أضف call-to-action واضحًا. زر تيليجرام يُرفق لاحقًا من رابط التسويق "
+            "(affiliate) إن وُجد — لا تلصق رابط صفحة المنتج كرابط شراء.",
             "4. نظّم النص بعناوين أو نقاط عند الحاجة لتسهيل القراءة.",
             "5. لا تذكر أن النص مكتوب بواسطة AI.",
         ]

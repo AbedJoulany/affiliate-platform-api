@@ -23,6 +23,8 @@ export function createEmptySession(
       productId: null,
       productLabel: null,
       url: "",
+      imageUrl: null,
+      affiliateUrl: null,
     },
     config,
     prompt: { instructionModifiers: [] },
@@ -41,10 +43,15 @@ export function loadContentSession(): ContentSession {
     const raw = window.sessionStorage.getItem(STORAGE_KEY);
     if (!raw) return createEmptySession();
     const parsed = JSON.parse(raw) as ContentSession;
+    const empty = createEmptySession();
     return {
-      ...createEmptySession(),
+      ...empty,
       ...parsed,
-      config: { ...createEmptySession().config, ...parsed.config },
+      config: { ...empty.config, ...parsed.config },
+      productContext: {
+        ...empty.productContext,
+        ...parsed.productContext,
+      },
       prompt: {
         instructionModifiers: parsed.prompt?.instructionModifiers ?? [],
       },

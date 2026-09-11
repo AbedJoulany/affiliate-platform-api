@@ -60,8 +60,9 @@ All components must use semantic tokens — no hardcoded hex in feature code.
 | `queued` | info | Ready for worker/API publish |
 | `scheduled` | warning | Requires `scheduled_at` |
 | `published` | success | Terminal success |
+| `failed` | error | Terminal publishing failure; excluded from automatic publish pickup. Retry via PATCH back to `queued`/`scheduled`. |
 
-**Important:** `failed` is **not** a backend `QueueStatus` value. Publish failures are **backend-owned attempt data** on `queue_publish_attempts` (`status` = `started` \| `succeeded` \| `failed`; terminal exhaustion may set `error_code` = `dead_letter`). UI surfaces them via attempt history / failure reason (toasts and `QueueHealthBadge` resolve backend truth via `resolveQueueFailure`), never by inventing a queue status.
+Attempt history remains on `queue_publish_attempts` (`started` \| `succeeded` \| `failed`; terminal exhaustion sets `error_code` = `dead_letter`). Transient transport failures keep the item `queued`/`scheduled` so Celery can retry.
 
 ### Operational KPI tones (Queue workspace)
 

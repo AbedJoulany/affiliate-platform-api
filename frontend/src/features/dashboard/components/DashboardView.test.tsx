@@ -47,7 +47,10 @@ describe("DashboardView workspace gating", () => {
     setActiveWorkspaceId(WORKSPACE_A);
     getDashboardMock.mockResolvedValue({
       products: { total: 24, by_status: { draft: 0, active: 24, inactive: 0, archived: 0 } },
-      queue: { total: 0, by_status: { draft: 0, queued: 0, scheduled: 0, published: 0 } },
+      queue: {
+        total: 0,
+        by_status: { draft: 0, queued: 0, scheduled: 0, published: 0, failed: 0 },
+      },
       channels: { total: 0, active: 0, inactive: 0 },
       recent_activity: [],
       system_status: {

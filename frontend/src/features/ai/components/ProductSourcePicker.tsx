@@ -21,6 +21,8 @@ export function ProductSourcePicker({
       items.map((product) => ({
         id: product.id,
         label: product.title,
+        imageUrl: product.image_url,
+        affiliateUrl: product.affiliate_url,
       })),
     [items],
   );
@@ -35,11 +37,13 @@ export function ProductSourcePicker({
           id="ai-source-type"
           value={value.sourceType}
           onChange={(event) =>
-            onChange({
-              sourceType: event.target.value as "product" | "url",
-              productId: event.target.value === "product" ? value.productId : null,
-              url: event.target.value === "url" ? value.url : null,
-            })
+              onChange({
+                sourceType: event.target.value as "product" | "url",
+                productId: event.target.value === "product" ? value.productId : null,
+                url: event.target.value === "url" ? value.url : null,
+                imageUrl: event.target.value === "product" ? value.imageUrl : null,
+                affiliateUrl: event.target.value === "product" ? value.affiliateUrl : null,
+              })
           }
         >
           <option value="product">منتج مستورد</option>
@@ -64,6 +68,8 @@ export function ProductSourcePicker({
                 productId: id,
                 productLabel: match?.label ?? null,
                 url: null,
+                imageUrl: match?.imageUrl ?? null,
+                affiliateUrl: match?.affiliateUrl ?? null,
               });
             }}
             aria-label="اختيار المنتج"
@@ -94,6 +100,8 @@ export function ProductSourcePicker({
                 url: event.target.value,
                 productId: null,
                 productLabel: null,
+                imageUrl: null,
+                affiliateUrl: null,
               })
             }
           />

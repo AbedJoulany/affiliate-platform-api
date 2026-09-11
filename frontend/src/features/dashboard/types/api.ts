@@ -5,7 +5,10 @@ export interface DashboardOverview {
   };
   queue: {
     total: number;
-    by_status: Record<"draft" | "queued" | "scheduled" | "published", number>;
+    by_status: Record<
+      "draft" | "queued" | "scheduled" | "published" | "failed",
+      number
+    >;
   };
   channels: {
     total: number;

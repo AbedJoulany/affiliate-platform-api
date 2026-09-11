@@ -46,6 +46,7 @@ export function getQueueHealth(
   },
 ): QueueHealthStatus {
   if (item.status === "published") return "published";
+  if (item.status === "failed") return "error";
   if (context.publishing) return "publishing";
   if (context.failure) return "error";
   if (!item.channel_id) return "missing_channel";
@@ -77,7 +78,11 @@ export function getQueueOperationalStats(
   let failedToday = 0;
   for (const item of items) {
     const failure = resolveQueueFailure(item, clientFailures[item.id]);
-    if (failure && isToday(failure.occurredAt)) {
+    const failedAt =
+      item.status === "failed"
+        ? (failure?.occurredAt ?? item.updated_at)
+        : failure?.occurredAt;
+    if ((item.status === "failed" || failure) && isToday(failedAt)) {
       failedToday += 1;
     }
   }

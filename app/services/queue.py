@@ -27,10 +27,12 @@ from app.events.schemas import (
     QueueStatusChangedData,
 )
 from app.models.channel import TelegramChannel
+from app.models.product import Product
 from app.models.queue import QueueItem, QueuePublishAttempt
 from app.repositories.channel import ChannelRepository
 from app.repositories.product import ProductRepository
 from app.repositories.queue import QueuePublishAttemptRepository, QueueRepository
+from app.repositories.workspace_settings import WorkspaceSettingsRepository
 from app.schemas.queue import (
     PublishQueueResponse,
     QueueCreate,
@@ -55,8 +57,30 @@ logger = logging.getLogger(__name__)
 
 IDEMPOTENCY_WINDOW = timedelta(hours=24)
 # Terminal failure category after all retry paths are exhausted (or the error is
-# not Celery-retryable). QueueItem.status is never changed for this outcome.
+# not Celery-retryable). The matching QueueItem is then moved to QueueStatus.FAILED.
 DEAD_LETTER_ERROR_CODE = "dead_letter"
+PUBLISHABLE_STATUSES = frozenset(
+    {QueueStatus.QUEUED, QueueStatus.SCHEDULED, QueueStatus.PUBLISHED}
+)
+DEFAULT_AFFILIATE_BUTTON_TEXT = "اشتري الآن"
+
+
+def resolve_affiliate_cta_url(
+    *,
+    button_url: str | None,
+    affiliate_url: str | None,
+) -> str | None:
+    """Resolve the monetization CTA URL for a queue item.
+
+    Explicit ``button_url`` wins. Otherwise use ``product.affiliate_url``.
+    Never fall back to ``product.product_url`` — a missing affiliate link
+    means no CTA button (manual publish may still send the message).
+    """
+    if button_url:
+        return button_url
+    if affiliate_url:
+        return affiliate_url
+    return None
 
 
 class SupportsQueueEventPublish(Protocol):
@@ -121,7 +145,7 @@ class _PublishClaim:
 
 
 class TelegramPublishingService:
-    DEFAULT_BUTTON_TEXT = "اشتري الآن"
+    DEFAULT_BUTTON_TEXT = DEFAULT_AFFILIATE_BUTTON_TEXT
 
     def __init__(
         self,
@@ -148,8 +172,8 @@ class TelegramPublishingService:
         ``mark_transport_failure_terminal`` is set by Celery callers on the final
         task execution (retries exhausted) and by the manual API path (no Celery
         retries). Non-``TelegramPublishError`` failures are always terminal.
-        Terminal failures are persisted as dead-letter attempts; QueueItem.status
-        is never set to a failure value.
+        Terminal failures are persisted as dead-letter attempts and the item is
+        moved to ``QueueStatus.FAILED`` so the beat loop will not pick it again.
         """
         claim = await self._claim_publish(queue_id)
         item = claim.item
@@ -240,6 +264,8 @@ class TelegramPublishingService:
                 workspace_id=item.workspace_id,
                 queue_id=item.id,
             )
+            if terminal:
+                await self._mark_item_failed(item, previous_status)
             raise
 
     async def publish_due_scheduled(
@@ -439,6 +465,34 @@ class TelegramPublishingService:
             },
         )
 
+    async def _mark_item_failed(
+        self,
+        item: QueueItem,
+        previous_status: QueueStatus,
+    ) -> None:
+        """Move a queue item to the terminal ``failed`` status after a dead-letter."""
+        if item.status == QueueStatus.FAILED:
+            return
+        item.status = QueueStatus.FAILED
+        await self.queue_repo.update(item)
+        await self.session.commit()
+        if previous_status != QueueStatus.FAILED:
+            await _publish_queue_event(
+                self.events,
+                _build_queue_event(
+                    QUEUE_STATUS_CHANGED,
+                    item.id,
+                    QueueStatusChangedData(
+                        queue_id=item.id,
+                        status=QueueStatus.FAILED,
+                        previous_status=previous_status,
+                        scheduled_at=item.scheduled_at,
+                        published_at=item.published_at,
+                    ),
+                    workspace_id=item.workspace_id,
+                ),
+            )
+
     async def _mark_attempt_failed(
         self,
         attempt: QueuePublishAttempt,
@@ -448,11 +502,11 @@ class TelegramPublishingService:
         workspace_id: UUID | None = None,
         queue_id: UUID | None = None,
     ) -> QueuePublishAttempt:
-        """Persist a failed attempt. Never modifies QueueItem.status.
+        """Persist a failed attempt. QueueItem.status is updated separately when terminal.
 
         When ``terminal`` is true (retries exhausted or non-retryable error), the
-        attempt is marked with ``error_code=dead_letter`` so operators can filter
-        "needs attention" from attempt history without a fake QueueStatus value.
+        attempt is marked with ``error_code=dead_letter`` and the caller moves the
+        queue item to ``QueueStatus.FAILED``.
         """
         underlying_code = self._error_code_for(exc)
         underlying_message = self._error_message_for(exc)
@@ -572,17 +626,14 @@ class TelegramPublishingService:
         return None
 
     def _resolve_button(self, item: QueueItem) -> InlineUrlButton | None:
-        button_text = item.button_text
-        button_url = item.button_url
-
-        if item.product and not button_url:
-            button_url = item.product.product_url
-        if button_url and not button_text:
-            button_text = self.DEFAULT_BUTTON_TEXT
-
-        if button_text and button_url:
-            return InlineUrlButton(text=button_text, url=str(button_url))
-        return None
+        button_url = resolve_affiliate_cta_url(
+            button_url=item.button_url,
+            affiliate_url=item.product.affiliate_url if item.product else None,
+        )
+        if not button_url:
+            return None
+        button_text = item.button_text or self.DEFAULT_BUTTON_TEXT
+        return InlineUrlButton(text=button_text, url=str(button_url))
 
 
 class QueueService:
@@ -597,23 +648,30 @@ class QueueService:
         self.attempt_repo = QueuePublishAttemptRepository(session)
         self.channel_repo = ChannelRepository(session)
         self.product_repo = ProductRepository(session)
+        self.settings_repo = WorkspaceSettingsRepository(session)
         self.publishing_service = TelegramPublishingService(session, events=self.events)
 
     async def create(self, payload: QueueCreate, workspace_id: UUID) -> QueueItem:
-        await self._validate_relations(payload.channel_id, payload.product_id, workspace_id)
         self._validate_status_scheduling(payload.status, payload.scheduled_at)
+        product = await self._load_product(payload.product_id)
+        channel_id = await self._resolve_create_channel_id(
+            payload.channel_id,
+            workspace_id,
+            payload.status,
+        )
+        image_url, button_text, button_url = self._resolve_create_media(payload, product)
 
         item = QueueItem(
             title=payload.title,
             content=payload.content,
             status=payload.status,
             scheduled_at=payload.scheduled_at,
-            channel_id=payload.channel_id,
+            channel_id=channel_id,
             product_id=payload.product_id,
             workspace_id=workspace_id,
-            image_url=str(payload.image_url) if payload.image_url else None,
-            button_text=payload.button_text,
-            button_url=str(payload.button_url) if payload.button_url else None,
+            image_url=image_url,
+            button_text=button_text,
+            button_url=button_url,
         )
         if payload.status == QueueStatus.PUBLISHED:
             item.published_at = datetime.now(UTC)
@@ -691,6 +749,9 @@ class QueueService:
         previous_status = item.status
         update_data = payload.model_dump(exclude_unset=True)
 
+        if "status" in update_data and update_data["status"] == QueueStatus.FAILED:
+            raise ValidationError("failed status can only be set by the publisher")
+
         new_status = update_data.get("status", item.status)
         new_scheduled_at = update_data.get("scheduled_at", item.scheduled_at)
 
@@ -702,7 +763,8 @@ class QueueService:
         if new_status == QueueStatus.SCHEDULED and new_scheduled_at is None:
             raise ValidationError("scheduled_at is required when status is scheduled")
 
-        self._validate_status_scheduling(new_status, new_scheduled_at)
+        if new_status != QueueStatus.FAILED:
+            self._validate_status_scheduling(new_status, new_scheduled_at)
 
         for url_field in ("image_url", "button_url"):
             if url_field in update_data and update_data[url_field] is not None:
@@ -797,11 +859,77 @@ class QueueService:
         if not product:
             raise NotFoundError("Product not found")
 
+    async def _load_product(self, product_id: UUID | None) -> Product | None:
+        if product_id is None:
+            return None
+        product = await self.product_repo.get_by_id(product_id)
+        if not product:
+            raise NotFoundError("Product not found")
+        return product
+
+    async def _resolve_create_channel_id(
+        self,
+        channel_id: UUID | None,
+        workspace_id: UUID,
+        status: QueueStatus,
+    ) -> UUID | None:
+        """Resolve the Telegram channel for a new queue item.
+
+        Explicit ``channel_id`` wins. Otherwise the workspace default is used
+        when it belongs to this workspace and is active. Publishable statuses
+        require a resolvable channel so we never persist an unpublishable item.
+        """
+        if channel_id is not None:
+            channel = await self.channel_repo.get_by_id_in_workspace(channel_id, workspace_id)
+            if not channel:
+                raise NotFoundError("Channel not found")
+            if status in PUBLISHABLE_STATUSES and not channel.is_active:
+                raise ValidationError("Telegram channel is inactive")
+            return channel.id
+
+        settings = await self.settings_repo.get_by_workspace_id(workspace_id)
+        default_id = settings.default_telegram_channel_id if settings is not None else None
+        if default_id is None:
+            if status in PUBLISHABLE_STATUSES:
+                raise ValidationError(
+                    "Queue item must have a Telegram channel assigned before it can be queued"
+                )
+            return None
+
+        channel = await self.channel_repo.get_by_id_in_workspace(default_id, workspace_id)
+        if channel is None:
+            raise ValidationError("Workspace default Telegram channel is invalid")
+        if not channel.is_active:
+            raise ValidationError("Workspace default Telegram channel is inactive")
+        return channel.id
+
+    def _resolve_create_media(
+        self,
+        payload: QueueCreate,
+        product: Product | None,
+    ) -> tuple[str | None, str | None, str | None]:
+        image_url = str(payload.image_url) if payload.image_url else None
+        if image_url is None and product is not None:
+            image_url = product.image_url
+
+        button_url = resolve_affiliate_cta_url(
+            button_url=str(payload.button_url) if payload.button_url else None,
+            affiliate_url=product.affiliate_url if product is not None else None,
+        )
+        button_text = payload.button_text
+        if button_url and not button_text:
+            button_text = DEFAULT_AFFILIATE_BUTTON_TEXT
+        if not button_url:
+            button_text = None
+        return image_url, button_text, button_url
+
     def _validate_status_scheduling(
         self,
         status: QueueStatus,
         scheduled_at: datetime | None,
     ) -> None:
+        if status == QueueStatus.FAILED:
+            raise ValidationError("failed status can only be set by the publisher")
         if status == QueueStatus.SCHEDULED:
             if scheduled_at is None:
                 raise ValidationError("scheduled_at is required when status is scheduled")

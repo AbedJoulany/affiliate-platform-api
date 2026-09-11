@@ -25,6 +25,7 @@ export function QueueDetailsDrawer({
   open,
   onClose,
   onPublish,
+  onRetry,
   onSchedule,
   onOpenAi,
   timelineSlot,
@@ -38,6 +39,7 @@ export function QueueDetailsDrawer({
   open: boolean;
   onClose: () => void;
   onPublish: (item: QueueItem) => void;
+  onRetry: (item: QueueItem) => void;
   onSchedule: (item: QueueItem) => void;
   onOpenAi: (item: QueueItem) => void;
   /** Reserved for a future persisted Publishing Timeline. */
@@ -49,6 +51,7 @@ export function QueueDetailsDrawer({
     : "missing_channel";
   const schedule = item ? formatQueueSchedule(item) : null;
   const imageUrl = item?.image_url ?? product?.image_url ?? null;
+  const isFailed = item?.status === "failed";
   const canRetry = Boolean(item && item.status !== "published");
   const attemptsQuery = useQueuePublishAttempts(item?.id ?? null, open && Boolean(item));
 
@@ -64,9 +67,9 @@ export function QueueDetailsDrawer({
             <Button
               disabled={!canRetry || publishing}
               loading={publishing}
-              onClick={() => onPublish(item)}
+              onClick={() => (isFailed ? onRetry(item) : onPublish(item))}
             >
-              {failure ? "إعادة المحاولة" : "نشر الآن"}
+              {isFailed || failure ? "إعادة المحاولة" : "نشر الآن"}
             </Button>
             <Button variant="outline" onClick={() => onSchedule(item)}>
               <CalendarClock className="size-4" />

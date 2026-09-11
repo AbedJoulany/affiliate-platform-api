@@ -35,6 +35,8 @@ export interface ProductContextState {
   productId: string | null;
   productLabel: string | null;
   url: string | null;
+  imageUrl: string | null;
+  affiliateUrl: string | null;
 }
 
 export type ContentVariantOrigin = "generate" | "variant" | "restore" | "manual_edit";

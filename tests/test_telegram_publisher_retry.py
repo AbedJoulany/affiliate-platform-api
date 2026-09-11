@@ -117,13 +117,8 @@ async def test_terminal_transport_failure_marks_dead_letter(
         )
 
     await session.refresh(item)
-    assert item.status == original_status
-    assert item.status in {
-        QueueStatus.DRAFT,
-        QueueStatus.QUEUED,
-        QueueStatus.SCHEDULED,
-        QueueStatus.PUBLISHED,
-    }
+    assert original_status != QueueStatus.FAILED
+    assert item.status == QueueStatus.FAILED
 
     latest = await QueuePublishAttemptRepository(session).latest_attempt(item.id)
     assert latest is not None

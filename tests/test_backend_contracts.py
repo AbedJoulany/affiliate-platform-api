@@ -147,8 +147,14 @@ async def test_dashboard_returns_canonical_aggregates(client, session):
         "by_status": {"draft": 1, "active": 1, "inactive": 0, "archived": 0},
     }
     assert body["queue"] == {
-        "total": 4,
-        "by_status": {"draft": 1, "queued": 1, "scheduled": 1, "published": 1},
+        "total": 5,
+        "by_status": {
+            "draft": 1,
+            "queued": 1,
+            "scheduled": 1,
+            "published": 1,
+            "failed": 1,
+        },
     }
     assert body["channels"] == {"total": 2, "active": 1, "inactive": 1}
     assert len(body["recent_activity"]) == 3

@@ -37,6 +37,7 @@ export function QueueTable({
   onOpenProduct,
   onSchedule,
   onPublish,
+  onRetry,
   onOpenAi,
   onDelete,
 }: {
@@ -54,6 +55,7 @@ export function QueueTable({
   onOpenProduct: (productId: string) => void;
   onSchedule: (item: QueueItem) => void;
   onPublish: (item: QueueItem) => void;
+  onRetry: (item: QueueItem) => void;
   onOpenAi: (item: QueueItem) => void;
   onDelete: (item: QueueItem) => void;
 }) {
@@ -201,15 +203,27 @@ export function QueueTable({
                 </td>
                 <td className={padding} onClick={(event) => event.stopPropagation()}>
                   <div className="flex items-center gap-1.5">
-                    <Button
-                      type="button"
-                      className="h-8 px-2.5"
-                      disabled={item.status === "published" || publishing}
-                      loading={publishing}
-                      onClick={() => onPublish(item)}
-                    >
-                      نشر الآن
-                    </Button>
+                    {item.status === "failed" ? (
+                      <Button
+                        type="button"
+                        className="h-8 px-2.5"
+                        disabled={publishing}
+                        loading={publishing}
+                        onClick={() => onRetry(item)}
+                      >
+                        إعادة المحاولة
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        className="h-8 px-2.5"
+                        disabled={item.status === "published" || publishing}
+                        loading={publishing}
+                        onClick={() => onPublish(item)}
+                      >
+                        نشر الآن
+                      </Button>
+                    )}
                     <QueueActionsMenu
                       originalUrl={originalUrl}
                       canOpenAi={Boolean(item.product_id || item.button_url)}
@@ -240,7 +254,7 @@ function QueueStatusBadge({
   failed: boolean;
 }) {
   if (publishing) return <Badge tone="info">قيد النشر</Badge>;
-  if (failed) return <Badge tone="error">فشل</Badge>;
+  if (item.status === "failed" || failed) return <Badge tone="error">فشل</Badge>;
   if (item.status === "published") return <Badge tone="success">منشور</Badge>;
   if (item.status === "scheduled") return <Badge tone="info">مجدول</Badge>;
   if (item.status === "queued") return <Badge tone="info">في الانتظار</Badge>;

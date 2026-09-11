@@ -113,7 +113,7 @@ Execute with staging admin:
 2. **Products** — Verify inventory grid density/columns; open `ProductDetailsDrawer`; admin delete; export CSV
 3. **AI Studio** — Generate with tone/type/modifiers; compare variants; create queue draft
 4. **Channels** — Register Telegram channel; verify permission badges
-5. **Queue** — Verify KPI cards read backend attempt truth; schedule via dialog and confirm Celery beat actually publishes at the scheduled time (regression check for the event-loop bug below); bulk publish; confirm Telegram message, including a long post (>4096 chars, or >1024-char caption with an image) publishes as multiple sequential messages without truncation; on simulated Telegram failure verify a durable attempt via `GET /queues/{id}/attempts` and drawer attempt-history section (and toast); confirm `QueueStatus` stays without a `failed` value; duplicate publish of unchanged content returns 409; delete a queue item that has publish attempts and confirm it (and its attempt history) is removed without error
+5. **Queue** — Verify KPI cards read backend attempt truth; schedule via dialog and confirm Celery beat actually publishes at the scheduled time (regression check for the event-loop bug below); bulk publish; confirm Telegram message, including a long post (>4096 chars, or >1024-char caption with an image) publishes as multiple sequential messages without truncation; on simulated terminal Telegram failure verify the item becomes `failed`, a durable attempt via `GET /queues/{id}/attempts`, and Retry returns it to `queued`; duplicate publish of unchanged content returns 409; delete a queue item that has publish attempts and confirm it (and its attempt history) is removed without error
 6. **Settings** — Readiness shows DB + Redis
 7. Expired access JWT triggers one single-flight refresh when a refresh token exists; refresh failure clears session → login
 
@@ -200,7 +200,7 @@ Queue mutation (API or Celery)
 
 **Phase A.1 items already delivered (unchanged by Phase B):**
 
-- Terminal Telegram attempts: `error_code=dead_letter` on `queue_publish_attempts`; `QueueStatus` unchanged
+- Terminal Telegram attempts: `error_code=dead_letter` on `queue_publish_attempts`; `QueueItem.status` becomes `failed`
 - Publish idempotency: shared claim/guard in `TelegramPublishingService`
 
 **Phase B shipped:**

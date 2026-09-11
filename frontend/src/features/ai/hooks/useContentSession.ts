@@ -58,6 +58,8 @@ export function useContentSession(initial?: {
           productId: initial.productId,
           productLabel: loaded.productContext.productLabel,
           url: null,
+          imageUrl: loaded.productContext.imageUrl ?? null,
+          affiliateUrl: loaded.productContext.affiliateUrl ?? null,
         },
       };
     }
@@ -69,6 +71,8 @@ export function useContentSession(initial?: {
           productId: null,
           productLabel: null,
           url: initial.url,
+          imageUrl: null,
+          affiliateUrl: null,
         },
       };
     }

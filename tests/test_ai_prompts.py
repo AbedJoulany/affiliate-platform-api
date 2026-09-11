@@ -10,6 +10,7 @@ def test_build_marketing_prompt_includes_profile_and_modifiers():
         product_id=None,
         title="Wireless Earbuds",
         product_url="https://example.com/p",
+        affiliate_url="https://s.click.aliexpress.com/e/_promo",
         description="Compact earbuds",
         price=Decimal("29.99"),
         discount=Decimal("20"),
@@ -34,3 +35,6 @@ def test_build_marketing_prompt_includes_profile_and_modifiers():
     assert "تقوّ عبارة الحث" in prompt or "قوّ عبارة الحث" in prompt
     assert "رموزًا تعبيرية" in prompt
     assert "Wireless Earbuds" in prompt
+    assert "https://s.click.aliexpress.com/e/_promo" in prompt
+    assert "رابط التسويق" in prompt
+    assert "رابط صفحة المنتج" in prompt

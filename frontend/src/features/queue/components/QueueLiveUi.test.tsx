@@ -110,6 +110,23 @@ describe("F3 — QueueOperationalStats live updates from queue list data", () =>
     expect(screen.getByText("مجدول").parentElement).toHaveTextContent("1");
     expect(screen.getByText("نُشر اليوم").parentElement).toHaveTextContent("1");
   });
+
+  it("counts terminal failed queue items in the failure KPI", () => {
+    const items = [
+      makeItem({
+        id: "failed-today",
+        status: "failed",
+        updated_at: new Date().toISOString(),
+      }),
+    ];
+    render(
+      <QueueOperationalStats
+        stats={getQueueOperationalStats(items, new Set(), {})}
+      />,
+    );
+
+    expect(screen.getByText("فشل اليوم").parentElement).toHaveTextContent("1");
+  });
 });
 
 describe("F3 — Queue list / selection after status change and deletion", () => {

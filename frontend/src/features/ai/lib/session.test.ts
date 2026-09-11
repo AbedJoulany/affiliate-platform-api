@@ -8,6 +8,8 @@ describe("createEmptySession", () => {
     expect(session.activeVariantId).toBeNull();
     expect(session.productContext.productId).toBeNull();
     expect(session.productContext.url).toBe("");
+    expect(session.productContext.imageUrl).toBeNull();
+    expect(session.productContext.affiliateUrl).toBeNull();
     expect(session.config.language).toBe("ar");
     expect(session.config.length).toBe("medium");
     expect(session.prompt.instructionModifiers).toEqual([]);
