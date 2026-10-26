@@ -1,4 +1,10 @@
-export const QUEUE_STATUSES = ["draft", "queued", "scheduled", "published"] as const;
+export const QUEUE_STATUSES = [
+  "draft",
+  "queued",
+  "scheduled",
+  "published",
+  "failed",
+] as const;
 export type QueueStatus = (typeof QUEUE_STATUSES)[number];
 
 /** Attempt-scoped only — not a QueueStatus value. */

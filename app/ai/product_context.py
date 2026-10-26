@@ -17,6 +17,7 @@ class ProductContext:
     description: str | None = None
     image_url: str | None = None
     product_id: UUID | None = None
+    affiliate_url: str | None = None
 
     @classmethod
     def from_product(cls, product: Product) -> "ProductContext":
@@ -24,6 +25,7 @@ class ProductContext:
             product_id=product.id,
             title=product.title,
             product_url=product.product_url,
+            affiliate_url=product.affiliate_url,
             price=product.price,
             discount=product.discount,
             rating=product.rating,
@@ -40,10 +42,12 @@ class ProductContext:
         title: str,
         description: str | None = None,
         image_url: str | None = None,
+        affiliate_url: str | None = None,
     ) -> "ProductContext":
         return cls(
             title=title,
             product_url=url,
             description=description,
             image_url=image_url,
+            affiliate_url=affiliate_url,
         )

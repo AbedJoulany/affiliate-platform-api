@@ -13,6 +13,7 @@ import { useChannels } from "@/features/channels/hooks/useChannels";
 import { useProducts } from "@/features/products/hooks/useProducts";
 import { useActiveWorkspaceId } from "@/lib/workspace";
 import { getQueueOperationalStats } from "../lib/operations";
+import { nextStatusAfterFailedRetry } from "../lib/retry";
 import {
   useDeleteQueueItem,
   useQueue,
@@ -239,6 +240,23 @@ function QueueViewBody({
     }
   };
 
+  const retryFailedItem = async (item: QueueItem) => {
+    try {
+      const next = nextStatusAfterFailedRetry(item);
+      const updated = await updateQueue.mutateAsync({ id: item.id, input: next });
+      if (updated.status === "queued") {
+        await publishItems([{ ...item, ...updated }]);
+        return;
+      }
+      setToast({ tone: "success", message: "تمت إعادة جدولة المنشور الفاشل." });
+    } catch (error) {
+      setToast({
+        tone: "error",
+        message: getApiErrorMessage(error, "تعذر إعادة محاولة النشر."),
+      });
+    }
+  };
+
   const changeStatus = async (status: Extract<QueueStatus, "draft" | "queued">) => {
     try {
       for (const item of workspace.selectedItems) {
@@ -400,6 +418,7 @@ function QueueViewBody({
               onOpenProduct={(productId) => router.push(`/products/${productId}`)}
               onSchedule={(item) => openSchedule([item])}
               onPublish={(item) => void publishItems([item])}
+              onRetry={(item) => void retryFailedItem(item)}
               onOpenAi={openAi}
               onDelete={(item) => setDeleteTargets([item])}
             />
@@ -454,6 +473,7 @@ function QueueViewBody({
         open={activePost != null}
         onClose={() => setActivePostId(null)}
         onPublish={(item) => void publishItems([item])}
+        onRetry={(item) => void retryFailedItem(item)}
         onSchedule={(item) => openSchedule([item])}
         onOpenAi={openAi}
       />
