@@ -69,14 +69,14 @@ export function ProductsView() {
       for (const product of selected) {
         await createQueue.mutateAsync({
           title: product.title,
-          content: [product.title, product.description, product.affiliate_url ?? product.product_url]
+          content: [product.title, product.description, product.affiliate_url]
             .filter(Boolean)
             .join("\n\n"),
           status: "queued",
           product_id: product.id,
           image_url: product.image_url || undefined,
-          button_text: "اشتري الآن",
-          button_url: product.affiliate_url ?? product.product_url,
+          button_text: product.affiliate_url ? "اشتري الآن" : undefined,
+          button_url: product.affiliate_url ?? undefined,
         });
       }
       setActionMessage(

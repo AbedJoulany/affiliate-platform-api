@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { BrainCircuit, Compass, Package, Radio, Send } from "lucide-react";
+import { BrainCircuit, Compass, Package, Radio, Send, TriangleAlert } from "lucide-react";
 import { ErrorState, LoadingState, NoActiveWorkspaceState } from "@/components/common/states";
 import { PageContainer, PageHeader } from "@/components/layout/page";
 import { Card } from "@/components/ui/primitives";
@@ -36,12 +36,13 @@ export function DashboardView() {
     ["المنتجات", overview.data.products.total, Package],
     ["قائمة النشر", overview.data.queue.total, Radio],
     ["تم النشر", overview.data.queue.by_status.published, Send],
+    ["فشل النشر", overview.data.queue.by_status.failed ?? 0, TriangleAlert],
     ["القنوات النشطة", overview.data.channels.active, Radio],
   ] as const;
   return (
     <PageContainer>
       <PageHeader title="لوحة التحكم" description="نظرة عامة على مساحة الأتمتة." />
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="الإحصاءات">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5" aria-label="الإحصاءات">
         {stats.map(([label, value, Icon]) => (
           <Card key={label}>
             <Icon className="mb-4 size-5 text-primary" aria-hidden />

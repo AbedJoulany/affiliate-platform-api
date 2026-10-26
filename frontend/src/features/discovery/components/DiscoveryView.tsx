@@ -260,8 +260,8 @@ export function DiscoveryView() {
       content,
       status: "draft",
       image_url: product.image_url,
-      button_text: product.affiliate_url || product.product_url ? "اشتري الآن" : undefined,
-      button_url: product.affiliate_url ?? product.product_url,
+      button_text: product.affiliate_url ? "اشتري الآن" : undefined,
+      button_url: product.affiliate_url ?? undefined,
     });
   };
 
@@ -271,7 +271,7 @@ export function DiscoveryView() {
     setActionError(null);
     try {
       for (const product of products) {
-        const content = [product.title, product.description ?? "", product.product_url]
+        const content = [product.title, product.description ?? "", product.affiliate_url]
           .filter(Boolean)
           .join("\n\n");
         await queueDraftFromProduct(product, content);

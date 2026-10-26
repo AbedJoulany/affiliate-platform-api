@@ -20,6 +20,8 @@ class QueueCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_scheduling(self) -> "QueueCreate":
+        if self.status == QueueStatus.FAILED:
+            raise ValueError("failed status can only be set by the publisher")
         if self.status == QueueStatus.SCHEDULED and self.scheduled_at is None:
             raise ValueError("scheduled_at is required when status is scheduled")
         if self.status != QueueStatus.SCHEDULED:
@@ -46,6 +48,8 @@ class QueueUpdate(BaseModel):
 
     @model_validator(mode="after")
     def validate_scheduling(self) -> "QueueUpdate":
+        if self.status == QueueStatus.FAILED:
+            raise ValueError("failed status can only be set by the publisher")
         if self.status == QueueStatus.SCHEDULED and self.scheduled_at is None:
             raise ValueError("scheduled_at is required when status is scheduled")
         return self

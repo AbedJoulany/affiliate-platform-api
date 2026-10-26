@@ -75,6 +75,9 @@ class AIContentService:
         existing = await self.product_repo.get_by_product_url(normalized_url)
         if existing:
             return ProductContext.from_product(existing)
+        existing = await self.product_repo.get_by_affiliate_url(normalized_url)
+        if existing:
+            return ProductContext.from_product(existing)
 
         metadata = await self.url_fetcher.fetch(normalized_url)
         return ProductContext.from_url_metadata(

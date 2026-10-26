@@ -123,7 +123,7 @@ async def test_batch_validation_failure_persists_attempt_and_continues(
     assert failed.error_code == DEAD_LETTER_ERROR_CODE
 
     await session.refresh(failing)
-    assert failing.status == QueueStatus.QUEUED
+    assert failing.status == QueueStatus.FAILED
 
     assert len(results) == 1
     assert results[0].queue_id == succeeding.id
@@ -192,7 +192,7 @@ async def test_batch_telegram_failure_does_not_block_sibling(
     assert failed.status == "failed"
     assert failed.error_code == DEAD_LETTER_ERROR_CODE
     await session.refresh(failing)
-    assert failing.status == QueueStatus.SCHEDULED
+    assert failing.status == QueueStatus.FAILED
 
 
 @pytest.mark.asyncio
@@ -269,4 +269,4 @@ async def test_missing_channel_dead_letter_keeps_attempt_queue_id(session):
     assert "channel assigned" in (latest.error_message or "")
 
     await session.refresh(item)
-    assert item.status == QueueStatus.QUEUED
+    assert item.status == QueueStatus.FAILED

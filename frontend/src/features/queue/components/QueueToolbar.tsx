@@ -83,6 +83,7 @@ export function QueueToolbar({
             <option value="queued">في الانتظار</option>
             <option value="scheduled">مجدول</option>
             <option value="published">منشور</option>
+            <option value="failed">فشل</option>
           </Select>
           <Select
             className="w-auto"

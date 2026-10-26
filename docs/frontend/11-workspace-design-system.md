@@ -547,7 +547,7 @@ Each workspace implements the standard layout with domain-specific content. Belo
 | **Shared components** | PageHeader, WorkspaceStats, ResultsToolbar, SelectionBar, EmptyState, LoadingState, ErrorState, StatusBadge, PipelineBadge, Drawer, ConfirmationDialog, ToastOverlay |
 | **Unique components** | Queue table, scheduling dialog, queue details drawer, queue health badge, actions menu |
 
-**Layout note:** KPI cards required. In-flight "publishing" remains ephemeral client state. "Failed" counts/reasons are **not** a `QueueStatus` — they come from backend `queue_publish_attempts` (Phase A.1) and are resolved via `resolveQueueFailure`, which prefers backend attempt data over the client failure map (a short-lived fallback used only until per-item enrichment resolves, never a permanent data source). The drawer includes a read-only attempt-history section from `GET /queues/{id}/attempts`, and its primary action doubles as "Retry publish" against the existing `POST /queues/{id}/publish` — no new route.
+**Layout note:** KPI cards required. In-flight "publishing" remains ephemeral client state. Terminal publishing failures use `QueueStatus.failed`. Attempt history still comes from `GET /queues/{id}/attempts`. Retry PATCHes the item back to `queued`/`scheduled` and then uses the existing publish endpoint — no new route.
 
 ---
 

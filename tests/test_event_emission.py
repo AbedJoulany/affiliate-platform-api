@@ -153,13 +153,16 @@ async def test_attempt_failed_emits_terminal_failure(
 
     started = _events_named(recorder, QUEUE_ATTEMPT_STARTED)
     failed = _events_named(recorder, QUEUE_ATTEMPT_FAILED)
+    changed = _events_named(recorder, QUEUE_STATUS_CHANGED)
     assert len(started) == 1
     assert len(failed) == 1
     assert failed[0].data["attempt_number"] == 1
     assert failed[0].data["error_code"] == DEAD_LETTER_ERROR_CODE
     assert failed[0].data["is_terminal"] is True
     assert _events_named(recorder, QUEUE_ATTEMPT_SUCCEEDED) == []
-    assert _events_named(recorder, QUEUE_STATUS_CHANGED) == []
+    assert len(changed) == 1
+    assert changed[0].data["previous_status"] == QueueStatus.QUEUED.value
+    assert changed[0].data["status"] == QueueStatus.FAILED.value
 
 
 @pytest.mark.asyncio
