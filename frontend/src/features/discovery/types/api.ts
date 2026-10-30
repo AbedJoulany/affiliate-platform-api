@@ -1,6 +1,12 @@
 import type { Product } from "@/features/products/types/api";
 
-export type DiscoveryMode = "general" | "hot" | "deals" | "trending" | "category";
+export type DiscoveryMode =
+  | "general"
+  | "hot"
+  | "deals"
+  | "trending"
+  | "category"
+  | "recommended";
 export type ProductSort =
   | "orders_desc"
   | "rating_desc"
@@ -24,6 +30,7 @@ export type DiscoveryTableColumn =
   | "actions";
 
 export interface DiscoveryProduct {
+  id?: string;
   aliexpress_product_id: string;
   title: string;
   description: string | null;
@@ -43,8 +50,26 @@ export interface DiscoveryProduct {
   commission_rate: number | null;
   shipping_info: Record<string, unknown> | null;
   score: number;
+  recommendation_rank?: number;
+  recommendation_score?: number;
+  recommendation_breakdown?: RecommendationScoreBreakdown | null;
+  lacks_affiliate_url?: boolean;
   /** Reserved for future backend score_breakdown payloads. */
   score_breakdown?: ScoreBreakdown | null;
+}
+
+export interface RecommendationScoreFactor {
+  key: "rating" | "orders" | "discount" | "price" | "commission";
+  raw_value: number | null;
+  normalized_value: number;
+  weight: number;
+  contribution: number;
+  missing: boolean;
+}
+
+export interface RecommendationScoreBreakdown {
+  total: number;
+  factors: RecommendationScoreFactor[];
 }
 
 export interface ScoreFactor {
@@ -85,13 +110,14 @@ export interface DiscoveryParams {
   shipping_country?: string;
   free_shipping?: boolean;
   choice_only?: boolean;
-  /** UI-only until backend supports min commission. */
+  /** Recommendation-only commission filters. */
   min_commission?: number;
+  max_commission?: number;
+  top_n?: number;
   /** Future-ready draft fields (not sent to API). */
   exclude_keywords?: string;
   max_orders?: number;
   max_discount?: number;
-  max_commission?: number;
   store_rating?: number;
   sort?: ProductSort;
   page?: number;

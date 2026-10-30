@@ -9,6 +9,7 @@ from app.api.v1 import (
     products,
     queue_stream,
     queues,
+    recommendations,
     workspace_settings,
 )
 from app.auth.router import router as auth_router
@@ -17,6 +18,7 @@ api_router = APIRouter()
 
 api_router.include_router(auth_router, prefix="/auth", tags=["Authentication"])
 api_router.include_router(product_discovery.router, prefix="/products", tags=["Product Discovery"])
+api_router.include_router(recommendations.router, prefix="/products", tags=["Recommendations"])
 api_router.include_router(products.router, prefix="/products", tags=["Products"])
 api_router.include_router(channels.router, prefix="/channels", tags=["Telegram Channels"])
 api_router.include_router(ai_content.router, prefix="/ai-content", tags=["AI Content"])

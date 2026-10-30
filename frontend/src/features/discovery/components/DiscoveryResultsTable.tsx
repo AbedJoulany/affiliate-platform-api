@@ -15,6 +15,7 @@ import type {
   TableDensity,
 } from "../types/api";
 import { DiscoveryAiScoreCell } from "./DiscoveryAiScoreCell";
+import { RecommendationScoreCell } from "./RecommendationScoreCell";
 
 export function DiscoveryResultsTable({
   items,
@@ -173,6 +174,11 @@ export function DiscoveryResultsTable({
                           {[product.category, product.store_name].filter(Boolean).join(" · ") ||
                             product.aliexpress_product_id}
                         </span>
+                        {product.lacks_affiliate_url ? (
+                          <span className="mt-1 block text-xs text-amber-700 dark:text-amber-300">
+                            لا يوجد رابط أفلييت
+                          </span>
+                        ) : null}
                       </span>
                     </div>
                   </td>
@@ -215,7 +221,11 @@ export function DiscoveryResultsTable({
                 ) : null}
                 {show("score") ? (
                   <td className={cellPad} onClick={(event) => event.stopPropagation()}>
-                    <DiscoveryAiScoreCell product={product} />
+                    {product.recommendation_score != null ? (
+                      <RecommendationScoreCell product={product} />
+                    ) : (
+                      <DiscoveryAiScoreCell product={product} />
+                    )}
                   </td>
                 ) : null}
                 {show("status") ? (

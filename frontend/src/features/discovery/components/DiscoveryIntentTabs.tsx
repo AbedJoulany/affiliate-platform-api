@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import type { DiscoveryMode } from "../types/api";
 
 const INTENTS: ReadonlyArray<{ id: DiscoveryMode; label: string }> = [
+  { id: "recommended", label: "التوصيات" },
   { id: "hot", label: "الأكثر رواجًا" },
   { id: "trending", label: "الصاعدة" },
   { id: "deals", label: "العروض" },

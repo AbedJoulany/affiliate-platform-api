@@ -259,6 +259,7 @@ export function DiscoveryView() {
       title: product.title.slice(0, 500),
       content,
       status: "draft",
+      ...(product.id ? { product_id: product.id } : {}),
       image_url: product.image_url,
       button_text: product.affiliate_url ? "اشتري الآن" : undefined,
       button_url: product.affiliate_url ?? undefined,
@@ -289,7 +290,11 @@ export function DiscoveryView() {
     if (products.length === 0) return;
     if (products.length === 1) {
       const product = products[0];
-      router.push(`/ai?url=${encodeURIComponent(product.product_url)}`);
+      router.push(
+        product.id
+          ? `/ai?product=${encodeURIComponent(product.id)}`
+          : `/ai?url=${encodeURIComponent(product.product_url)}`,
+      );
       return;
     }
     setBatchBusy(true);
@@ -297,7 +302,9 @@ export function DiscoveryView() {
     try {
       let success = 0;
       for (const product of products) {
-        const generated = await generateContent({ url: product.product_url });
+        const generated = await generateContent(
+          product.id ? { product_id: product.id } : { url: product.product_url },
+        );
         await queueDraftFromProduct(product, generated.content);
         success += 1;
       }
@@ -332,6 +339,7 @@ export function DiscoveryView() {
     updateDraft({
       mode,
       category_id: mode === "category" ? draft.category_id : undefined,
+      top_n: mode === "recommended" ? draft.top_n ?? 10 : undefined,
       page: 1,
     });
   };
@@ -380,6 +388,7 @@ export function DiscoveryView() {
             updateDraft({
               mode,
               category_id: mode === "category" ? draft.category_id : undefined,
+              top_n: mode === "recommended" ? draft.top_n ?? 10 : undefined,
               page: 1,
             })
           }
