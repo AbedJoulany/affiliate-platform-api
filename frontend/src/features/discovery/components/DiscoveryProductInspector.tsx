@@ -48,6 +48,7 @@ export function DiscoveryProductInspector({
 
   const breakdown = getScoreBreakdown(product);
   const quality = getScoreQuality(product.score);
+  const recommendationScore = product.recommendation_score;
   const shipping = product.shipping_info;
   const freeShipping = shipping?.free_shipping === true;
   const images = product.gallery_images.length > 0 ? product.gallery_images : [product.image_url];
@@ -137,9 +138,13 @@ export function DiscoveryProductInspector({
             {formatMoney(product.price, product.currency)}
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            <Badge tone={quality.tone}>
-              AI {Math.round(product.score)} · {quality.label}
-            </Badge>
+            {recommendationScore != null ? (
+              <Badge tone="info">توصية {Math.round(recommendationScore)}</Badge>
+            ) : (
+              <Badge tone={quality.tone}>
+                كتالوج {Math.round(product.score)} · {quality.label}
+              </Badge>
+            )}
             <Badge>تقييم {product.rating.toFixed(1)}</Badge>
             <Badge>طلبات {product.sales.toLocaleString("ar")}</Badge>
             <Badge>خصم {product.discount}%</Badge>
@@ -160,6 +165,20 @@ export function DiscoveryProductInspector({
             <p className="text-sm leading-7 text-muted-foreground">{product.description}</p>
           </section>
         )}
+
+        {product.recommendation_breakdown ? (
+          <section className="rounded-md border border-border p-3">
+            <h4 className="mb-2 text-sm font-semibold">تفسير نتيجة التوصية</h4>
+            <ul className="space-y-2 text-xs">
+              {product.recommendation_breakdown.factors.map((factor) => (
+                <li key={factor.key} className="flex items-center justify-between gap-3">
+                  <span>{factor.key}</span>
+                  <span dir="ltr">+{factor.contribution.toFixed(2)}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
 
         <section className="rounded-md border border-border p-3">
           <DiscoveryScoreBreakdown breakdown={breakdown} />

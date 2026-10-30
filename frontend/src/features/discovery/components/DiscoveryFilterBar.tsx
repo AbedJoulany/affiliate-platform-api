@@ -147,7 +147,9 @@ export function DiscoveryFilterBar({
       </DiscoveryFilterChip>
 
       <DiscoveryFilterChip label="العمولة" value={formatCommissionChip(params)}>
-        <p className="text-xs text-muted-foreground">عرض فقط — سيتم دعمه في الـ API لاحقًا</p>
+        <p className="text-xs text-muted-foreground">
+          {params.mode === "recommended" ? "تصفية التوصيات حسب نطاق العمولة." : "تصفية التوصيات فقط."}
+        </p>
         <div className="mt-2 flex flex-col gap-1">
           {COMMISSION_PRESETS.map((value) => (
             <button
@@ -159,8 +161,51 @@ export function DiscoveryFilterBar({
               {value == null ? "الكل" : `${value}%+`}
             </button>
           ))}
+          {params.mode === "recommended" ? (
+            <div className="grid grid-cols-2 gap-2">
+              <Input
+                type="number"
+                min={0}
+                placeholder="أدنى"
+                value={params.min_commission ?? ""}
+                onChange={(event) =>
+                  onChange({
+                    min_commission: event.target.value === "" ? undefined : Number(event.target.value),
+                    page: 1,
+                  })
+                }
+              />
+              <Input
+                type="number"
+                min={0}
+                placeholder="أقصى"
+                value={params.max_commission ?? ""}
+                onChange={(event) =>
+                  onChange({
+                    max_commission: event.target.value === "" ? undefined : Number(event.target.value),
+                    page: 1,
+                  })
+                }
+              />
+            </div>
+          ) : null}
         </div>
       </DiscoveryFilterChip>
+
+      {params.mode === "recommended" ? (
+        <DiscoveryFilterChip label="عدد التوصيات" value={`${params.top_n ?? 10}`}>
+          <Select
+            value={String(params.top_n ?? 10)}
+            onChange={(event) => onChange({ top_n: Number(event.target.value), page: 1 })}
+          >
+            {[5, 10, 20, 50].map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </Select>
+        </DiscoveryFilterChip>
+      ) : null}
 
       <DiscoveryFilterChip label="الترتيب" value={formatSortChip(params)}>
         <Select
