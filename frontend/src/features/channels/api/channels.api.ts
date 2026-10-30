@@ -15,3 +15,8 @@ export async function updateChannel(id: string, input: Partial<ChannelCreate>): 
   const { data } = await apiClient.put<Channel>(`/channels/${id}`, input);
   return data;
 }
+
+export async function refreshChannelPermissions(id: string): Promise<Channel> {
+  const { data } = await apiClient.post<Channel>(`/channels/${id}/refresh-permissions`);
+  return data;
+}

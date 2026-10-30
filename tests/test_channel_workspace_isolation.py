@@ -154,6 +154,33 @@ async def test_cross_workspace_update_and_delete_are_404(
 
 
 @pytest.mark.asyncio
+async def test_refresh_permissions_is_workspace_scoped(
+    client,
+    mock_telegram_permissions,
+):
+    _, token_a = await register_and_login(client, role="user")
+    _, token_b = await register_and_login(client, role="user")
+    workspace_a = await _create_workspace_for_user(token_a, name="Refresh A")
+    workspace_b = await _create_workspace_for_user(token_b, name="Refresh B")
+    channel = await _create_channel(client, token_a, workspace_a, suffix="refresh")
+
+    refreshed = await client.post(
+        f"{CHANNELS}/{channel['id']}/refresh-permissions",
+        headers=_headers(token_a, workspace_a),
+    )
+    assert refreshed.status_code == 200
+    assert refreshed.json()["bot_permission_status"] == "granted"
+    assert refreshed.json()["can_post_messages"] is True
+
+    denied = await client.post(
+        f"{CHANNELS}/{channel['id']}/refresh-permissions",
+        headers=_headers(token_b, workspace_b),
+    )
+    assert denied.status_code == 404
+    assert denied.json() == {"detail": "Channel not found"}
+
+
+@pytest.mark.asyncio
 async def test_create_assigns_workspace_from_header_not_body(
     client,
     mock_telegram_permissions,

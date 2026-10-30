@@ -18,7 +18,13 @@ export type ToneProfile =
   | "funny";
 export type ContentLanguage = "ar" | "en" | "fr" | "de";
 export type ContentLength = "short" | "medium" | "long";
-export type DiscoveryDefaultMode = "general" | "hot" | "deals" | "trending" | "category";
+export type DiscoveryDefaultMode =
+  | "general"
+  | "hot"
+  | "deals"
+  | "trending"
+  | "category"
+  | "recommended";
 
 export type SettingsSection =
   | "general"

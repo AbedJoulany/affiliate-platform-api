@@ -135,6 +135,24 @@ async def test_owner_patch_upserts_and_unknown_fields_are_422(client):
 
 
 @pytest.mark.asyncio
+async def test_owner_can_set_recommended_discovery_default_mode(client):
+    _, token = await register_and_login(client, role="user")
+    headers = await workspace_auth_headers(token)
+
+    patched = await client.patch(
+        SETTINGS,
+        headers=headers,
+        json={"discovery_default_mode": "recommended"},
+    )
+    assert patched.status_code == 200, patched.text
+    assert patched.json()["discovery_default_mode"] == "recommended"
+
+    fetched = await client.get(SETTINGS, headers=headers)
+    assert fetched.status_code == 200
+    assert fetched.json()["discovery_default_mode"] == "recommended"
+
+
+@pytest.mark.asyncio
 async def test_member_patch_is_403(client):
     _, owner_token = await register_and_login(client, role="user")
     owner_headers = await workspace_auth_headers(owner_token)

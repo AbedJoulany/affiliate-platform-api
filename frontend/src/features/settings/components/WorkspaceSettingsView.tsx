@@ -543,7 +543,7 @@ function DiscoveryForm({ data }: { data: WorkspaceSettings }) {
         <Select disabled={!data.can_edit} {...register("discovery_default_mode")}>
           {DISCOVERY_MODES.map((value) => (
             <option key={value} value={value}>
-              {value}
+              {value === "recommended" ? "التوصيات" : value}
             </option>
           ))}
         </Select>

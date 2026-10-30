@@ -11,8 +11,10 @@ import { session } from "@/services/session";
 import { WORKSPACE_A } from "@/test/workspace";
 import type { DiscoveryProduct, DiscoveryResponse } from "../types/api";
 
+const pushMock = vi.hoisted(() => vi.fn());
+
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  useRouter: () => ({ push: pushMock, replace: vi.fn() }),
   useSearchParams: () => new URLSearchParams(),
 }));
 
@@ -31,6 +33,13 @@ vi.mock("@/features/categories/hooks/useCategories", () => ({
   useCategories: () => ({ data: { items: [] }, isSuccess: true }),
 }));
 
+vi.mock("@/features/settings/hooks/useWorkspaceSettings", () => ({
+  useWorkspaceSettings: () => ({
+    data: { discovery_default_mode: "general" },
+    isSuccess: true,
+  }),
+}));
+
 vi.mock("../api/discovery.api", () => ({
   discoverProducts: vi.fn(),
   searchProductsByImage: vi.fn(),
@@ -47,10 +56,11 @@ vi.mock("@/features/ai/api/ai.api", () => ({
 }));
 
 import { createQueueItem } from "@/features/queue/api/queue.api";
-import { importProduct } from "../api/discovery.api";
+import { discoverProducts, importProduct } from "../api/discovery.api";
 
 const searchMock = vi.mocked(searchProductsByImage);
 const importMock = vi.mocked(importProduct);
+const discoverMock = vi.mocked(discoverProducts);
 const createQueueMock = vi.mocked(createQueueItem);
 
 const product: DiscoveryProduct = {
@@ -125,6 +135,22 @@ afterEach(() => {
   session.clear();
   sessionStorage.clear();
   vi.clearAllMocks();
+});
+
+it("opens AI Studio with the persisted product id from recommended results", async () => {
+  const user = userEvent.setup();
+  discoverMock.mockResolvedValue({
+    ...discoveryResponse([{ ...product, id: "product-1", affiliate_url: "https://affiliate.example/1" }]),
+    mode: "recommended",
+  });
+
+  renderView();
+  await user.click(screen.getByRole("tab", { name: "التوصيات" }));
+  await user.click(screen.getAllByRole("button", { name: "تشغيل الاكتشاف" })[0]);
+  await screen.findByText("Wireless Earbuds");
+  await user.click(screen.getByRole("button", { name: "AI" }));
+
+  expect(pushMock).toHaveBeenCalledWith("/ai?product=product-1");
 });
 
 describe("Discovery image search flow", () => {

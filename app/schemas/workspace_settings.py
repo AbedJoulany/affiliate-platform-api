@@ -22,6 +22,7 @@ class WorkspaceDiscoveryMode(StrEnum):
     DEALS = "deals"
     TRENDING = "trending"
     CATEGORY = "category"
+    RECOMMENDED = "recommended"
 
 
 class ProviderConnectionStatus(BaseModel):
