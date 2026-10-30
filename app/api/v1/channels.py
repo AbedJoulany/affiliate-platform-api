@@ -54,6 +54,18 @@ async def update_channel(
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
 
+@router.post("/{channel_id}/refresh-permissions", response_model=ChannelRead)
+async def refresh_channel_permissions(
+    channel_id: UUID,
+    workspace_id: HttpWorkspaceId,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> TelegramChannel:
+    try:
+        return await ChannelService(db).refresh_permissions(channel_id, workspace_id)
+    except ServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
 @router.delete("/{channel_id}", response_model=MessageResponse)
 async def delete_channel(
     channel_id: UUID,

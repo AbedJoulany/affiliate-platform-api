@@ -1,7 +1,12 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createChannel, getChannels, updateChannel } from "../api/channels.api";
+import {
+  createChannel,
+  getChannels,
+  refreshChannelPermissions,
+  updateChannel,
+} from "../api/channels.api";
 import type { Channel, ChannelCreate } from "../types/api";
 import { useActiveWorkspaceId, workspaceScopedQueryKey } from "@/lib/workspace";
 import type { ApiError } from "@/services/api-client";
@@ -35,6 +40,17 @@ export function useUpdateChannel() {
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: { is_active: boolean } }) =>
       updateChannel(id, input),
+    onSuccess: () => {
+      if (workspaceId) void client.invalidateQueries({ queryKey: channelKey(workspaceId) });
+    },
+  });
+}
+
+export function useRefreshChannelPermissions() {
+  const client = useQueryClient();
+  const workspaceId = useActiveWorkspaceId();
+  return useMutation({
+    mutationFn: refreshChannelPermissions,
     onSuccess: () => {
       if (workspaceId) void client.invalidateQueries({ queryKey: channelKey(workspaceId) });
     },

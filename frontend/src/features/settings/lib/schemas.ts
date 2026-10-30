@@ -42,6 +42,7 @@ export const DISCOVERY_MODES = [
   "deals",
   "trending",
   "category",
+  "recommended",
 ] as const;
 
 export const workspaceGeneralSchema = z.object({

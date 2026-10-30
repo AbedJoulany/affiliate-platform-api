@@ -9,6 +9,7 @@ import { useCurrentUser } from "@/features/auth/hooks/useAuth";
 import { generateContent } from "@/features/ai/api/ai.api";
 import { createQueueItem } from "@/features/queue/api/queue.api";
 import { getApiErrorMessage } from "@/services/api-client";
+import { useWorkspaceSettings } from "@/features/settings/hooks/useWorkspaceSettings";
 import { exportDiscoveryProductsCsv } from "../lib/export";
 import { DEFAULT_VISIBLE_COLUMNS, normalizeUiPrefs } from "../lib/ui-prefs";
 import {
@@ -45,6 +46,7 @@ export function DiscoveryView() {
   const router = useRouter();
   const currentUser = useCurrentUser();
   const categories = useCategories();
+  const workspaceSettings = useWorkspaceSettings();
   const {
     session,
     hydrated,
@@ -156,6 +158,19 @@ export function DiscoveryView() {
   const selection = useDiscoverySelection(filteredItems);
   const { clear: clearSelection } = selection;
   const inspectorProduct = items.find((item) => item.aliexpress_product_id === inspectorId) ?? null;
+
+  useEffect(() => {
+    if (!hydrated || !workspaceSettings.data || session.committedParams || session.lastResponse) return;
+    if (draft.mode === workspaceSettings.data.discovery_default_mode) return;
+    updateDraft({ mode: workspaceSettings.data.discovery_default_mode });
+  }, [
+    hydrated,
+    session.committedParams,
+    session.lastResponse,
+    draft.mode,
+    updateDraft,
+    workspaceSettings.data,
+  ]);
 
   const runDiscovery = useCallback(
     (params: DiscoveryParams = draft) => {
