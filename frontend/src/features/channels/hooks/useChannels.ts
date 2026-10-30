@@ -6,13 +6,21 @@ import {
   getChannels,
   refreshChannelPermissions,
   updateChannel,
+  createFacebookPage,
+  deleteFacebookPage,
+  getFacebookPages,
+  updateFacebookPage,
+  validateFacebookPage,
 } from "../api/channels.api";
-import type { Channel, ChannelCreate } from "../types/api";
+import type { Channel, ChannelCreate, FacebookPage, FacebookPageCreate } from "../types/api";
 import { useActiveWorkspaceId, workspaceScopedQueryKey } from "@/lib/workspace";
 import type { ApiError } from "@/services/api-client";
 
 export const channelKey = (workspaceId: string) =>
   workspaceScopedQueryKey("channels", workspaceId);
+
+export const facebookPageKey = (workspaceId: string) =>
+  workspaceScopedQueryKey("facebook", workspaceId);
 
 export function useChannels() {
   const workspaceId = useActiveWorkspaceId();
@@ -53,6 +61,60 @@ export function useRefreshChannelPermissions() {
     mutationFn: refreshChannelPermissions,
     onSuccess: () => {
       if (workspaceId) void client.invalidateQueries({ queryKey: channelKey(workspaceId) });
+    },
+  });
+}
+
+export function useFacebookPages() {
+  const workspaceId = useActiveWorkspaceId();
+  return useQuery({
+    queryKey: workspaceId ? facebookPageKey(workspaceId) : (["facebook", "none"] as const),
+    queryFn: getFacebookPages,
+    enabled: Boolean(workspaceId),
+  });
+}
+
+export function useCreateFacebookPage() {
+  const client = useQueryClient();
+  const workspaceId = useActiveWorkspaceId();
+  return useMutation<FacebookPage, ApiError, FacebookPageCreate>({
+    mutationFn: createFacebookPage,
+    onSuccess: () => {
+      if (workspaceId) void client.invalidateQueries({ queryKey: facebookPageKey(workspaceId) });
+    },
+  });
+}
+
+export function useValidateFacebookPage() {
+  const client = useQueryClient();
+  const workspaceId = useActiveWorkspaceId();
+  return useMutation({
+    mutationFn: validateFacebookPage,
+    onSuccess: () => {
+      if (workspaceId) void client.invalidateQueries({ queryKey: facebookPageKey(workspaceId) });
+    },
+  });
+}
+
+export function useUpdateFacebookPage() {
+  const client = useQueryClient();
+  const workspaceId = useActiveWorkspaceId();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: { access_token?: string; is_active?: boolean } }) =>
+      updateFacebookPage(id, input),
+    onSuccess: () => {
+      if (workspaceId) void client.invalidateQueries({ queryKey: facebookPageKey(workspaceId) });
+    },
+  });
+}
+
+export function useDeleteFacebookPage() {
+  const client = useQueryClient();
+  const workspaceId = useActiveWorkspaceId();
+  return useMutation({
+    mutationFn: deleteFacebookPage,
+    onSuccess: () => {
+      if (workspaceId) void client.invalidateQueries({ queryKey: facebookPageKey(workspaceId) });
     },
   });
 }

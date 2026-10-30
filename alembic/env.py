@@ -10,6 +10,7 @@ from app.auth.models import User  # noqa: F401
 from app.core.config import get_settings
 from app.core.database import Base
 from app.models import (  # noqa: F401
+    FacebookPage,
     Product,
     QueueItem,
     RefreshToken,

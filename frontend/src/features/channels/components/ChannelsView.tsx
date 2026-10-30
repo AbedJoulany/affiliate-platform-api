@@ -2,6 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
+import { useState } from "react";
 import { z } from "zod";
 import { Bot, RefreshCw } from "lucide-react";
 import {
@@ -17,6 +18,11 @@ import {
   useCreateChannel,
   useRefreshChannelPermissions,
   useUpdateChannel,
+  useCreateFacebookPage,
+  useDeleteFacebookPage,
+  useFacebookPages,
+  useUpdateFacebookPage,
+  useValidateFacebookPage,
 } from "../hooks/useChannels";
 import { getApiErrorMessage } from "@/services/api-client";
 import { useActiveWorkspaceId } from "@/lib/workspace";
@@ -43,6 +49,14 @@ export function ChannelsView() {
   const create = useCreateChannel();
   const update = useUpdateChannel();
   const refresh = useRefreshChannelPermissions();
+  const facebookPages = useFacebookPages();
+  const createFacebook = useCreateFacebookPage();
+  const validateFacebook = useValidateFacebookPage();
+  const updateFacebook = useUpdateFacebookPage();
+  const deleteFacebook = useDeleteFacebookPage();
+  const [facebookPageId, setFacebookPageId] = useState("");
+  const [facebookToken, setFacebookToken] = useState("");
+  const [replacementToken, setReplacementToken] = useState<Record<string, string>>({});
   const {
     register,
     handleSubmit,
@@ -227,6 +241,141 @@ export function ChannelsView() {
           })}
         </div>
       )}
+
+      <Card className="mt-8">
+        <h2 className="font-semibold">صفحات Facebook</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          أضف Page ID وPage Access Token من إعدادات Meta. لا يتم عرض الرمز المحفوظ مرة أخرى.
+        </p>
+        <form
+          className="mt-4 grid gap-4 md:grid-cols-[1fr_1fr_auto]"
+          onSubmit={(event) => {
+            event.preventDefault();
+            createFacebook.mutate(
+              { facebook_page_id: facebookPageId, access_token: facebookToken },
+              {
+                onSuccess: () => {
+                  setFacebookPageId("");
+                  setFacebookToken("");
+                },
+              },
+            );
+          }}
+        >
+          <div>
+            <label className="mb-1.5 block text-sm" htmlFor="facebookPageId">Page ID</label>
+            <Input
+              id="facebookPageId"
+              dir="ltr"
+              inputMode="numeric"
+              value={facebookPageId}
+              onChange={(event) => setFacebookPageId(event.target.value)}
+              placeholder="123456789"
+              required
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm" htmlFor="facebookAccessToken">Page Access Token</label>
+            <Input
+              id="facebookAccessToken"
+              dir="ltr"
+              type="password"
+              autoComplete="new-password"
+              value={facebookToken}
+              onChange={(event) => setFacebookToken(event.target.value)}
+              required
+            />
+          </div>
+          <Button className="self-end" loading={createFacebook.isPending} type="submit">
+            إضافة الصفحة
+          </Button>
+        </form>
+        {createFacebook.isError && (
+          <p className="mt-3 text-sm text-destructive" role="alert">
+            {getApiErrorMessage(createFacebook.error, "تعذر التحقق من صفحة Facebook.")}
+          </p>
+        )}
+
+        <div className="mt-6 space-y-4">
+          {facebookPages.isPending ? (
+            <LoadingState />
+          ) : facebookPages.isError ? (
+            <ErrorState
+              message={getApiErrorMessage(facebookPages.error, "تعذر تحميل صفحات Facebook.")}
+              onRetry={() => void facebookPages.refetch()}
+            />
+          ) : facebookPages.data.items.length === 0 ? (
+            <p className="rounded-md border border-dashed border-border p-4 text-sm text-muted-foreground">
+              لا توجد صفحة Facebook متصلة.
+            </p>
+          ) : (
+            facebookPages.data.items.map((page) => {
+              const statusTone = page.validation_status === "valid" ? "success" : page.validation_status === "invalid" ? "error" : "warning";
+              return (
+                <div key={page.id} className="rounded-md border border-border p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3 className="font-medium">{page.page_name}</h3>
+                      <p className="text-sm text-muted-foreground" dir="ltr">{page.facebook_page_id}</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Badge tone={statusTone}>
+                        {page.validation_status === "valid" ? "صالحة" : page.validation_status === "invalid" ? "تحتاج إلى تحقق" : "غير متحققة"}
+                      </Badge>
+                      <Badge tone={page.is_active ? "success" : "warning"}>
+                        {page.is_active ? "نشطة" : "غير نشطة"}
+                      </Badge>
+                    </div>
+                  </div>
+                  {page.last_error && (
+                    <p className="mt-3 text-sm text-destructive" role="alert">{page.last_error}</p>
+                  )}
+                  <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto_auto_auto_auto]">
+                    <Input
+                      type="password"
+                      dir="ltr"
+                      autoComplete="new-password"
+                      placeholder="رمز جديد (اختياري)"
+                      value={replacementToken[page.id] ?? ""}
+                      onChange={(event) => setReplacementToken((current) => ({ ...current, [page.id]: event.target.value }))}
+                    />
+                    <Button
+                      variant="outline"
+                      loading={updateFacebook.isPending && updateFacebook.variables?.id === page.id}
+                      onClick={() => {
+                        const token = replacementToken[page.id];
+                        if (token) {
+                          updateFacebook.mutate({ id: page.id, input: { access_token: token } }, { onSuccess: () => setReplacementToken((current) => ({ ...current, [page.id]: "" })) });
+                        } else {
+                          updateFacebook.mutate({ id: page.id, input: { is_active: !page.is_active } });
+                        }
+                      }}
+                    >
+                      {replacementToken[page.id] ? "استبدال الرمز" : page.is_active ? "تعطيل" : "تفعيل"}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      loading={validateFacebook.isPending && validateFacebook.variables === page.id}
+                      onClick={() => validateFacebook.mutate(page.id)}
+                    >
+                      تحقق
+                    </Button>
+                    <Button
+                      variant="danger"
+                      loading={deleteFacebook.isPending && deleteFacebook.variables === page.id}
+                      onClick={() => {
+                        if (window.confirm("حذف اتصال Facebook؟")) deleteFacebook.mutate(page.id);
+                      }}
+                    >
+                      حذف
+                    </Button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </Card>
     </PageContainer>
   );
 }

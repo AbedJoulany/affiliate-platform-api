@@ -7,6 +7,7 @@ export const WORKSPACE_HEADER = "X-Workspace-Id";
 export const WORKSPACE_SCOPED_QUERY_ROOTS = [
   "queue",
   "channels",
+  "facebook",
   "dashboard",
   "workspace-settings",
 ] as const;
@@ -20,6 +21,7 @@ const UUID_RE =
 const WORKSPACE_SCOPED_PREFIXES = [
   "/queues",
   "/channels",
+  "/facebook",
   "/dashboard",
   "/workspace-settings",
 ] as const;

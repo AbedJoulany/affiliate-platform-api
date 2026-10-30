@@ -5,6 +5,7 @@ from app.api.v1 import (
     aliexpress,
     channels,
     dashboard,
+    facebook,
     product_discovery,
     products,
     queue_stream,
@@ -21,6 +22,7 @@ api_router.include_router(product_discovery.router, prefix="/products", tags=["P
 api_router.include_router(recommendations.router, prefix="/products", tags=["Recommendations"])
 api_router.include_router(products.router, prefix="/products", tags=["Products"])
 api_router.include_router(channels.router, prefix="/channels", tags=["Telegram Channels"])
+api_router.include_router(facebook.router, prefix="/facebook", tags=["Facebook Pages"])
 api_router.include_router(ai_content.router, prefix="/ai-content", tags=["AI Content"])
 # Static /queues/stream before /queues/{queue_id} path matching.
 api_router.include_router(queue_stream.router, prefix="/queues", tags=["Queue"])

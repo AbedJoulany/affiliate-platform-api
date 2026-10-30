@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     telegram_bot_token: str | None = None
     telegram_api_base_url: str = "https://api.telegram.org"
 
+    facebook_graph_api_version: str = "v26.0"
+    facebook_graph_api_base_url: str = "https://graph.facebook.com"
+    facebook_token_encryption_key: str | None = None
+
     ai_default_provider: AIProviderType = AIProviderType.OPENAI
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o-mini"

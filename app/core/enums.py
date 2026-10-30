@@ -67,6 +67,12 @@ class QueueStatus(StrEnum):
     FAILED = "failed"
 
 
+class FacebookPageValidationStatus(StrEnum):
+    UNKNOWN = "unknown"
+    VALID = "valid"
+    INVALID = "invalid"
+
+
 class WorkspaceMembershipRole(StrEnum):
     OWNER = "owner"
     MEMBER = "member"

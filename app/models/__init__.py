@@ -1,5 +1,6 @@
 from app.models.aliexpress_category import AliExpressCategory
 from app.models.channel import TelegramChannel
+from app.models.facebook_page import FacebookPage
 from app.models.product import Product
 from app.models.queue import QueueItem, QueuePublishAttempt
 from app.models.refresh_token import RefreshToken
@@ -11,6 +12,7 @@ __all__ = [
     "Product",
     "AliExpressCategory",
     "TelegramChannel",
+    "FacebookPage",
     "QueueItem",
     "QueuePublishAttempt",
     "RefreshToken",
