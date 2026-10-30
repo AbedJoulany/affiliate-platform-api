@@ -28,3 +28,33 @@ export interface ChannelCreate {
   title?: string;
   is_active: boolean;
 }
+
+export type FacebookPageValidationStatus = "unknown" | "valid" | "invalid";
+
+export interface FacebookPage {
+  id: string;
+  workspace_id: string;
+  facebook_page_id: string;
+  page_name: string;
+  token_expires_at: string | null;
+  is_active: boolean;
+  validation_status: FacebookPageValidationStatus;
+  last_validated_at: string | null;
+  last_error: string | null;
+  has_access_token: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FacebookPageListResponse {
+  items: FacebookPage[];
+  total: number;
+  skip: number;
+  limit: number;
+}
+
+export interface FacebookPageCreate {
+  facebook_page_id: string;
+  access_token: string;
+  token_expires_at?: string;
+}

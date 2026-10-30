@@ -11,6 +11,7 @@ from app.core.model_mixins import TimestampMixin, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
     from app.auth.models import User
+    from app.models.facebook_page import FacebookPage
     from app.models.workspace_settings import WorkspaceSettings
 
 
@@ -37,6 +38,11 @@ class Workspace(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         "WorkspaceSettings",
         back_populates="workspace",
         uselist=False,
+        cascade="all, delete-orphan",
+    )
+    facebook_pages: Mapped[list["FacebookPage"]] = relationship(
+        "FacebookPage",
+        back_populates="workspace",
         cascade="all, delete-orphan",
     )
 

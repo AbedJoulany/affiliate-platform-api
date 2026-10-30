@@ -4,7 +4,13 @@ import userEvent from "@testing-library/user-event";
 import { createElement, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChannelsView } from "./ChannelsView";
-import { getChannels, refreshChannelPermissions } from "../api/channels.api";
+import {
+  createFacebookPage,
+  getChannels,
+  getFacebookPages,
+  refreshChannelPermissions,
+  validateFacebookPage,
+} from "../api/channels.api";
 import { setActiveWorkspaceId } from "@/lib/workspace";
 import { session } from "@/services/session";
 import { WORKSPACE_A } from "@/test/workspace";
@@ -14,6 +20,11 @@ vi.mock("../api/channels.api", () => ({
   createChannel: vi.fn(),
   updateChannel: vi.fn(),
   refreshChannelPermissions: vi.fn(),
+  getFacebookPages: vi.fn(),
+  createFacebookPage: vi.fn(),
+  validateFacebookPage: vi.fn(),
+  updateFacebookPage: vi.fn(),
+  deleteFacebookPage: vi.fn(),
 }));
 
 vi.mock("@/features/settings/hooks/useWorkspaceSettings", () => ({
@@ -24,6 +35,9 @@ vi.mock("@/features/settings/hooks/useWorkspaceSettings", () => ({
 }));
 
 const getChannelsMock = vi.mocked(getChannels);
+const getFacebookPagesMock = vi.mocked(getFacebookPages);
+const createFacebookPageMock = vi.mocked(createFacebookPage);
+const validateFacebookPageMock = vi.mocked(validateFacebookPage);
 const refreshPermissionsMock = vi.mocked(refreshChannelPermissions);
 
 function renderView() {
@@ -52,6 +66,7 @@ describe("ChannelsView workspace gating", () => {
   it("fetches GET /channels when a workspace is active", async () => {
     setActiveWorkspaceId(WORKSPACE_A);
     getChannelsMock.mockResolvedValue({ items: [], total: 0, skip: 0, limit: 20 });
+    getFacebookPagesMock.mockResolvedValue({ items: [], total: 0, skip: 0, limit: 20 });
 
     renderView();
     await waitFor(() => expect(getChannelsMock).toHaveBeenCalledTimes(1));
@@ -82,5 +97,81 @@ describe("ChannelsView workspace gating", () => {
     await userEvent.setup().click(await screen.findByRole("button", { name: "إعادة فحص الصلاحيات" }));
 
     await waitFor(() => expect(refreshPermissionsMock.mock.calls[0]?.[0]).toBe("channel-1"));
+  });
+
+  it("submits a Facebook Page connection without displaying a saved token", async () => {
+    setActiveWorkspaceId(WORKSPACE_A);
+    getChannelsMock.mockResolvedValue({ items: [], total: 0, skip: 0, limit: 20 });
+    createFacebookPageMock.mockResolvedValue({
+      id: "page-1",
+      workspace_id: WORKSPACE_A,
+      facebook_page_id: "123456",
+      page_name: "Test Page",
+      token_expires_at: null,
+      is_active: true,
+      validation_status: "valid",
+      last_validated_at: "2026-01-01T00:00:00Z",
+      last_error: null,
+      has_access_token: true,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+
+    renderView();
+    await userEvent.setup().type(await screen.findByLabelText("Page ID"), "123456");
+    await userEvent.setup().type(screen.getByLabelText("Page Access Token"), "secret-token");
+    await userEvent.setup().click(screen.getByRole("button", { name: "إضافة الصفحة" }));
+
+    await waitFor(() =>
+      expect(createFacebookPageMock.mock.calls[0]?.[0]).toEqual({
+        facebook_page_id: "123456",
+        access_token: "secret-token",
+      }),
+    );
+    expect(screen.getByLabelText("Page Access Token")).toHaveValue("");
+  });
+
+  it("validates an existing Facebook Page connection", async () => {
+    setActiveWorkspaceId(WORKSPACE_A);
+    getChannelsMock.mockResolvedValue({ items: [], total: 0, skip: 0, limit: 20 });
+    getFacebookPagesMock.mockResolvedValue({
+      items: [
+        {
+          id: "page-1",
+          workspace_id: WORKSPACE_A,
+          facebook_page_id: "123456",
+          page_name: "Test Page",
+          token_expires_at: null,
+          is_active: true,
+          validation_status: "unknown",
+          last_validated_at: null,
+          last_error: null,
+          has_access_token: true,
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+      ],
+      total: 1,
+      skip: 0,
+      limit: 20,
+    });
+    validateFacebookPageMock.mockResolvedValue({
+      id: "page-1",
+      workspace_id: WORKSPACE_A,
+      facebook_page_id: "123456",
+      page_name: "Test Page",
+      token_expires_at: null,
+      is_active: true,
+      validation_status: "valid",
+      last_validated_at: "2026-01-01T00:00:00Z",
+      last_error: null,
+      has_access_token: true,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+
+    renderView();
+    await userEvent.setup().click(await screen.findByRole("button", { name: "تحقق" }));
+    await waitFor(() => expect(validateFacebookPageMock.mock.calls[0]?.[0]).toBe("page-1"));
   });
 });
