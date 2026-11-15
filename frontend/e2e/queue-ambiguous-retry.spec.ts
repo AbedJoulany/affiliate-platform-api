@@ -111,7 +111,7 @@ async function stubFacebookQueue(
     }
     if (
       request.method() === "POST" &&
-      url.endsWith(`/queues/${QUEUE_ID}/publish`)
+      url.includes(`/queues/${QUEUE_ID}/publish`)
     ) {
       onPublish(request);
       if (publishDelayMs > 0) {
