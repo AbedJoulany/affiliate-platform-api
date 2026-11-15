@@ -13,6 +13,7 @@ const HEALTH_META: Record<
   missing_channel: { label: "ينقصه قناة", tone: "warning" },
   publishing: { label: "قيد النشر", tone: "info" },
   published: { label: "منشور", tone: "success" },
+  ambiguous: { label: "نتيجة غير مؤكدة", tone: "warning" },
   error: { label: "خطأ", tone: "error" },
 };
 
@@ -27,6 +28,10 @@ export function QueueHealthBadge({
   const meta = HEALTH_META[health];
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLButtonElement>(null);
+
+  if (health === "ambiguous") {
+    return <Badge tone="warning">نتيجة غير مؤكدة · راجع الصفحة</Badge>;
+  }
 
   if (health !== "error" || !failure) {
     return <Badge tone={meta.tone}>{meta.label}</Badge>;

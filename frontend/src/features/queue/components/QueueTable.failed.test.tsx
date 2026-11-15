@@ -63,6 +63,7 @@ describe("QueueTable failed status", () => {
         density="comfortable"
         productsById={new Map()}
         channelsById={new Map()}
+        facebookPagesById={new Map()}
         publishingIds={new Set()}
         failures={{}}
         onToggle={vi.fn()}

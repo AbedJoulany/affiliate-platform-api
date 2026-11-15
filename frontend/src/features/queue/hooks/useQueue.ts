@@ -247,6 +247,10 @@ export type PublishBatchResult = {
   failureMessage: string | null;
 };
 
+export type PublishOptions = {
+  confirmAmbiguous?: boolean;
+};
+
 /**
  * In-flight `publishingIds` stay client-ephemeral.
  * `failures` is a short-lived fallback until attempt-summary enrichment arrives.
@@ -257,10 +261,27 @@ export function useQueuePublishingOperations() {
   const workspaceId = useActiveWorkspaceId();
   const [publishingIds, setPublishingIds] = useState<string[]>([]);
   const [failures, setFailures] = useState<Record<string, QueuePublishFailure>>({});
+  const inFlightIds = useRef(new Set<string>());
 
   const publishItems = useCallback(
-    async (ids: string[]): Promise<PublishBatchResult> => {
-      const uniqueIds = Array.from(new Set(ids));
+    async (
+      ids: string[],
+      options: PublishOptions = {},
+    ): Promise<PublishBatchResult> => {
+      const uniqueIds = Array.from(new Set(ids)).filter((id) => {
+        if (inFlightIds.current.has(id)) return false;
+        inFlightIds.current.add(id);
+        return true;
+      });
+      if (uniqueIds.length === 0) {
+        return {
+          published: 0,
+          failed: 0,
+          conflicts: 0,
+          conflictMessage: null,
+          failureMessage: null,
+        };
+      }
       setPublishingIds((previous) => Array.from(new Set([...previous, ...uniqueIds])));
       let published = 0;
       let failed = 0;
@@ -270,7 +291,7 @@ export function useQueuePublishingOperations() {
 
       for (const id of uniqueIds) {
         try {
-          await publishQueueItem(id);
+          await publishQueueItem(id, options);
           published += 1;
           setFailures((previous) => {
             if (!(id in previous)) return previous;
@@ -301,6 +322,7 @@ export function useQueuePublishingOperations() {
             }));
           }
         } finally {
+          inFlightIds.current.delete(id);
           setPublishingIds((previous) => previous.filter((value) => value !== id));
         }
       }

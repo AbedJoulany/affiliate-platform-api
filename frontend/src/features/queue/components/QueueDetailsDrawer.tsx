@@ -1,25 +1,33 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import Image from "next/image";
-import { CalendarClock, Package, Send, Sparkles } from "lucide-react";
+import { CalendarClock, Globe2, Package, Send, Sparkles } from "lucide-react";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { Badge, Button, Drawer } from "@/components/ui/primitives";
-import type { Channel } from "@/features/channels/types/api";
+import type { Channel, FacebookPage } from "@/features/channels/types/api";
 import type { Product } from "@/features/products/types/api";
 import { useQueuePublishAttempts } from "../hooks/useQueue";
 import {
   formatAttemptStatus,
   formatQueueSchedule,
   getQueueHealth,
+  formatQueueStatus,
   resolveQueueFailure,
 } from "../lib/operations";
+import {
+  getQueueDestination,
+  isAmbiguousFacebookAttempt,
+} from "../lib/destination";
 import type { QueueItem, QueuePublishFailure } from "../types/api";
+import type { PublishOptions } from "../hooks/useQueue";
 import { QueueHealthBadge } from "./QueueHealthBadge";
 
 export function QueueDetailsDrawer({
   item,
   product,
   channel,
+  facebookPage,
   publishing,
   clientFailure,
   open,
@@ -33,30 +41,53 @@ export function QueueDetailsDrawer({
   item: QueueItem | null;
   product: Product | null;
   channel: Channel | null;
+  facebookPage: FacebookPage | null;
   publishing: boolean;
   /** Short-lived client fallback until backend summary enrichment arrives. */
   clientFailure?: QueuePublishFailure;
   open: boolean;
   onClose: () => void;
   onPublish: (item: QueueItem) => void;
-  onRetry: (item: QueueItem) => void;
+  onRetry: (item: QueueItem, options?: PublishOptions) => void;
   onSchedule: (item: QueueItem) => void;
   onOpenAi: (item: QueueItem) => void;
   /** Reserved for a future persisted Publishing Timeline. */
   timelineSlot?: ReactNode;
 }) {
-  const failure = item ? resolveQueueFailure(item, clientFailure) : undefined;
-  const health = item
-    ? getQueueHealth(item, { publishing, failure })
+  const [ambiguousConfirmationOpen, setAmbiguousConfirmationOpen] = useState(false);
+  const attemptsQuery = useQueuePublishAttempts(item?.id ?? null, open && Boolean(item));
+  const latestAttempt =
+    attemptsQuery.data?.items[0] ?? item?.last_attempt ?? null;
+  const attemptFailure =
+    latestAttempt &&
+    (latestAttempt.status === "failed" || latestAttempt.status === "ambiguous")
+      ? {
+          message:
+            latestAttempt.error_message ?? latestAttempt.error_code ?? "فشل النشر",
+          occurredAt: latestAttempt.occurred_at,
+        }
+      : undefined;
+  const failure = item
+    ? attemptFailure ?? resolveQueueFailure(item, clientFailure)
+    : undefined;
+  const displayItem = item && latestAttempt ? { ...item, last_attempt: latestAttempt } : item;
+  const health = item && displayItem
+    ? getQueueHealth(displayItem, { publishing, failure })
     : "missing_channel";
   const schedule = item ? formatQueueSchedule(item) : null;
   const imageUrl = item?.image_url ?? product?.image_url ?? null;
   const isFailed = item?.status === "failed";
+  const ambiguousAttempt = Boolean(
+    item && isAmbiguousFacebookAttempt(item, latestAttempt),
+  );
+  const destination = item
+    ? getQueueDestination(item, channel, facebookPage)
+    : null;
   const canRetry = Boolean(item && item.status !== "published");
-  const attemptsQuery = useQueuePublishAttempts(item?.id ?? null, open && Boolean(item));
 
   return (
-    <Drawer
+    <>
+      <Drawer
       open={open}
       onClose={onClose}
       title="تفاصيل عملية النشر"
@@ -67,9 +98,21 @@ export function QueueDetailsDrawer({
             <Button
               disabled={!canRetry || publishing}
               loading={publishing}
-              onClick={() => (isFailed ? onRetry(item) : onPublish(item))}
+              onClick={() => {
+                if (ambiguousAttempt) {
+                  setAmbiguousConfirmationOpen(true);
+                } else if (isFailed || failure) {
+                  onRetry(item);
+                } else {
+                  onPublish(item);
+                }
+              }}
             >
-              {isFailed || failure ? "إعادة المحاولة" : "نشر الآن"}
+              {ambiguousAttempt
+                ? "مراجعة وإعادة المحاولة"
+                : isFailed || failure
+                  ? "إعادة المحاولة"
+                  : "نشر الآن"}
             </Button>
             <Button variant="outline" onClick={() => onSchedule(item)}>
               <CalendarClock className="size-4" />
@@ -114,15 +157,15 @@ export function QueueDetailsDrawer({
 
           <dl className="grid gap-3 sm:grid-cols-2">
             <Info
-              label="القناة"
+              label="الوجهة"
               value={
-                channel
-                  ? `Telegram • ${
-                      channel.title ?? channel.username ?? channel.telegram_channel_id
+                destination
+                  ? `${destination.label} • ${
+                      destination.name ?? destination.identity ?? "غير متاحة"
                     }`
                   : "غير محددة"
               }
-              icon={<Send />}
+              icon={destination?.provider === "facebook" ? <Globe2 /> : <Send />}
             />
             <Info
               label="الموعد"
@@ -174,7 +217,9 @@ export function QueueDetailsDrawer({
                             ? "success"
                             : attempt.status === "failed"
                               ? "error"
-                              : "info"
+                              : attempt.status === "ambiguous"
+                                ? "warning"
+                                : "info"
                         }
                       >
                         {formatAttemptStatus(attempt.status)}
@@ -186,10 +231,15 @@ export function QueueDetailsDrawer({
                         timeStyle: "short",
                       }).format(new Date(attempt.occurred_at))}
                     </p>
-                    {attempt.status === "failed" &&
+                    {(attempt.status === "failed" || attempt.status === "ambiguous") &&
                     (attempt.error_message || attempt.error_code) ? (
                       <p className="mt-2 text-sm leading-6 text-muted-foreground">
                         {attempt.error_message ?? attempt.error_code}
+                      </p>
+                    ) : null}
+                    {attempt.provider_message_ref ? (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        مرجع المزود: {attempt.provider_message_ref}
                       </p>
                     ) : null}
                   </li>
@@ -197,18 +247,22 @@ export function QueueDetailsDrawer({
               </ul>
             )}
             <p className="mt-2 text-xs text-muted-foreground">
-              السجل للقراءة فقط. إعادة المحاولة تتم عبر نشر الآن.
+              السجل للقراءة فقط. النتائج غير المؤكدة تتطلب فحص صفحة Facebook قبل تأكيد إعادة المحاولة.
             </p>
           </section>
 
           <dl className="space-y-2 rounded-md border border-border p-3 text-sm">
             <div className="flex justify-between gap-4">
               <dt className="text-muted-foreground">الحالة المحفوظة</dt>
-              <dd>{item.status}</dd>
+              <dd>{formatQueueStatus(item.status)}</dd>
             </div>
             <div className="flex justify-between gap-4">
-              <dt className="text-muted-foreground">معرف رسالة Telegram</dt>
-              <dd>{item.telegram_message_id ?? "—"}</dd>
+              <dt className="text-muted-foreground">حالة آخر محاولة</dt>
+              <dd>{latestAttempt ? formatAttemptStatus(latestAttempt.status) : "—"}</dd>
+            </div>
+            <div className="flex justify-between gap-4">
+              <dt className="text-muted-foreground">مرجع المزود</dt>
+              <dd>{latestAttempt?.provider_message_ref ?? "—"}</dd>
             </div>
             <div className="flex justify-between gap-4">
               <dt className="text-muted-foreground">آخر تحديث</dt>
@@ -224,7 +278,21 @@ export function QueueDetailsDrawer({
           {timelineSlot}
         </div>
       ) : null}
-    </Drawer>
+      </Drawer>
+      <ConfirmDialog
+      open={ambiguousConfirmationOpen}
+      title="إعادة محاولة نشر غير مؤكدة؟"
+      message={`افحص صفحة Facebook أولاً؛ قد يكون Meta قد قبل المنشور بالفعل. إذا وجدته منشوراً فلا تعاود المحاولة. تأكيد الإعادة قد ينشئ منشوراً مكرراً${destination?.name ? ` على صفحة ${destination.name}` : ""}.`}
+      confirmLabel="تأكيد إعادة المحاولة"
+      busy={publishing}
+      onCancel={() => setAmbiguousConfirmationOpen(false)}
+      onConfirm={() => {
+        if (!item) return;
+        setAmbiguousConfirmationOpen(false);
+        onRetry(item, { confirmAmbiguous: true });
+      }}
+      />
+    </>
   );
 }
 
