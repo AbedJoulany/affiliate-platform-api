@@ -1,7 +1,9 @@
 # Routing and Navigation
 
-**Document Version:** 2.1  
-**Last Updated:** 2026-09-04
+**Document Version:** 2.2
+**Last Updated:** 2026-11-15
+
+> **Current baseline:** The route map is for the Product A single-operator MVP. Facebook uses the existing Channels/Settings surface and provider-aware Queue flow; no Facebook OAuth or separate publishing route is implemented.
 
 ---
 
@@ -16,7 +18,7 @@ Defines URL structure, sidebar navigation, page layouts, and **drawer vs route**
 - **Feature-based URLs** — `/discovery`, not `/dashboard/discovery`
 - **Clean deep links** — `/products/[id]`, `/ai?product=…`
 - **Drawer for inspection** — row click opens slide-over; URL optional
-- **SaaS-ready** — avoid patterns that block future `/workspace/{id}/…` prefix
+- **Workspace-scoped where required** — preserve the existing `X-Workspace-Id` contract without adding a new onboarding or URL hierarchy
 
 ---
 
@@ -75,7 +77,7 @@ Publishing Operations Center. KPI strip at top. **Drawer boundary:** `QueueDetai
 
 ### `/channels`
 
-Telegram channel registry. Full-page CRUD (no drawer).
+Telegram channel registry and Facebook Page connection management. Full-page CRUD (no drawer); Page access tokens are never displayed after saving.
 
 ### `/settings/*`
 
@@ -106,7 +108,7 @@ Settings
 | Discovery | `/discovery` | |
 | AI Studio | `/ai` | |
 | Queue | `/queue` | |
-| Channels | `/channels` | |
+| Channels | `/channels` | Telegram channels and Facebook Pages |
 | Settings | `/settings/general` | Parent redirects to general |
 
 **Not in sidebar:** Profile (header menu), Workspace switcher (hidden)
@@ -188,5 +190,5 @@ Request → middleware (session cookie present?)
 
 ## 13. Related Documents
 
-- [02-frontend-architecture.md](./02-frontend-architecture.md)
+- [02-Frontend-Architecture.md](./02-Frontend-Architecture.md)
 - [04-component-library.md](./04-component-library.md)

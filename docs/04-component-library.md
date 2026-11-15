@@ -1,7 +1,9 @@
 # Component Library
 
-**Document Version:** 2.3  
-**Last Updated:** 2026-09-04
+**Document Version:** 2.4
+**Last Updated:** 2026-11-15
+
+> **Current baseline:** Facebook destination selection and provider-aware Queue payloads are implemented. Provider-specific publishing, ambiguous-attempt controls, and live provider validation are documented in the roadmap; do not infer that selecting a destination publishes a post.
 
 **2026-09-06 revision:** Product B analytics components (`AnalyticsView`, campaign funnel, click/conversion charts) were removed. The dashboard remains the Product A operational MEASURE surface.
 
@@ -167,7 +169,7 @@ Interactive score cell with:
 | `QueueToolbar` | Implemented | Search, status/channel filters, sort, density |
 | `QueueSelectionBar` | Implemented | Bulk publish, schedule, delete |
 | `QueueDetailsDrawer` | Implemented | Post preview, product/channel context, inline actions, read-only publish attempt history section (`useQueuePublishAttempts` → `GET /queues/{id}/attempts`). Primary action relabels to "إعادة المحاولة" (retry) when a failure is present and calls the existing `POST /queues/{id}/publish` — no new endpoint |
-| `QueueSchedulingDialog` | Implemented | Channel picker, datetime, presets, publish-now |
+| `QueueSchedulingDialog` | Implemented | Provider-aware Telegram channel/Facebook Page picker, datetime, presets, publish-now; mixed-provider bulk scheduling is guarded |
 | `QueueHealthBadge` | Implemented | Pipeline readiness (channel missing, etc.); surfaces backend `failure_reason` / latest failed attempt via `resolveQueueFailure`, with client fallback only until enrichment resolves |
 | `QueueActionsMenu` | Implemented | Row actions menu |
 | `SchedulePicker` | Partial | Inline in table + dialog; no calendar widget library |
@@ -178,7 +180,7 @@ Interactive score cell with:
 
 | Component | Status |
 | --- | --- |
-| `ChannelsView` | Implemented — list, create, permission badges, active toggle |
+| `ChannelsView` | Implemented — Telegram list/create, permission badges, active toggle; Facebook Page management is available in the same channel/settings area |
 | `DashboardView` | Implemented — stat cards, activity, system status |
 | `CapabilityView` | Implemented — re-exports `WorkspaceSettingsView`; per-section editable forms |
 

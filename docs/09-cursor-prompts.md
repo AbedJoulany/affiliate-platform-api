@@ -1,7 +1,9 @@
 # Cursor Development Prompts
 
-**Document Version:** 2.0  
-**Last Updated:** 2026-07-29
+**Document Version:** 2.1
+**Last Updated:** 2026-11-15
+
+> **Current baseline:** Use these prompts only with the current Product A MVP contracts. PR #11 added provider-aware frontend destination selection; Telegram remains the default provider, and Facebook requires an active validated Page. Never invent routes, silently substitute `product_url` for `affiliate_url`, or automatically retry an ambiguous Facebook attempt.
 
 Standard prompts for AI-assisted development. Cursor acts as implementer — architecture decisions live in `/docs`.
 
@@ -29,7 +31,7 @@ Before generating code:
 You are working on the AI Affiliate Automation Platform frontend.
 
 Read before coding:
-- docs/02-frontend-architecture.md
+- docs/02-Frontend-Architecture.md
 - docs/03-design-system.md
 - docs/04-component-library.md
 - docs/06-api-integration.md
@@ -100,7 +102,7 @@ QueueSchedulingDialog, QueueSelectionBar, ToastOverlay
 
 API: GET/PATCH/POST publish/DELETE /queues via queue.api.ts
 
-KPI "publishing" and "failed today" are client-derived — do not invent backend failed status.
+KPI "publishing" is client-derived; "failed today" is enriched from backend publish-attempt history with a short-lived client fallback. Queue `failed` is a real backend status, while attempt `ambiguous` is a separate Facebook state.
 Schedule via PATCH with scheduled_at + channel_id.
 ```
 

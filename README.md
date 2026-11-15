@@ -1,6 +1,6 @@
 # Affiliate Platform API
 
-AI affiliate automation platform with a FastAPI backend and Next.js frontend.
+Product A is a single-operator Affiliate Marketing Assistant MVP with a FastAPI backend and Next.js frontend. It supports AliExpress discovery, deterministic recommendations, AI content, a provider-aware Queue, Telegram, and Facebook Pages. It is not a SaaS marketplace.
 
 ## Stack
 
@@ -9,7 +9,7 @@ AI affiliate automation platform with a FastAPI backend and Next.js frontend.
 - PostgreSQL 16
 - SQLAlchemy 2.0 (async)
 - Alembic
-- JWT authentication (short-lived access tokens)
+- JWT authentication with short-lived access tokens and rotating opaque refresh tokens
 - Pydantic v2
 - Docker & Docker Compose
 - Next.js 15, TypeScript, TanStack Query, and TailwindCSS
@@ -21,7 +21,7 @@ Full project documentation lives in [`docs/`](./docs/):
 | Doc | Topic |
 | --- | --- |
 | [01-project-overview.md](./docs/01-project-overview.md) | Vision, architecture, tech stack |
-| [02-frontend-architecture.md](./docs/02-frontend-architecture.md) | Frontend structure & workspaces |
+| [02-Frontend-Architecture.md](./docs/02-Frontend-Architecture.md) | Frontend structure & workspaces |
 | [03-design-system.md](./docs/03-design-system.md) | Visual tokens & patterns |
 | [04-component-library.md](./docs/04-component-library.md) | Component registry |
 | [05-routing-and-navigation.md](./docs/05-routing-and-navigation.md) | Routes & navigation |
@@ -30,6 +30,7 @@ Full project documentation lives in [`docs/`](./docs/):
 | [08-implementation-roadmap.md](./docs/08-implementation-roadmap.md) | Feature checklist & roadmap |
 | [09-cursor-prompts.md](./docs/09-cursor-prompts.md) | AI development prompts |
 | [10-production-readiness.md](./docs/10-production-readiness.md) | Release & security runbook |
+| [product-a-mvp-roadmap.md](./docs/product-a-mvp-roadmap.md) | Canonical Product A roadmap and acceptance gates |
 
 ## Architecture
 
@@ -51,7 +52,9 @@ app/
 | **User** | Platform users (`admin` or `user`) |
 | **Product** | Shared product catalog with pricing, AliExpress `affiliate_url`, and `commission_rate` |
 | **TelegramChannel** | Connected Telegram channels with bot permission status |
-| **QueueItem** | Scheduled or published Telegram posts |
+| **FacebookPage** | Workspace-scoped manually connected Page with encrypted server-side token |
+| **QueueItem** | Provider-aware scheduled or published Telegram/Facebook post |
+| **QueuePublishAttempt** | Provider-specific attempt history, including failed and ambiguous outcomes |
 
 ## Quick Start (Docker)
 
@@ -101,8 +104,10 @@ async def example(current_user: CurrentUser):
     return current_user.email
 ```
 
-The backend does not currently issue refresh tokens. Frontend sessions end when the
-access token expires and require the user to authenticate again.
+The backend issues short-lived access tokens and rotating opaque refresh tokens. Refresh
+tokens are stored as hashes server-side, are single-use, and are never sent as Bearer
+tokens. Public registration exists at the API level, but the single-operator MVP does
+not provide public onboarding UI.
 
 ## API Endpoints
 
@@ -111,6 +116,8 @@ access token expires and require the user to authenticate again.
 | POST | `/api/v1/auth/register` | Register a new user |
 | POST | `/api/v1/auth/login` | Login (OAuth2 form) |
 | GET | `/api/v1/auth/me` | Current user profile |
+| POST | `/api/v1/auth/refresh` | Rotate an opaque refresh token |
+| POST | `/api/v1/auth/logout` | Revoke a refresh token |
 | GET | `/api/v1/products` | List products (pagination, title search, status filter) |
 | GET | `/api/v1/products/{id}` | Get product by ID |
 | POST | `/api/v1/products` | Create product (admin) |
@@ -120,20 +127,34 @@ access token expires and require the user to authenticate again.
 | GET | `/api/v1/channels` | List channels with pagination |
 | PUT | `/api/v1/channels/{id}` | Update channel |
 | DELETE | `/api/v1/channels/{id}` | Delete channel |
+| POST | `/api/v1/channels/{id}/refresh-permissions` | Refresh Telegram bot permissions |
+| GET/POST | `/api/v1/facebook/pages` | List or connect Facebook Pages |
+| POST | `/api/v1/facebook/pages/{id}/validate` | Revalidate a Page token |
+| PATCH/DELETE | `/api/v1/facebook/pages/{id}` | Replace, disable, or remove a Page connection |
 | POST | `/api/v1/ai-content/generate` | Generate Arabic marketing content by `product_id` or `url` |
+| GET | `/api/v1/products/recommendations` | Authenticated deterministic recommendations |
 | POST | `/api/v1/queues` | Create queue item |
 | GET | `/api/v1/queues` | List queue items (filter by status, paginated) |
 | GET | `/api/v1/queues/{id}` | Get queue item |
 | PATCH | `/api/v1/queues/{id}` | Update queue item |
-| POST | `/api/v1/queues/{id}/publish` | Publish queue item to Telegram |
+| POST | `/api/v1/queues/{id}/publish` | Publish queue item to its configured Telegram or Facebook destination |
+| GET | `/api/v1/queues/{id}/attempts` | Provider-specific publish-attempt history |
 | DELETE | `/api/v1/queues/{id}` | Delete queue item |
 | POST | `/api/v1/aliexpress/import` | Import product from AliExpress Affiliate API |
 
 ## Environment Variables
 
-See `.env.example` for all configuration options. Change `JWT_SECRET_KEY` before deploying to production.
+See `.env.example` for the baseline configuration options. The Facebook encryption
+key is documented below and remains a local/server-only addition because the
+pre-existing `.env.example` is intentionally preserved unchanged. Change
+`JWT_SECRET_KEY` before deploying to production.
 
 Set `TELEGRAM_BOT_TOKEN` to enable live bot permission checks against the Telegram Bot API. Without it, channels are stored with `bot_permission_status: unknown`.
+
+Facebook Page tokens are entered through the authenticated Pages UI and remain encrypted
+server-side. `FACEBOOK_TOKEN_ENCRYPTION_KEY` must be configured for Page credentials;
+generate a 32-byte URL-safe Base64 key and keep it outside Git. The key is not recoverable
+from the database.
 
 Configure `OPENAI_API_KEY` or `GEMINI_API_KEY` and set `AI_DEFAULT_PROVIDER` (`openai` or `gemini`) for AI content generation.
 
@@ -200,6 +221,9 @@ publish_queue_item_task.delay("queue-item-uuid")
 alembic revision --autogenerate -m "description"
 alembic upgrade head
 ```
+
+The current migration head is `019`. Historical migrations `001–019` must not be edited;
+new schema changes require a later additive migration and verified downgrade path.
 
 ## Tests
 

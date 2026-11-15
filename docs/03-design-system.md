@@ -1,7 +1,9 @@
 # Design System
 
-**Document Version:** 2.2  
-**Last Updated:** 2026-08-04
+**Document Version:** 2.3
+**Last Updated:** 2026-11-15
+
+> **Current baseline:** Queue badges distinguish queue status from publish-attempt status. `ambiguous` is a Facebook attempt state requiring operator verification and explicit confirmation before retry; it is not an automatic retry signal.
 
 **2026-08-04 revision:** Phase A.1 frontend wiring is complete — "Failed today" and `QueueHealthBadge` now read backend attempt truth by default; the client failure map is a short-lived fallback only, not a rollout-in-progress state.
 
@@ -62,7 +64,7 @@ All components must use semantic tokens — no hardcoded hex in feature code.
 | `published` | success | Terminal success |
 | `failed` | error | Terminal publishing failure; excluded from automatic publish pickup. Retry via PATCH back to `queued`/`scheduled`. |
 
-Attempt history remains on `queue_publish_attempts` (`started` \| `succeeded` \| `failed`; terminal exhaustion sets `error_code` = `dead_letter`). Transient transport failures keep the item `queued`/`scheduled` so Celery can retry.
+Attempt history remains on `queue_publish_attempts` (`started` \| `succeeded` \| `failed` \| `ambiguous`; terminal exhaustion may set `error_code` = `dead_letter`). `ambiguous` means Meta may have accepted the request; it is not automatically retried. Queue status and attempt status are separate: a failed/ambiguous attempt does not itself create a new queue status.
 
 ### Operational KPI tones (Queue workspace)
 

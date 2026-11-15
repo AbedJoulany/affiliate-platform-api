@@ -1,7 +1,9 @@
 # Production Readiness and Release Runbook
 
-**Document Version:** 3.1  
-**Last Updated:** 2026-09-04
+**Document Version:** 3.2
+**Last Updated:** 2026-11-15
+
+> **Current baseline:** PRs #7–#11 are merged. The Product A MVP now includes provider-aware Telegram/Facebook Queue publishing, migration 019, server-side encrypted Facebook Page tokens, and frontend destination selection. Phase 0 controlled Telegram failure/retry verification and Phase 3C.3 live Facebook validation remain pending. Use [product-a-mvp-roadmap.md](./product-a-mvp-roadmap.md) for canonical phase status.
 
 **2026-09-04 revision (CI hardening):** GitHub Actions Ruff step is `ruff check .` on first-party Python (vendored `iop/` excluded). Playwright smoke is job `e2e` (API-mocked; not a required branch-protection check yet). See §3, §9.5.
 
@@ -36,6 +38,7 @@ Release gate supplement to documents 01–09. Defines security boundaries, envir
 - `TELEGRAM_BOT_TOKEN` — live bot for permission checks
 - `ALIEXPRESS_APP_KEY` / `ALIEXPRESS_APP_SECRET` — discovery/import
 - `OPENAI_API_KEY` or `GEMINI_API_KEY` — AI generation
+- `FACEBOOK_TOKEN_ENCRYPTION_KEY` — server-only 32-byte URL-safe Base64 key for AES-256-GCM Page-token encryption; padded or unpadded input is accepted; fail closed when missing/invalid
 - Celery broker/backend URLs (Redis also backs Phase D route rate-limit counters)
 
 ### Frontend
@@ -45,9 +48,12 @@ Release gate supplement to documents 01–09. Defines security boundaries, envir
 
 ### Migrations
 
-Run `alembic upgrade head` once before API/worker promotion. Current head includes migration **`016_add_workspace_settings`** (one `workspace_settings` row per workspace, `ON DELETE CASCADE`; revises `015`; no secret columns).
+Run `alembic upgrade head` once before API/worker promotion. Current head is migration **019** and includes Facebook Page connection (`018_add_facebook_pages`) plus provider-aware Queue destinations (`019_add_facebook_queue_destinations`). Migrations `001`–`019` are protected history; no tokens are stored in plaintext database columns.
 
-See `.env.example` for full variable list (migrated from legacy handoff doc).
+See `.env.example` for the baseline variable list. The Facebook encryption key is
+documented above and must be supplied separately in the server-only environment;
+the pre-existing `.env.example` is intentionally not changed by this documentation
+synchronization.
 
 ---
 
@@ -95,13 +101,14 @@ Do not release from failing required checks.
 3. Provision staging admin with the trusted operator CLI (not public register):
    `docker compose exec -e BOOTSTRAP_ADMIN_PASSWORD api python -m scripts.bootstrap_admin --email <admin-email> --workspace-name "Default Workspace"`
    Creates one `ADMIN` user, one workspace, and one `OWNER` membership atomically. Safe to re-run; does not promote an existing non-admin account.
-4. Start PostgreSQL, Redis, API, Celery worker, Celery beat
-5. `GET /health` → 200
-6. `GET /ready` → 200 (database + redis `up`)
-7. `GET /worker/health` → 200 once Beat+worker have refreshed Redis heartbeat (or 503 degraded until then)
-8. Optionally start Flower: `docker compose --profile observability up` and open `http://127.0.0.1:5555` with `FLOWER_BASIC_AUTH`
-8. Frontend login → dashboard redirect
-9. Security headers present; logs contain no secrets
+4. Configure `FACEBOOK_TOKEN_ENCRYPTION_KEY` in the server-side environment before using Facebook Page connections; never place it in frontend configuration or Git
+5. Start PostgreSQL, Redis, API, Celery worker, Celery beat
+6. `GET /health` → 200
+7. `GET /ready` → 200 (database + redis `up`)
+8. `GET /worker/health` → 200 once Beat+worker have refreshed Redis heartbeat (or 503 degraded until then)
+9. Optionally start Flower: `docker compose --profile observability up` and open `http://127.0.0.1:5555` with `FLOWER_BASIC_AUTH`
+10. Frontend login → dashboard redirect
+11. Security headers present; logs contain no secrets or provider tokens
 
 ---
 
@@ -112,8 +119,8 @@ Execute with staging admin:
 1. **Discovery** — Run hot/trending/deals/category searches; open score popover; open product inspector drawer; batch import
 2. **Products** — Verify inventory grid density/columns; open `ProductDetailsDrawer`; admin delete; export CSV
 3. **AI Studio** — Generate with tone/type/modifiers; compare variants; create queue draft
-4. **Channels** — Register Telegram channel; verify permission badges
-5. **Queue** — Verify KPI cards read backend attempt truth; schedule via dialog and confirm Celery beat actually publishes at the scheduled time (regression check for the event-loop bug below); bulk publish; confirm Telegram message, including a long post (>4096 chars, or >1024-char caption with an image) publishes as multiple sequential messages without truncation; on simulated terminal Telegram failure verify the item becomes `failed`, a durable attempt via `GET /queues/{id}/attempts`, and Retry returns it to `queued`; duplicate publish of unchanged content returns 409; delete a queue item that has publish attempts and confirm it (and its attempt history) is removed without error
+4. **Channels** — Register Telegram channel and verify permission badges; connect a Facebook Page with a manually supplied Page ID/token and verify sanitized metadata only
+5. **Queue** — Verify KPI cards read backend attempt truth; select Telegram or an active validated Facebook Page; schedule via dialog and confirm Celery Beat publishes at the scheduled time; bulk publish with mixed-provider safeguards; confirm provider message reference and affiliate CTA behavior; on simulated terminal failure verify a durable attempt via `GET /queues/{id}/attempts`; ambiguous Facebook outcomes require operator verification and explicit confirmation before retry; duplicate publish of unchanged content is blocked; delete a queue item with attempts and confirm its history is removed without error
 6. **Settings** — Readiness shows DB + Redis
 7. Expired access JWT triggers one single-flight refresh when a refresh token exists; refresh failure clears session → login
 
@@ -130,7 +137,7 @@ Execute with staging admin:
 | Refresh tokens | Opaque; SHA-256 hash in PostgreSQL; rotate; single-use; reuse revocation; logout revoke; migration `009` |
 | Rate limiting | Redis fixed-window via FastAPI route dependencies (not middleware); fail-open; policies below |
 | Admin operations | Import, delete — backend + UI role check |
-| Tenancy | Queue/channel HTTP APIs, dashboard queue/channel aggregates, **workspace settings**, and `GET /queues/stream` are **workspace-scoped** via `X-Workspace-Id`. `workspace_settings.workspace_id` is **NOT NULL** with `ON DELETE CASCADE` (migration `016`). `queue_items.workspace_id` and `telegram_channels.workspace_id` are **NOT NULL** with `ON DELETE RESTRICT` (migration `013`). Product remains a **global shared catalog** (no `workspace_id`). `PATCH /auth/me` is user-global (no workspace header). Discovery and **`POST /products/search/image`** remain global. Frontend workspace init: `/auth/me` → `default_workspace_id` → `sessionStorage`. |
+| Tenancy | Queue/channel/Page HTTP APIs, dashboard queue/channel aggregates, **workspace settings**, and `GET /queues/stream` are **workspace-scoped** via `X-Workspace-Id`. `workspace_settings.workspace_id` is **NOT NULL** with `ON DELETE CASCADE` (migration `016`). `queue_items.workspace_id`, `telegram_channels.workspace_id`, and `facebook_pages.workspace_id` are protected by their migrations (`013`, `018`). Product remains a **global shared catalog** (no `workspace_id`). `PATCH /auth/me` is user-global (no workspace header). Discovery and **`POST /products/search/image`** remain global. Frontend workspace init: `/auth/me` → `default_workspace_id` → `sessionStorage`. |
 | Public / unauthenticated | Discovery read, product list |
 | `/ready` | Dependency state only (database + redis) — no secrets; not Celery liveness |
 | `/worker/health` | Celery Beat→worker pipeline heartbeat only — no secrets; not task-failure metrics |
@@ -186,7 +193,7 @@ Queue mutation (API or Celery)
 **Implemented:**
 
 - SSE endpoint `GET /api/v1/queues/stream` (Bearer JWT via `CurrentUser`; `text/event-stream`; `X-Accel-Buffering: no`; idle heartbeat comment every 30s; per-client queue bound 64)
-- Canonical events: `queue.status_changed`, `queue.deleted`, `queue.attempt_started`, `queue.attempt_succeeded`, `queue.attempt_failed` — **no** `dashboard.stats_updated`
+- Canonical events: `queue.status_changed`, `queue.deleted`, `queue.attempt_started`, `queue.attempt_succeeded`, `queue.attempt_failed` (including provider-specific attempt outcomes) — **no** `dashboard.stats_updated`
 - Frontend: `useQueueEventStream` / `useQueueRealtimeInvalidation`; invalidate-never-patch; `QueueRealtimeStatusBadge`
 - Fallback: TanStack Query `refetchInterval` while SSE unavailable (5s → 30s adaptive); reconnect disables polling and performs one authoritative `["queue"]` refresh
 - Streaming-safe security headers middleware (pure ASGI; does not buffer SSE bodies)
@@ -260,12 +267,13 @@ Also: `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`, `REDIS_HOST` / `REDIS_PORT` 
 | Integration | Policy | Status |
 | --- | --- | --- |
 | **Telegram Bot API** | In-process: up to 3 retries (1 initial + 3 = ≤4 HTTP attempts), exponential backoff from `0.5s` + jitter; honor 429 `parameters.retry_after`. Celery publish tasks: `autoretry_for=(TelegramPublishError,)`, `max_retries=3`, `retry_backoff=True`, `retry_jitter=True`. Non-retryable 4xx Telegram errors (excluding 429) are marked terminal immediately so the beat loop does not recreate failed attempts forever. Failures persist on `queue_publish_attempts`; terminal → `error_code=dead_letter` | ✅ Implemented (Phase A.1) |
+| **Meta Graph API** | Provider-aware Queue/Celery path publishes Page text/photo posts. Page must be active and validated; tokens are decrypted only server-side when needed. Definitive failures are recorded; timeout/connection-reset/ambiguous outcomes are not automatically retried and require operator verification before `confirm_ambiguous=true` | ✅ Implemented backend (Phase 3B); live validation pending |
 | **AliExpress IOP** | Client-owned only: `_execute_with_retries` in `app/aliexpress/api_client.py`. Budget `aliexpress_max_retries + 1` (default **4**). Retryable: rate-limit errors; codes `{408,429,500,502,503,504}` or message `timeout`/`temporarily`. Credentials errors re-raise immediately. Backoff `0.5s * 2^attempt` + jitter `[0,0.25)`; inter-request gate default **0.2s**. Discovery Celery tasks: **no** AliExpress HTTP `autoretry_for` (nesting would multiply outbound calls). Canonical discovery exception: `app.aliexpress.exceptions.AliExpressAPIError` | ✅ Implemented (Phase C') |
 | **OpenAI / Gemini** | Provider-owned via `app/ai/retry.py` (max **2** total attempts). Retryable: `httpx.TransportError`, HTTP 429, HTTP 5xx. Non-retryable: 400/401/403/404 and unexpected non-httpx errors. Malformed response parsing is **outside** the retry loop (1 call). Backoff base **1.0s** × `2^attempt` + jitter `[0,0.5)`; honor numeric `Retry-After` (cap **60s**). Timeout **60s**/attempt. Exhaustion → existing `AIProviderError` contract. **No** Celery path | ✅ Implemented (Phase C') |
-| **Celery publish tasks** | As above for Telegram publishing | ✅ Publish path (Phase A.1) |
+| **Celery publish tasks** | Provider-aware dispatch; preserve Telegram retry semantics and Facebook ambiguous-attempt guard | ✅ Implemented (Phase 3B) |
 | **Celery discovery tasks** | No AliExpress HTTP autoretry; client budget is the sole HTTP retry owner | ✅ Confirmed (Phase C') |
 
-Log structured failure records (queue_id, provider, attempt, error_code) — no token leakage. Attempt rows are the durable audit source for Telegram publishes. AI retry schedule logs (when emitted) include only provider/attempt/reason/delay — never API keys, prompts, or credential-bearing URLs.
+Log structured failure records (queue_id, provider, attempt, error_code) — no token leakage. Attempt rows are the durable audit source for Telegram and Facebook publishes. AI retry schedule logs (when emitted) include only provider/attempt/reason/delay — never API keys, prompts, or credential-bearing URLs.
 
 **Phase C' validation:** offline pytest coverage for AliExpress client retries, discovery exception identity, no-nested-Celery guards, AI provider retries, and API regression (`tests/test_aliexpress_api_client_retries.py`, `tests/test_discovery_task_exceptions.py`, `tests/test_aliexpress_no_nested_retry.py`, `tests/test_ai_provider_retry.py`, `tests/test_phase_c_prime_api_regression.py`). Full backend suite after Task 4: **244** passed. No DB migration, no new API endpoints, no frontend/SSE changes.
 

@@ -1,26 +1,28 @@
 # Project Overview
 
-**Document Version:** 2.1  
-**Last Updated:** 2026-09-04
+**Document Version:** 2.2
+**Last Updated:** 2026-11-15
+
+> **Current baseline:** This is a Product A single-operator MVP, not a SaaS marketplace. PRs #7–#11 are merged into `main`; the current implementation includes deterministic recommendations, workspace settings, Telegram publishing, Facebook Page connection, Facebook publishing through the existing queue/Celery path, and provider-aware frontend destination selection. Phase 0 controlled Telegram failure/retry verification and Phase 3C.3 live Facebook validation remain pending. See [product-a-mvp-roadmap.md](./product-a-mvp-roadmap.md) for the canonical status.
 
 ---
 
 ## 1. Introduction
 
-The **AI Affiliate Automation Platform** is an intelligent SaaS-ready system that automates affiliate marketing from product discovery through AI content generation to Telegram publishing.
+The **AI Affiliate Automation Platform** is a practical Product A assistant for affiliate product discovery, recommendation, AI content generation, queueing, scheduling, and publishing to configured Telegram channels and Facebook Pages.
 
 The repository contains:
 
 - A **layered async FastAPI backend** (PostgreSQL, Celery, Redis)
 - A **Next.js 15 App Router frontend** with Arabic-first workspace UX
-- Integration clients for **AliExpress**, **OpenAI**, **Gemini**, and **Telegram**
+- Integration clients for **AliExpress**, **OpenAI**, **Gemini**, **Telegram**, and the **Meta Graph API**
 
 Primary workflow:
 
 ```text
-AliExpress Discovery → Product Scoring → Inventory Review
+AliExpress Discovery → Product Scoring / Recommendations → Inventory Review
         ↓
-AI Content Studio → Publishing Queue → Telegram Dispatch
+AI Content Studio → Provider-aware Publishing Queue → Telegram / Facebook Dispatch
         ↓
 Operational dashboard (queue / channel / product activity)
 ```
@@ -31,7 +33,7 @@ Operational dashboard (queue / channel / product activity)
 
 Affiliate marketers spend excessive time on repetitive research, copywriting, scheduling, and channel management. This platform reduces manual work by combining data-driven product scoring, AI-generated Arabic marketing copy, and automated publishing pipelines.
 
-Long-term vision: an **affiliate automation operating system** supporting multi-workspace SaaS, additional affiliate networks, and multi-channel publishing.
+Long-term automation ideas remain roadmap-only. Public registration UI, self-service workspace creation, billing, subscriptions, OAuth, and additional affiliate networks are outside the current MVP scope.
 
 ---
 
@@ -39,11 +41,11 @@ Long-term vision: an **affiliate automation operating system** supporting multi-
 
 | User | Needs |
 | --- | --- |
-| **Primary — Affiliate marketers** | Discover products, evaluate scores, generate content, publish to Telegram |
+| **Primary — Affiliate operator** | Discover products, evaluate recommendations, generate content, publish to Telegram or Facebook |
 | **Admin operators** | Import products, manage catalog lifecycle, configure channels |
 | **Future — Teams & businesses** | Shared workspaces, roles, analytics, automation rules |
 
-Public registration creates `user` accounts only. Admin accounts must be provisioned operationally before catalog import is available.
+The current UI is login/bootstrap oriented. Public registration is not exposed in the frontend; admin accounts are provisioned operationally before catalog import is available.
 
 ---
 
@@ -88,7 +90,7 @@ Public registration creates `user` accounts only. Admin accounts must be provisi
 | Models | `app/models/`, `app/auth/` | SQLAlchemy 2.0 ORM |
 | Schemas | `app/schemas/` | Pydantic v2 DTOs |
 | Workers | `app/worker/` | Celery tasks (publish, discovery refresh) |
-| Integrations | `app/ai/`, `app/telegram/`, `app/aliexpress/` | External API clients |
+| Integrations | `app/ai/`, `app/telegram/`, `app/facebook/`, `app/aliexpress/` | External API clients |
 
 ### Request lifecycle
 
@@ -100,7 +102,7 @@ Public registration creates `user` accounts only. Admin accounts must be provisi
 
 ### Background processing
 
-Celery Beat triggers `process_publish_queue` on a configurable interval (default 60s). Workers publish due **scheduled** and ready **queued** items via `TelegramPublishingService`.
+Celery Beat triggers `process_publish_queue` on a configurable interval (default 60s). Workers publish due **scheduled** and ready **queued** items through the provider-aware queue service, dispatching to the configured Telegram channel or validated Facebook Page. Ambiguous Facebook outcomes are not automatically retried.
 
 ---
 
@@ -127,7 +129,7 @@ Python 3.12 · FastAPI · PostgreSQL 16 · SQLAlchemy 2.0 async · Alembic · Ce
 
 ### External services
 
-AliExpress Affiliate API (IOP SDK) · OpenAI · Gemini · Telegram Bot API
+AliExpress Affiliate API (IOP SDK) · OpenAI · Gemini · Telegram Bot API · Meta Graph API
 
 ---
 
@@ -135,7 +137,7 @@ AliExpress Affiliate API (IOP SDK) · OpenAI · Gemini · Telegram Bot API
 
 ### Discovery workspace (`/discovery`)
 
-Browse AliExpress products by intent (hot, deals, trending, category, general). Filter, sort, bulk-select, inspect in a slide-over drawer, import (admin), and hand off to AI Studio or queue. **Image search** (URL or uploaded file) calls global `POST /products/search/image` and renders through the same discovery results/inspector — no workspace header.
+Browse AliExpress products by intent (hot, deals, trending, category, general), use hard filters and deterministic recommendations, sort, bulk-select, inspect in a slide-over drawer, import (admin), and hand off to AI Studio or queue. **Image search** (URL or uploaded file) calls global `POST /products/search/image` and renders through the same discovery results/inspector — no workspace header.
 
 ### Products inventory (`/products`)
 
@@ -151,13 +153,13 @@ KPI summary cards, filterable table, **QueueDetailsDrawer**, inline scheduling d
 
 ### Channels & settings
 
-Telegram channel management; workspace settings forms (`/workspace-settings`) plus `/ready` for database/Redis badges.
+Telegram channel and Facebook Page management; workspace settings forms (`/workspace-settings`) plus `/ready` for database/Redis badges. Facebook Page access tokens are server-side encrypted and never returned to the UI.
 
 ---
 
 ## 7. MVP Scope & Boundaries
 
-**In scope today:** Login (with workspace runtime for tenant routes), dashboard, discovery (including image search), products inventory, AI studio, queue operations, channels, editable workspace settings.
+**In scope today:** Login (with workspace runtime for tenant routes), dashboard, discovery (including image search and recommendations), products inventory, AI studio, provider-aware queue operations, Telegram channels, Facebook Pages, editable workspace settings.
 
 **Partial / roadmap:** Workspace selector UI, full discovery filter surface, server-side AI variant persistence.
 
@@ -174,7 +176,7 @@ Telegram channel management; workspace settings forms (`/workspace-settings`) pl
 | Doc | Topic |
 | --- | --- |
 | [01-project-overview.md](./01-project-overview.md) | This document |
-| [02-frontend-architecture.md](./02-frontend-architecture.md) | Frontend structure & state |
+| [02-Frontend-Architecture.md](./02-Frontend-Architecture.md) | Frontend structure & state |
 | [03-design-system.md](./03-design-system.md) | Visual tokens & patterns |
 | [04-component-library.md](./04-component-library.md) | Shared & feature components |
 | [05-routing-and-navigation.md](./05-routing-and-navigation.md) | Routes & navigation |
@@ -195,7 +197,7 @@ A provisioned user can:
 1. Discover and inspect products with AI score breakdowns
 2. Import products (admin) and manage inventory from `/products`
 3. Generate and refine Arabic marketing content in AI Studio
-4. Create, schedule, and publish queue items to Telegram
-5. Monitor queue KPIs and resolve publish failures
+4. Create, schedule, and publish queue items to Telegram or Facebook
+5. Monitor queue KPIs and inspect provider publish attempts
 
-Scheduling, real-time status, and analytics remain incremental goals documented in [08-implementation-roadmap.md](./08-implementation-roadmap.md).
+Scheduling and real-time status are implemented in the existing queue flow. Facebook live validation, controlled Telegram failure/retry verification, and future automation remain incremental goals documented in [product-a-mvp-roadmap.md](./product-a-mvp-roadmap.md); [08-implementation-roadmap.md](./08-implementation-roadmap.md) is historical and superseded.

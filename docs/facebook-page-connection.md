@@ -1,5 +1,7 @@
 # Facebook Page connection (manual MVP)
 
+> This is the Phase 3A connection reference. The current roadmap is [Product A MVP roadmap](./product-a-mvp-roadmap.md); Facebook publishing and provider-aware Queue integration are documented in [06-api-integration.md](./06-api-integration.md). Connection management does not publish posts.
+
 The connection flow accepts a Facebook Page ID and Page access token from an
 authorized workspace owner. The token is validated server-side and stored only
 as an AES-256-GCM encrypted envelope. It is never returned by the API or

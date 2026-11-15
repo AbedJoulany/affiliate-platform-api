@@ -1,7 +1,9 @@
 # Frontend Architecture
 
-**Document Version:** 2.3  
-**Last Updated:** 2026-09-04
+**Document Version:** 2.4
+**Last Updated:** 2026-11-15
+
+> **Current baseline:** This document describes the Product A single-operator MVP. It is not a SaaS onboarding specification. PR #11 added provider-aware destination selection in AI Studio and Queue; Facebook publishing uses the existing Queue/Celery path. Phase 3C.2 status/attempt UX is still pending.
 
 **2026-09-04 revision (Phase E Task 14):** Editable workspace settings forms. See §4.5.
 
@@ -17,7 +19,7 @@
 
 ## 1. Purpose
 
-The frontend delivers a modern, workspace-oriented SaaS experience for affiliate automation. It is a **client application** — business logic stays in the FastAPI backend.
+The frontend delivers a workspace-oriented Product A MVP experience for affiliate operations. It is a **client application** — business logic stays in the FastAPI backend.
 
 Responsibilities:
 
@@ -145,7 +147,7 @@ Generation payload includes `content_type`, `tone`, `language`, `length`, `instr
 | `useQueuePublishingOperations` | Sequential bulk publish + client failure map |
 | `QueueOperationalStats` | Queued / scheduled / publishing / published today / failed today |
 | `QueueDetailsDrawer` | Post preview, channel, schedule, actions |
-| `QueueSchedulingDialog` | Channel picker + datetime + presets → `PATCH /queues/{id}` |
+| `QueueSchedulingDialog` | Provider-aware destination picker + datetime + presets → `PATCH /queues/{id}`; mixed-provider bulk scheduling is guarded |
 | `queue/lib/schemas.ts` | Form-domain Zod: `queueSchedulingSchema`, `channelAssignmentSchema` |
 
 `publishing` and `failedToday` KPIs are **client-derived** during publish operations; they are not backend queue statuses.
@@ -163,7 +165,7 @@ Extends the existing React Hook Form + Zod + `zodResolver` pattern (`LoginForm`,
 | `profileSchema` | `features/auth/lib/schemas.ts` | Self-service `full_name` / `email`; submit → `PATCH /auth/me` |
 | Message helpers | `lib/validation/messages.ts` | `requiredField`, `invalidUuid`, `invalidDateTime` — not i18n. Queue and settings schemas use them; Login/Channels not retrofitted. |
 
-`QueueSchedulingDialog` uses `register()`, preset `setValue(..., { shouldValidate: true })`, and `handleSubmit`. Submit mapping remains `channelId` → `channel_id`, `scheduledAt` → `scheduled_at` in `QueueView`. Frontend Zod is UX/input validation; backend Pydantic remains authoritative.
+`QueueSchedulingDialog` uses `register()`, preset `setValue(..., { shouldValidate: true })`, and `handleSubmit`. Submit mapping converts the provider-aware destination to `provider`, `channel_id` or `facebook_page_id`, plus `scheduled_at` in `QueueView`. Frontend Zod is UX/input validation; backend Pydantic remains authoritative.
 
 Discovery filter drafts still use the hand-written `validateDiscoveryDraft` (not Zod).
 
@@ -190,7 +192,7 @@ api-client attaches X-Workspace-Id on tenant paths only
 | `services/api-client.ts` | Interceptor: attach header on `/dashboard`, `/queues`, `/channels`, `/workspace-settings`; strip elsewhere |
 | `features/*/hooks` | Dashboard, queue, channels, settings hooks gate on `useActiveWorkspaceId()` |
 
-**Workspace-scoped in the frontend:** Dashboard, queue list/detail/SSE, channels, settings.
+**Workspace-scoped in the frontend:** Dashboard, queue list/detail/SSE, Telegram channels, Facebook Pages, settings.
 
 **Global in the frontend:** Products catalog, Discovery (including image search), profile (`/profile`, `PATCH /auth/me`).
 

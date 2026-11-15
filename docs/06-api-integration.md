@@ -1,7 +1,7 @@
 # API Integration Guide
 
-**Document Version:** 2.14  
-**Last Updated:** 2026-09-06
+**Document Version:** 2.15
+**Last Updated:** 2026-11-15
 
 **2026-09-06 revision (Product B removal):** The affiliate-network layer is gone. There are no `/affiliates`, `/campaigns`, `/conversions`, `/clicks`, or `/analytics` routes. Registration creates `user` (not `affiliate`). Product A catalog fields `affiliate_url` and `commission_rate` remain. Historical notes below that describe Product B APIs are superseded by this revision.
 
@@ -32,6 +32,21 @@
 **Frontend env:** `NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1`
 
 OpenAPI: `/docs` · ReDoc: `/redoc` · Health: `GET /health` · Readiness: `GET /ready` · Worker health: `GET /worker/health`
+
+> **Current Product A contract:** The current implementation is a single-operator MVP. PRs #7–#11 are merged. The route and schema tables below are authoritative for the implemented API; older Product B sections are retained only as historical notes and are not available endpoints. Current publish providers are `telegram` and `facebook`; Facebook Page credentials are managed server-side and are never returned.
+
+### Current provider-aware routes
+
+| Area | Implemented routes | Contract notes |
+| --- | --- | --- |
+| Recommendations | `GET /products/recommendations` | Authenticated deterministic ranking over the global catalog; filters and `top_n` are request parameters. |
+| Facebook Pages | `GET/POST /facebook/pages`, `POST /facebook/pages/{id}/validate`, `PATCH /facebook/pages/{id}`, `DELETE /facebook/pages/{id}` | Workspace-scoped; creation/replacement is owner/admin protected; only sanitized metadata is returned. |
+| Queue | `GET/POST/PATCH/DELETE /queues*`, `GET /queues/{id}/attempts`, `POST /queues/{id}/publish` | Queue payloads include `provider`, `channel_id` for Telegram, or `facebook_page_id` for Facebook. `confirm_ambiguous=true` is explicit and never bypasses an active attempt. |
+| Queue events | `GET /queues/stream` | Authenticated workspace-scoped SSE with polling fallback in the frontend. |
+| Telegram setup | `GET/POST/PUT/DELETE /channels*`, `POST /channels/{id}/refresh-permissions` | Workspace-scoped channel management; refresh checks permissions and never publishes. |
+| Workspace settings | `GET/PATCH /workspace-settings` | Workspace-scoped; `default_discovery_mode` supports `recommended`. |
+
+Affiliate CTA resolution is `button_url` first, then `Product.affiliate_url`; `Product.product_url` is never substituted. Missing affiliate URLs are represented as missing data and do not invent a marketing destination.
 
 ---
 
@@ -108,7 +123,7 @@ There is **no workspace selector UI** in this milestone. `NEXT_PUBLIC_WORKSPACE_
 
 ### Register
 
-`POST /auth/register` — public, creates `affiliate` only. Not exposed in frontend UI.
+`POST /auth/register` — public backend route, creates a `user` account. It is not exposed in the current frontend UI; the internal MVP uses the operator bootstrap/login flow.
 
 ### Current user
 
@@ -234,6 +249,10 @@ Product is a **global shared catalog**. There is no `products.workspace_id`, `us
 | Failed today KPI | `lib/operations.ts` (`resolveQueueFailure`, `getQueueOperationalStats`) | Connected | Backend-owned via `queue_publish_attempts` (`error_code`, including `dead_letter`); `resolveQueueFailure` prefers `item.last_attempt` / `item.failure_reason` and falls back to the client failure map only until enrichment for that row resolves |
 | Real-time status stream | `queue` feature SSE client + `useQueueRealtimeInvalidation` | Connected (Phase A.2 + Task 9) | Authenticated `GET /api/v1/queues/stream` (SSE) **requires** JWT and `X-Workspace-Id`. Events: `queue.status_changed`, `queue.deleted`, `queue.attempt_*`. The subscriber callback delivers only events whose `workspace_id` matches the active workspace. Redis channel remains `queue-events`. Debounced TanStack Query invalidation (never cache patch). Adaptive polling fallback 5s→30s when SSE unavailable. No `dashboard.stats_updated`. Frontend sends workspace header via fetch-based SSE client (`useQueueEventStream`). Unauthenticated or missing workspace → **401** / client-side error (no stream). |
 
+**Queue request contract:** `POST /queues` and `PATCH /queues/{id}` accept `provider: telegram | facebook`. Telegram destinations use `channel_id`; Facebook destinations use `facebook_page_id`. A Facebook Page must belong to the active workspace and be active/validated. `image_url`, `content`, `button_text`, and `button_url` are provider-neutral payload fields. For CTA safety, `button_url` wins, then `Product.affiliate_url`; `Product.product_url` is never substituted.
+
+`POST /queues/{id}/publish` publishes only the already configured destination; selecting a destination or creating a queue item does not publish. `confirm_ambiguous=true` is accepted only for an existing ambiguous Facebook attempt after the backend's active-attempt guard permits it. It does not prove that Meta did not accept the original request.
+
 Queue and channel HTTP routes require `Authorization: Bearer <access_token>` and `X-Workspace-Id`. Missing/invalid/unknown/non-member workspace → **403**. Unauthenticated → **401**. Cross-workspace queue or channel ids → **404** (existence is not leaked). `workspace_id` is taken from the header, never from the JSON body. `Campaign.workspace_id`, `QueueItem.workspace_id`, and `TelegramChannel.workspace_id` are **NOT NULL** with `ON DELETE RESTRICT` (migration `013`; upgrade aborts if NULL tenant rows remain). Attaching or publishing a queue item to a channel in another workspace → **404** (`Channel not found`). `GET /queues/{id}/attempts` authorizes the parent `QueueItem` in the active workspace first; attempts have no `workspace_id` column. `UserRole.ADMIN` may name any existing workspace without membership, still scoped to that header. Celery `process_publish_queue` / `publish_queue_item_task` remain workspace-agnostic.
 
 #### Publish attempt schemas (Phase A.1 backend)
@@ -243,13 +262,13 @@ Queue and channel HTTP routes require `Authorization: Bearer <access_token>` and
 | Field | Type | Notes |
 | --- | --- | --- |
 | `attempt_number` | `int` | Per-queue, one-based |
-| `status` | `str` | `started` \| `succeeded` \| `failed` |
-| `provider` | `str` | `telegram` for this milestone |
+| `status` | `str` | `started` \| `succeeded` \| `failed` \| `ambiguous` |
+| `provider` | `str` | `telegram` or `facebook` |
 | `occurred_at` | `datetime` | Attempt start time |
 | `error_code` | `str \| null` | Set on failure; terminal exhaustion uses `dead_letter` |
 | `error_message` | `str \| null` | Human-readable detail |
 | `provider_chat_id` | `str \| null` | Set on success |
-| `provider_message_id` | `int \| null` | Set on success |
+| `provider_message_id` | `int \| null` | Set on Telegram success; Facebook uses the string `provider_message_ref` |
 
 **`QueuePublishAttemptListResponse`:** `{ queue_id, items: QueuePublishAttemptRead[], total }`
 
@@ -260,10 +279,10 @@ Queue and channel HTTP routes require `Authorization: Bearer <access_token>` and
 | Field | Type | Notes |
 | --- | --- | --- |
 | `last_attempt` | `QueuePublishAttemptRead \| null` | Latest attempt row |
-| `failure_reason` | `str \| null` | Latest attempt `error_message` when status is `failed` |
+| `failure_reason` | `str \| null` | Latest attempt `error_message` when status is `failed` or `ambiguous` |
 | `retry_count` | `int` | Latest `attempt_number` (0 when never attempted) |
 
-### 4.7 Telegram channels
+### 4.7 Telegram channels and Facebook Pages
 
 | Endpoint | Frontend module | Status | Types / notes |
 | --- | --- | --- | --- |
@@ -272,7 +291,7 @@ Queue and channel HTTP routes require `Authorization: Bearer <access_token>` and
 | `PUT /channels/{id}` | `channels.api.ts` | Connected | Active toggle + metadata |
 | `DELETE /channels/{id}` | — | Backend only | Not exposed in Channels UI |
 
-Channel routes require `X-Workspace-Id` with the same membership/ADMIN rules as queues. Create assigns `TelegramChannel.workspace_id` from the header. `workspace_id` is **NOT NULL** (`ON DELETE RESTRICT`, migration `013`). `telegram_channel_id` remains **globally unique**.
+Channel routes require `X-Workspace-Id` with the same membership/ADMIN rules as queues. Create assigns `TelegramChannel.workspace_id` from the header. `workspace_id` is **NOT NULL** (`ON DELETE RESTRICT`, migration `013`). `telegram_channel_id` remains **globally unique**. Facebook Page routes use the same workspace boundary; a Page must be active and validated before it can be selected for publishing. Page access tokens are encrypted at rest and never returned.
 
 ### 4.8 Affiliates, campaigns, conversions
 
@@ -447,9 +466,9 @@ Migration **`016_add_workspace_settings`** revises **`015`**. Additive table onl
 | **Product details drawer** | `GET /products/{id}` (from list) | `image_url`, `gallery_images`, `score`, `affiliate_url` |
 | **AI Studio** | `POST /ai-content/generate` | `content`, `provider`, `content_type`, `tone`, `language` |
 | **Queue KPI cards** | `GET /queues` + enrichment `GET /queues/{id}` + client ops | Status counts; failed-today resolves from backend attempt data first, client map as short-lived fallback |
-| **Queue table/drawer** | `GET /queues`, `GET /queues/{id}`, `GET /queues/{id}/attempts`, `PATCH`, `POST publish` | `content`, `scheduled_at`, `channel_id`, `status`; attempt summary/history read from backend truth; drawer includes read-only attempt-history list |
-| **Schedule dialog** | `PATCH /queues/{id}` | `scheduled_at`, `channel_id`, `status: scheduled` |
-| **Channels** | `GET/POST/PUT /channels` | `bot_permission_status`, `can_post_messages`, `is_active` |
+| **Queue table/drawer** | `GET /queues`, `GET /queues/{id}`, `GET /queues/{id}/attempts`, `PATCH`, `POST publish` | `content`, `scheduled_at`, `provider`, `channel_id` or `facebook_page_id`, `status`; attempt summary/history read from backend truth |
+| **Schedule dialog** | `PATCH /queues/{id}` | `scheduled_at`, `provider`, and the provider-specific destination; mixed-provider bulk scheduling is guarded |
+| **Channels / Pages** | `GET/POST/PUT /channels`, `GET/POST/PATCH/DELETE /facebook/pages` | Telegram permission status and active state; Facebook Page name, active/validated state, and `has_access_token` only |
 | **Dashboard** | `GET /dashboard` | Product counts remain global (shared catalog); queue/channel aggregates and queue activity are workspace-scoped via `X-Workspace-Id` |
 | **Analytics** | `GET /analytics/overview`, `GET /analytics/campaigns/{id}/funnel` | Workspace-scoped click/conversion KPIs and `by_day`; funnel uses `GET /campaigns/active` for the selector |
 | **Settings** | `GET/PATCH /workspace-settings`, `GET /ready` | Workspace prefs + connection booleans; `/ready` is db/redis only |
@@ -459,10 +478,11 @@ Migration **`016_add_workspace_settings`** revises **`015`**. Additive table onl
 
 ## 6. Enums (must match backend)
 
-- **User role:** `admin`, `affiliate`, `advertiser`
+- **User role:** `admin`, `user`
 - **Product status:** `draft`, `active`, `inactive`, `archived`
 - **Queue status:** `draft`, `queued`, `scheduled`, `published`, `failed`
-- **Publish attempt status** (attempt-scoped only): `started`, `succeeded`, `failed`
+- **Publish attempt status** (attempt-scoped only): `started`, `succeeded`, `failed`, `ambiguous`
+- **Queue provider:** `telegram`, `facebook`
 - **AI provider:** `openai`, `gemini`
 - **Content type:** `social`, `description`, `telegram`, `facebook`, `blog`, `email`
 - **Tone:** `professional`, `friendly`, `luxury`, `technical`, `urgent`, `minimal`, `persuasive`, `funny`
@@ -535,7 +555,7 @@ useQuery({
 
 ## 9. Related Documents
 
-- [02-frontend-architecture.md](./02-frontend-architecture.md)
+- [02-Frontend-Architecture.md](./02-Frontend-Architecture.md)
 - [08-implementation-roadmap.md](./08-implementation-roadmap.md) — Phase roadmap (Phase E Tasks 9–14 complete; payouts remain open)
 - [planning/phase-a2-realtime-operations-design.md](./planning/phase-a2-realtime-operations-design.md) — Phase A.2 SSE design + closeout
 - [planning/phase-c-prime-retry-hardening-design.md](./planning/phase-c-prime-retry-hardening-design.md) — Phase C' retry ownership + closeout
