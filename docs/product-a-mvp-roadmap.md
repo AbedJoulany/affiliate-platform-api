@@ -1,10 +1,10 @@
 # Product A MVP — Implementation Roadmap
 
-> **Document status:** Canonical active roadmap. Updated 2026-11-15 after PR #11.
+> **Document status:** Canonical active roadmap. Updated 2026-11-15 after PR #13 and the PR #12 documentation synchronization.
 > **Repository:** `AbedJoulany/affiliate-platform-api`
-> **Development baseline:** `main` at PR #11 merge commit `069c7192fd904cbc26248b53be582a9fcfb774c3`.
+> **Development baseline:** `main` at PR #13 merge commit `54138d4eb55e537fccdde70ce305c87350568d22`.
 > **Verification source:** merged PRs and CI are implementation evidence; live Telegram failure/retry and live Facebook publishing remain separate acceptance gates.
-> **Next phase:** Phase 3C.2 — Queue Display & Safe Ambiguous Retry.
+> **Next phase:** Phase 3C.3 — Controlled Live Publishing Validation.
 
 ### Naming convention
 
@@ -12,7 +12,7 @@
 - **Roadmap Phase 0:** partially verified; controlled live failure/retry remains pending.
 - **Roadmap Phase 1:** implemented and merged via PR #7.
 - **Roadmap Phase 2:** implemented and merged via PR #8; public onboarding is deferred.
-- **Roadmap Phase 3:** 3A, 3B, and 3C.1 implemented via PRs #9–#11; 3C.2 is next and 3C.3 remains pending.
+- **Roadmap Phase 3:** 3A, 3B, and 3C.1 implemented via PRs #9–#11; Phase 3C.2 implemented and CI-verified via PR #13; Phase 3C.3 is next.
 - **Roadmap Phases 4–11:** planned or partially founded as described below.
 - A merged PR and green mocked CI do **not** substitute for a live provider test.
 
@@ -27,8 +27,11 @@
 | Facebook Page Connection | Implemented | PR #9; migration `018`; real Page connection operator-verified |
 | Facebook Publishing Backend | Implemented | PR #10; migration `019`; live Facebook publishing still pending |
 | Facebook Destination Selection | Implemented | PR #11; provider-aware AI Studio and Queue frontend |
+| Queue Display & Safe Ambiguous Retry | Implemented & CI Verified | PR #13; provider-aware destination/attempt display, explicit ambiguous retry confirmation, and duplicate-click protection |
 | Phase 0 live Telegram verification | Partially verified | Manual publish, image/link delivery, and scheduling verified; failure/retry pending |
 | PR #11 CI | Passed | Backend, frontend, and E2E checks completed successfully |
+| PR #12 documentation synchronization | Completed | Documentation-only roadmap synchronization |
+| PR #13 CI | Passed | Backend 423, frontend 220 Vitest, Playwright 13; TypeScript, lint, production build, and Ruff passed |
 
 ---
 
@@ -95,7 +98,7 @@ Retry
 
 ## 3. المراحل المتبقية
 
-> الترقيم التالي يخص **Roadmap** فقط؛ لا تخلطه مع اسم مرحلة Manual Telegram MVP السابقة. حالة Phase 0: partially verified. حالة Phase 1 وPhase 2 وPhase 3C.1: implemented; Phase 3C.2 هو التالي، وPhase 3C.3 ما زال pending.
+> الترقيم التالي يخص **Roadmap** فقط؛ لا تخلطه مع اسم مرحلة Manual Telegram MVP السابقة. حالة Phase 0: partially verified. حالة Phase 1 وPhase 2 وPhase 3C.1 وPhase 3C.2: implemented؛ Phase 3C.2 CI verified، وPhase 3C.3 هو التالي.
 
 ```text
 Phase 0  — Live Manual Verification
@@ -448,15 +451,26 @@ updated_at
 
 ## Phase 3C.2 — Queue Display & Safe Ambiguous Retry
 
-المرحلة التالية: عرض provider والوجهة والنتيجة الخاصة بكل provider، تمييز
-`failed` عن `ambiguous`، وإجبار المشغل على فحص Facebook والتأكيد الصريح قبل
-إعادة محاولة نتيجة غير مؤكدة. لا توجد إعادة تلقائية لمحاولات Facebook الغامضة.
+**Status: Implemented & CI Verified via PR #13.**
+
+يشمل التنفيذ عرض provider والوجهة والنتيجة الخاصة بكل provider في Queue، وإظهار
+سجل محاولات النشر، وتمييز `failed` عن `ambiguous`، وإجبار المشغل على فحص Facebook
+والتأكيد الصريح قبل إعادة محاولة نتيجة غير مؤكدة. كما يشمل حماية النقر المكرر،
+والتوافق مع Queue القديمة الخاصة بـ Telegram، والحفاظ على أولوية affiliate URL.
+لا توجد إعادة تلقائية لمحاولات Facebook الغامضة.
+
+**CI evidence:** Backend: 423 tests passed; frontend: 220 Vitest tests passed;
+Playwright: 13 tests passed; TypeScript, lint, production build, and Ruff passed.
+هذه النتائج لا تثبت live Facebook publishing.
 
 ## Phase 3C.3 — Controlled Live Publishing Validation
 
-التحقق اليدوي المنفصل يجب أن يغطي Facebook text/photo/scheduled publishing،
-حفظ Page post reference، affiliate CTA، وحالات الفشل/الغموض، إضافة إلى إكمال
-Telegram failure/retry verification. لا يُنشر فعلياً دون تفويض صريح.
+**Next planned phase.** التحقق اليدوي المنفصل يجب أن يغطي Facebook text publishing،
+وFacebook photo publishing مع caption، وFacebook scheduled publishing، والتحقق
+من نتائج provider الفعلية وحفظ Page post reference، affiliate CTA، وحالات
+الفشل/الغموض. يجب أن يتطلب أي ambiguous retry تحقق المشغل الصريح قبل التأكيد،
+مع الحفاظ على سلوك Telegram الحالي وإكمال Telegram failure/retry verification.
+لا يُنشر فعلياً دون تفويض صريح.
 
 ## Queue
 
@@ -1296,7 +1310,7 @@ self-service workspace creation, and SaaS onboarding are explicitly deferred.
 ## Phase 3 — Facebook
 
 **Status:** Phase 3A, 3B, and 3C.1 implemented and merged via PRs #9–#11.
-Phase 3C.2 is next; Phase 3C.3 is pending controlled live validation.
+Phase 3C.2 is implemented and CI verified via PR #13; Phase 3C.3 is next for controlled live validation.
 
 **Goal:** إضافة Facebook إلى نفس Queue.
 
@@ -1304,9 +1318,8 @@ Phase 3C.2 is next; Phase 3C.3 is pending controlled live validation.
 validation, text/photo publisher, provider-aware Queue/Celery integration,
 frontend destination selection, and automated tests.
 
-**Remaining:** provider-specific Queue display, safe ambiguous retry UX, and
-controlled live Facebook/Telegram validation. OAuth and Facebook Login remain
-out of scope.
+**Remaining:** controlled live Facebook/Telegram validation. OAuth and Facebook
+Login remain out of scope.
 
 **Completion target:** Queue واحدة تنشر إلى Telegram أو Facebook، مع استكمال عرض الحالات وإعادة المحاولة الآمنة والتحقق الحي.
 
@@ -1467,7 +1480,7 @@ Deduplication
 [ ] Images work
 [ ] Affiliate URL works
 [ ] Failed Facebook posts are visible
-[ ] Facebook retry is safe for definitive failures; ambiguous retry requires explicit confirmation
+[x] Facebook retry is safe for definitive failures; ambiguous retry requires explicit confirmation
 [ ] Facebook publishing is idempotent
 [ ] Integration tests pass
 [ ] Manual live Facebook verification passes

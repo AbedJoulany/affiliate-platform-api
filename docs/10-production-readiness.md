@@ -3,7 +3,7 @@
 **Document Version:** 3.2
 **Last Updated:** 2026-11-15
 
-> **Current baseline:** PRs #7–#11 are merged. The Product A MVP now includes provider-aware Telegram/Facebook Queue publishing, migration 019, server-side encrypted Facebook Page tokens, and frontend destination selection. Phase 0 controlled Telegram failure/retry verification and Phase 3C.3 live Facebook validation remain pending. Use [product-a-mvp-roadmap.md](./product-a-mvp-roadmap.md) for canonical phase status.
+> **Current baseline:** PRs #7–#13 are merged. The Product A MVP now includes provider-aware Telegram/Facebook Queue publishing, migration 019, server-side encrypted Facebook Page tokens, frontend destination selection, and Phase 3C.2 provider-aware Queue display with safe ambiguous retry UX. Phase 0 controlled Telegram failure/retry verification and Phase 3C.3 live Facebook validation remain pending. Use [product-a-mvp-roadmap.md](./product-a-mvp-roadmap.md) for canonical phase status.
 
 **2026-09-04 revision (CI hardening):** GitHub Actions Ruff step is `ruff check .` on first-party Python (vendored `iop/` excluded). Playwright smoke is job `e2e` (API-mocked; not a required branch-protection check yet). See §3, §9.5.
 
