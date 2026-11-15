@@ -10,6 +10,7 @@ import { PageContainer, PageHeader } from "@/components/layout/page";
 import { Button } from "@/components/ui/primitives";
 import { getApiErrorMessage } from "@/services/api-client";
 import { useChannels, useFacebookPages } from "@/features/channels/hooks/useChannels";
+import type { FacebookPage } from "@/features/channels/types/api";
 import { useProducts } from "@/features/products/hooks/useProducts";
 import { useActiveWorkspaceId } from "@/lib/workspace";
 import { getQueueOperationalStats } from "../lib/operations";
@@ -22,6 +23,7 @@ import {
   useQueueWorkspaceState,
   useUpdateQueueItem,
 } from "../hooks/useQueue";
+import type { PublishOptions } from "../hooks/useQueue";
 import { useQueueRealtimeInvalidation } from "../hooks/useQueueRealtimeInvalidation";
 import { QueueRealtimePollingContext } from "../hooks/QueueRealtimePollingContext";
 import type { QueueEventStreamStatus } from "../hooks/useQueueEventStream";
@@ -107,6 +109,13 @@ function QueueViewBody({
     () => new Map((channels.data?.items ?? []).map((channel) => [channel.id, channel])),
     [channels.data?.items],
   );
+  const facebookPagesById = useMemo(
+    () =>
+      new Map(
+        (facebookPages.data?.items ?? []).map((page: FacebookPage) => [page.id, page]),
+      ),
+    [facebookPages.data?.items],
+  );
   const stats = useMemo(
     () =>
       getQueueOperationalStats(
@@ -165,7 +174,10 @@ function QueueViewBody({
     });
   };
 
-  const publishItems = async (selected: QueueItem[]) => {
+  const publishItems = async (
+    selected: QueueItem[],
+    options: PublishOptions = {},
+  ) => {
     if (selected.length === 0) return;
     if (
       selected.some(
@@ -184,7 +196,10 @@ function QueueViewBody({
       });
       return;
     }
-    const result = await publishing.publishItems(selected.map((item) => item.id));
+    const result = await publishing.publishItems(
+      selected.map((item) => item.id),
+      options,
+    );
     if (result.conflicts > 0 && result.published === 0 && result.failed === 0) {
       setToast({
         tone: "error",
@@ -278,8 +293,12 @@ function QueueViewBody({
     }
   };
 
-  const retryFailedItem = async (item: QueueItem) => {
+  const retryFailedItem = async (item: QueueItem, options: PublishOptions = {}) => {
     try {
+      if (options.confirmAmbiguous) {
+        await publishItems([item], options);
+        return;
+      }
       const next = nextStatusAfterFailedRetry(item);
       const updated = await updateQueue.mutateAsync({ id: item.id, input: next });
       if (updated.status === "queued") {
@@ -448,6 +467,7 @@ function QueueViewBody({
               density={workspace.density}
               productsById={productsById}
               channelsById={channelsById}
+              facebookPagesById={facebookPagesById}
               publishingIds={publishing.publishingIdSet}
               failures={publishing.failures}
               onToggle={workspace.toggle}
@@ -506,12 +526,17 @@ function QueueViewBody({
         item={activePost}
         product={activeProduct}
         channel={activeChannel}
+        facebookPage={
+          activePost?.facebook_page_id
+            ? facebookPagesById.get(activePost.facebook_page_id) ?? null
+            : null
+        }
         publishing={Boolean(activePost && publishing.publishingIdSet.has(activePost.id))}
         clientFailure={activePost ? publishing.failures[activePost.id] : undefined}
         open={activePost != null}
         onClose={() => setActivePostId(null)}
         onPublish={(item) => void publishItems([item])}
-        onRetry={(item) => void retryFailedItem(item)}
+        onRetry={(item, options) => void retryFailedItem(item, options)}
         onSchedule={(item) => openSchedule([item])}
         onOpenAi={openAi}
       />

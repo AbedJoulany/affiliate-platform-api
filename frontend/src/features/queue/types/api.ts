@@ -92,6 +92,7 @@ export type QueueHealthStatus =
   | "missing_channel"
   | "publishing"
   | "published"
+  | "ambiguous"
   | "error";
 
 export type QueueWorkspaceSort =

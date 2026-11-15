@@ -1,13 +1,13 @@
 "use client";
 
 import Image from "next/image";
-import { Package, Send } from "lucide-react";
+import { Globe2, Package, Send } from "lucide-react";
 import {
   ProductImageHoverPreview,
   useProductImageHover,
 } from "@/components/common/ProductImageHoverPreview";
 import { Badge, Button } from "@/components/ui/primitives";
-import type { Channel } from "@/features/channels/types/api";
+import type { Channel, FacebookPage } from "@/features/channels/types/api";
 import type { Product } from "@/features/products/types/api";
 import {
   formatQueueSchedule,
@@ -21,6 +21,7 @@ import type {
 } from "../types/api";
 import { QueueActionsMenu } from "./QueueActionsMenu";
 import { QueueHealthBadge } from "./QueueHealthBadge";
+import { getQueueDestination, isAmbiguousFacebookAttempt } from "../lib/destination";
 
 export function QueueTable({
   items,
@@ -29,6 +30,7 @@ export function QueueTable({
   density,
   productsById,
   channelsById,
+  facebookPagesById,
   publishingIds,
   failures,
   onToggle,
@@ -47,6 +49,7 @@ export function QueueTable({
   density: QueueTableDensity;
   productsById: ReadonlyMap<string, Product>;
   channelsById: ReadonlyMap<string, Channel>;
+  facebookPagesById: ReadonlyMap<string, FacebookPage>;
   publishingIds: ReadonlySet<string>;
   failures: Readonly<Record<string, QueuePublishFailure>>;
   onToggle: (id: string) => void;
@@ -87,6 +90,9 @@ export function QueueTable({
           {items.map((item) => {
             const product = item.product_id ? productsById.get(item.product_id) : undefined;
             const channel = item.channel_id ? channelsById.get(item.channel_id) : undefined;
+            const page = item.facebook_page_id
+              ? facebookPagesById.get(item.facebook_page_id)
+              : undefined;
             const publishing = publishingIds.has(item.id);
             const failure = resolveQueueFailure(item, failures[item.id]);
             const health = getQueueHealth(item, { publishing, failure });
@@ -94,8 +100,9 @@ export function QueueTable({
             const imageUrl = item.image_url ?? product?.image_url ?? null;
             const title = item.title ?? product?.title ?? "منشور بدون عنوان";
             const selected = selectedIds.includes(item.id);
-            const originalUrl =
-              product?.affiliate_url ?? product?.product_url ?? item.button_url;
+            const originalUrl = item.button_url ?? product?.affiliate_url;
+            const destination = getQueueDestination(item, channel, page);
+            const ambiguous = isAmbiguousFacebookAttempt(item, item.last_attempt);
 
             return (
               <tr
@@ -171,14 +178,19 @@ export function QueueTable({
                   </div>
                 </td>
                 <td className={padding}>
-                  {channel ? (
+                  {destination.available ? (
                     <span className="inline-flex items-center gap-2 rounded-full bg-blue-500/10 px-2.5 py-1 text-xs text-blue-700 dark:text-blue-300">
-                      <Send className="size-3.5" />
-                      Telegram •{" "}
-                      {channel.title ?? channel.username ?? channel.telegram_channel_id}
+                      {destination.provider === "facebook" ? (
+                        <Globe2 className="size-3.5" />
+                      ) : (
+                        <Send className="size-3.5" />
+                      )}
+                      {destination.label} • {destination.name ?? destination.identity}
                     </span>
                   ) : (
-                    <Badge tone="warning">بدون قناة</Badge>
+                    <Badge tone="warning">
+                      {destination.label} • {destination.name ?? "الوجهة غير متاحة"}
+                    </Badge>
                   )}
                 </td>
                 <td className={padding} onClick={(event) => event.stopPropagation()}>
@@ -203,7 +215,17 @@ export function QueueTable({
                 </td>
                 <td className={padding} onClick={(event) => event.stopPropagation()}>
                   <div className="flex items-center gap-1.5">
-                    {item.status === "failed" ? (
+                    {ambiguous ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-8 px-2.5"
+                        disabled={publishing}
+                        onClick={() => onView(item)}
+                      >
+                        مراجعة النشر
+                      </Button>
+                    ) : item.status === "failed" ? (
                       <Button
                         type="button"
                         className="h-8 px-2.5"
@@ -254,6 +276,9 @@ function QueueStatusBadge({
   failed: boolean;
 }) {
   if (publishing) return <Badge tone="info">قيد النشر</Badge>;
+  if (isAmbiguousFacebookAttempt(item, item.last_attempt)) {
+    return <Badge tone="warning">غير مؤكد</Badge>;
+  }
   if (item.status === "failed" || failed) return <Badge tone="error">فشل</Badge>;
   if (item.status === "published") return <Badge tone="success">منشور</Badge>;
   if (item.status === "scheduled") return <Badge tone="info">مجدول</Badge>;

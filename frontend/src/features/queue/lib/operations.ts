@@ -2,14 +2,19 @@ import type {
   QueueHealthStatus,
   QueueItem,
   QueuePublishFailure,
+  QueueStatus,
 } from "../types/api";
+import { isAmbiguousFacebookAttempt } from "./destination";
 
 /** Map QueueRead attempt summary → UI failure shape. */
 export function failureFromQueueItem(
   item: QueueItem,
 ): QueuePublishFailure | undefined {
   const attempt = item.last_attempt;
-  if (attempt?.status === "failed") {
+  if (
+    attempt?.status === "failed" ||
+    (attempt?.status === "ambiguous" && isAmbiguousFacebookAttempt(item, attempt))
+  ) {
     return {
       message:
         item.failure_reason ??
@@ -46,6 +51,7 @@ export function getQueueHealth(
   },
 ): QueueHealthStatus {
   if (item.status === "published") return "published";
+  if (isAmbiguousFacebookAttempt(item, item.last_attempt)) return "ambiguous";
   if (item.status === "failed") return "error";
   if (context.publishing) return "publishing";
   if (context.failure) return "error";
@@ -150,8 +156,21 @@ const ATTEMPT_STATUS_LABELS: Record<string, string> = {
   started: "بدأ",
   succeeded: "نجح",
   failed: "فشل",
+  ambiguous: "غير مؤكد",
 };
 
 export function formatAttemptStatus(status: string): string {
   return ATTEMPT_STATUS_LABELS[status] ?? status;
+}
+
+const QUEUE_STATUS_LABELS: Record<QueueStatus, string> = {
+  draft: "مسودة",
+  queued: "في الانتظار",
+  scheduled: "مجدول",
+  published: "منشور",
+  failed: "فشل",
+};
+
+export function formatQueueStatus(status: QueueStatus): string {
+  return QUEUE_STATUS_LABELS[status] ?? status;
 }
