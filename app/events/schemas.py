@@ -78,7 +78,8 @@ class QueueAttemptSucceededData(BaseModel):
 
     queue_id: UUID
     attempt_number: int = Field(ge=1)
-    provider_message_id: int
+    provider: str = "telegram"
+    provider_message_id: str | int | None = None
 
 
 class QueueAttemptFailedData(BaseModel):

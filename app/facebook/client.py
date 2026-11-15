@@ -76,3 +76,67 @@ class FacebookGraphClient:
         if resolved_id != page_id:
             raise FacebookGraphError("Facebook returned a different Page ID", status_code=502)
         return FacebookPageIdentity(page_id=resolved_id, name=name[:255])
+
+    async def publish_feed(
+        self,
+        page_id: str,
+        access_token: str,
+        *,
+        message: str,
+        link: str | None = None,
+    ) -> str:
+        data = {"message": message}
+        if link:
+            data["link"] = link
+        payload = await self._post(page_id, access_token, data)
+        return self._post_id(payload)
+
+    async def publish_photo(
+        self,
+        page_id: str,
+        access_token: str,
+        *,
+        image_url: str,
+        caption: str,
+    ) -> str:
+        payload = await self._post(
+            f"{page_id}/photos",
+            access_token,
+            {"url": image_url, "caption": caption},
+        )
+        return self._post_id(payload)
+
+    async def _post(self, edge: str, access_token: str, data: dict[str, str]) -> dict:
+        url = (
+            f"{self.settings.facebook_graph_api_base_url.rstrip('/')}/"
+            f"{self.settings.facebook_graph_api_version.strip('/')}/{edge}"
+        )
+        headers = {"Authorization": f"Bearer {access_token}"}
+        try:
+            if self.http_client is not None:
+                response = await self.http_client.post(url, data=data, headers=headers)
+            else:
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    response = await client.post(url, data=data, headers=headers)
+        except httpx.TimeoutException as exc:
+            raise FacebookGraphError("Facebook publish request timed out", status_code=504) from exc
+        except httpx.RequestError as exc:
+            raise FacebookGraphError("Facebook publish request failed", status_code=502) from exc
+
+        if response.status_code == 429:
+            raise FacebookGraphError("Facebook Graph API rate limit reached", status_code=429)
+        if response.status_code in (401, 403):
+            raise FacebookGraphError("Facebook credentials lack publishing access", status_code=422)
+        if response.status_code >= 400:
+            raise FacebookGraphError("Facebook publishing failed", status_code=response.status_code)
+        try:
+            return response.json()
+        except (ValueError, TypeError) as exc:
+            raise FacebookGraphError("Facebook returned an invalid publish response") from exc
+
+    @staticmethod
+    def _post_id(payload: dict) -> str:
+        value = payload.get("post_id") or payload.get("id")
+        if not isinstance(value, (str, int)) or not str(value):
+            raise FacebookGraphError("Facebook returned no post ID")
+        return str(value)

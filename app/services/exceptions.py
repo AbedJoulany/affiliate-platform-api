@@ -50,6 +50,21 @@ class TelegramPublishError(ServiceError):
         self.retry_after = retry_after
 
 
+class FacebookPublishError(ServiceError):
+    """Sanitized Facebook publish error."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        http_status: int | None = None,
+        ambiguous: bool = False,
+    ) -> None:
+        super().__init__(message, status_code=502)
+        self.http_status = http_status
+        self.ambiguous = ambiguous
+
+
 class AliExpressAPIError(ServiceError):
     def __init__(self, message: str, *, code: str | int | None = None) -> None:
         super().__init__(message, status_code=502)

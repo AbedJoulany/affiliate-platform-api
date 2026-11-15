@@ -29,6 +29,7 @@ from app.core.model_mixins import TimestampMixin, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
     from app.models.channel import TelegramChannel
+    from app.models.facebook_page import FacebookPage
     from app.models.product import Product
     from app.models.workspace import Workspace
 
@@ -88,6 +89,19 @@ class QueueItem(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         nullable=True,
         index=True,
     )
+    provider: Mapped[str] = mapped_column(
+        String(16),
+        default="telegram",
+        server_default=text("'telegram'"),
+        nullable=False,
+        index=True,
+    )
+    facebook_page_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("facebook_pages.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     product_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("products.id", ondelete="SET NULL"),
@@ -106,6 +120,7 @@ class QueueItem(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     telegram_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
     channel: Mapped["TelegramChannel | None"] = relationship("TelegramChannel")
+    facebook_page: Mapped["FacebookPage | None"] = relationship("FacebookPage")
     product: Mapped["Product | None"] = relationship("Product")
     workspace: Mapped["Workspace"] = relationship(
         "Workspace",
@@ -136,11 +151,11 @@ class QueuePublishAttempt(Base, UUIDPrimaryKeyMixin, TimestampMixin):
             name="ck_queue_publish_attempts_attempt_number_positive",
         ),
         CheckConstraint(
-            "provider = 'telegram'",
-            name="ck_queue_publish_attempts_provider_telegram",
+            "provider IN ('telegram', 'facebook')",
+            name="ck_queue_publish_attempts_provider",
         ),
         CheckConstraint(
-            "status IN ('started', 'succeeded', 'failed')",
+            "status IN ('started', 'succeeded', 'failed', 'ambiguous')",
             name="ck_queue_publish_attempts_status",
         ),
         CheckConstraint(
@@ -158,14 +173,16 @@ class QueuePublishAttempt(Base, UUIDPrimaryKeyMixin, TimestampMixin):
             "status = 'succeeded' "
             "AND error_code IS NULL "
             "AND error_message IS NULL "
-            "AND provider_chat_id IS NOT NULL "
-            "AND provider_message_id IS NOT NULL"
+            "AND ((provider = 'telegram' AND provider_chat_id IS NOT NULL "
+            "AND provider_message_id IS NOT NULL) OR "
+            "(provider = 'facebook' AND provider_message_ref IS NOT NULL))"
             ") OR ("
-            "status = 'failed' "
+            "status IN ('failed', 'ambiguous') "
             "AND error_code IS NOT NULL "
             "AND error_message IS NOT NULL "
             "AND provider_chat_id IS NULL "
-            "AND provider_message_id IS NULL"
+            "AND provider_message_id IS NULL "
+            "AND provider_message_ref IS NULL"
             ")",
             name="ck_queue_publish_attempts_outcome_consistency",
         ),
@@ -214,6 +231,7 @@ class QueuePublishAttempt(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     provider_chat_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     provider_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    provider_message_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
     occurred_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

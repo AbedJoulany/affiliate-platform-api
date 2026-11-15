@@ -13,6 +13,8 @@ class QueueCreate(BaseModel):
     status: QueueStatus = QueueStatus.DRAFT
     scheduled_at: datetime | None = None
     channel_id: UUID | None = None
+    provider: str = Field(default="telegram", pattern="^(telegram|facebook)$")
+    facebook_page_id: UUID | None = None
     product_id: UUID | None = None
     image_url: HttpUrl | str | None = None
     button_text: str | None = Field(default=None, max_length=128)
@@ -41,6 +43,8 @@ class QueueUpdate(BaseModel):
     status: QueueStatus | None = None
     scheduled_at: datetime | None = None
     channel_id: UUID | None = None
+    provider: str | None = Field(default=None, pattern="^(telegram|facebook)$")
+    facebook_page_id: UUID | None = None
     product_id: UUID | None = None
     image_url: HttpUrl | str | None = None
     button_text: str | None = Field(default=None, max_length=128)
@@ -76,6 +80,7 @@ class QueuePublishAttemptRead(BaseModel):
     error_message: str | None = None
     provider_chat_id: str | None = None
     provider_message_id: int | None = None
+    provider_message_ref: str | None = None
 
 
 class QueuePublishAttemptListResponse(BaseModel):
@@ -92,6 +97,8 @@ class QueueRead(TimestampSchema):
     scheduled_at: datetime | None
     published_at: datetime | None
     channel_id: UUID | None
+    provider: str
+    facebook_page_id: UUID | None
     product_id: UUID | None
     image_url: str | None
     button_text: str | None
@@ -109,7 +116,10 @@ class QueueListResponse(PaginatedResponse):
 
 class PublishQueueResponse(BaseModel):
     queue_id: UUID
-    telegram_message_id: int
-    chat_id: str
+    provider: str = "telegram"
+    telegram_message_id: int | None = None
+    provider_message_ref: str | None = None
+    chat_id: str | None = None
+    destination_id: str | None = None
     message_type: str
     published_at: datetime
