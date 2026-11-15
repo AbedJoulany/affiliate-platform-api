@@ -1,38 +1,44 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Send } from "lucide-react";
 import { useForm, type Resolver } from "react-hook-form";
-import { Button, Input, Select } from "@/components/ui/primitives";
-import type { Channel } from "@/features/channels/types/api";
+import { Button, Input } from "@/components/ui/primitives";
+import type { Channel, FacebookPage } from "@/features/channels/types/api";
 import { getSchedulePreset } from "../lib/operations";
 import {
   queueSchedulingSchema,
   type QueueSchedulingFormValues,
 } from "../lib/schemas";
+import {
+  PublishingDestinationSelector,
+  type DestinationSelection,
+} from "./PublishingDestinationSelector";
 
 /** Form working values: both fields are always present in the UI. */
 type QueueSchedulingFormFields = {
   intent: QueueSchedulingFormValues["intent"];
-  channelId: string;
+  destinationId: string;
   scheduledAt: string;
 };
 
 export type QueueScheduleSubmitValues = Extract<
   QueueSchedulingFormValues,
   { intent: "schedule" }
->;
+> & { destination: DestinationSelection };
 export type QueuePublishNowSubmitValues = Extract<
   QueueSchedulingFormValues,
   { intent: "publish_now" }
->;
+> & { destination: DestinationSelection };
 
 export function QueueSchedulingDialog({
   open,
   itemCount,
   defaultValues,
   channels,
+  facebookPages,
+  preserveDestinations = false,
   busy,
   onSchedule,
   onPublishNow,
@@ -40,18 +46,24 @@ export function QueueSchedulingDialog({
 }: {
   open: boolean;
   itemCount: number;
-  defaultValues: { channelId: string; scheduledAt: string };
+  defaultValues: { destination: DestinationSelection; scheduledAt: string };
   channels: Channel[];
+  facebookPages: FacebookPage[];
+  preserveDestinations?: boolean;
   busy: boolean;
   onSchedule: (values: QueueScheduleSubmitValues) => void;
   onPublishNow: (values: QueuePublishNowSubmitValues) => void;
   onClose: () => void;
 }) {
+  const [destination, setDestination] = useState<DestinationSelection>(
+    defaultValues.destination,
+  );
   const {
     register,
     handleSubmit,
     reset,
     setValue,
+    trigger,
     watch,
     formState: { errors },
   } = useForm<QueueSchedulingFormFields, unknown, QueueSchedulingFormValues>({
@@ -62,7 +74,8 @@ export function QueueSchedulingDialog({
     >,
     defaultValues: {
       intent: "schedule",
-      channelId: defaultValues.channelId,
+      destinationId:
+        defaultValues.destination.channelId ?? defaultValues.destination.facebookPageId ?? "",
       scheduledAt: defaultValues.scheduledAt,
     },
     mode: "onTouched",
@@ -72,12 +85,14 @@ export function QueueSchedulingDialog({
     if (!open) return;
     reset({
       intent: "schedule",
-      channelId: defaultValues.channelId,
+      destinationId:
+        defaultValues.destination.channelId ?? defaultValues.destination.facebookPageId ?? "",
       scheduledAt: defaultValues.scheduledAt,
     });
-  }, [open, defaultValues.channelId, defaultValues.scheduledAt, reset]);
+    setDestination(defaultValues.destination);
+  }, [open, defaultValues.destination, defaultValues.scheduledAt, reset]);
 
-  const channelId = watch("channelId");
+  const destinationId = watch("destinationId");
   const scheduledAt = watch("scheduledAt");
 
   const setPreset = (preset: "hour" | "tomorrow_morning" | "tomorrow_evening") => {
@@ -91,10 +106,10 @@ export function QueueSchedulingDialog({
     setValue("intent", intent);
     void handleSubmit((values) => {
       if (values.intent === "schedule") {
-        onSchedule(values);
+        onSchedule({ ...values, destination });
         return;
       }
-      onPublishNow(values);
+      onPublishNow({ ...values, destination });
     })();
   };
 
@@ -121,28 +136,34 @@ export function QueueSchedulingDialog({
         </div>
 
         <div className="mt-5 space-y-4">
-          <div>
-            <label className="mb-1.5 block text-sm" htmlFor="queue-channel">
-              القناة المستهدفة
-            </label>
-            <Select
-              id="queue-channel"
-              aria-invalid={!!errors.channelId}
-              {...register("channelId")}
-            >
-              <option value="">اختر قناة Telegram</option>
-              {channels
-                .filter((channel) => channel.is_active && channel.can_post_messages)
-                .map((channel) => (
-                  <option key={channel.id} value={channel.id}>
-                    {channel.title ?? channel.username ?? channel.telegram_channel_id}
-                  </option>
-                ))}
-            </Select>
-            {errors.channelId && (
-              <p className="mt-1 text-sm text-destructive">{errors.channelId.message}</p>
-            )}
-          </div>
+          {preserveDestinations ? (
+            <p className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900 dark:bg-blue-950/30 dark:text-blue-200">
+              وجهات المنشورات المحددة محفوظة لكل عنصر ولن يتم استبدالها في العملية الجماعية.
+            </p>
+          ) : (
+            <div>
+              <input type="hidden" {...register("destinationId")} />
+              <PublishingDestinationSelector
+                value={destination}
+                channels={channels}
+                pages={facebookPages}
+                onBlur={() => void trigger("destinationId")}
+                onChange={(next) => {
+                  setDestination(next);
+                  setValue(
+                    "destinationId",
+                    next.channelId ?? next.facebookPageId ?? "",
+                    { shouldValidate: true, shouldTouch: true },
+                  );
+                }}
+              />
+              {errors.destinationId && (
+                <p className="mt-1 text-sm text-destructive">
+                  {errors.destinationId.message}
+                </p>
+              )}
+            </div>
+          )}
 
           <div>
             <p className="mb-1.5 text-sm">اختصارات الجدولة</p>
@@ -167,7 +188,7 @@ export function QueueSchedulingDialog({
               <Button
                 type="button"
                 variant="secondary"
-                disabled={!channelId || busy}
+                disabled={!destinationId || busy}
                 loading={busy}
                 onClick={() => submitWithIntent("publish_now")}
               >
@@ -199,7 +220,7 @@ export function QueueSchedulingDialog({
           </Button>
           <Button
             type="button"
-            disabled={!channelId || !scheduledAt || busy}
+            disabled={!destinationId || !scheduledAt || busy}
             loading={busy}
             onClick={() => submitWithIntent("schedule")}
           >

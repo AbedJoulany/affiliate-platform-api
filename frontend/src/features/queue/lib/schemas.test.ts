@@ -50,12 +50,12 @@ describe("queueSchedulingSchema", () => {
   it("accepts a valid schedule payload", () => {
     const result = queueSchedulingSchema.safeParse({
       intent: "schedule",
-      channelId: VALID_CHANNEL_ID,
+      destinationId: VALID_CHANNEL_ID,
       scheduledAt: FUTURE_LOCAL,
     });
     expect(result.success).toBe(true);
     if (result.success && result.data.intent === "schedule") {
-      expect(result.data.channelId).toBe(VALID_CHANNEL_ID);
+      expect(result.data.destinationId).toBe(VALID_CHANNEL_ID);
       expect(result.data.scheduledAt).toBe(FUTURE_LOCAL);
     }
   });
@@ -63,7 +63,7 @@ describe("queueSchedulingSchema", () => {
   it("rejects a schedule payload missing scheduledAt", () => {
     const result = queueSchedulingSchema.safeParse({
       intent: "schedule",
-      channelId: VALID_CHANNEL_ID,
+      destinationId: VALID_CHANNEL_ID,
     });
     expect(result.success).toBe(false);
   });
@@ -71,7 +71,7 @@ describe("queueSchedulingSchema", () => {
   it("rejects a past scheduledAt", () => {
     const result = queueSchedulingSchema.safeParse({
       intent: "schedule",
-      channelId: VALID_CHANNEL_ID,
+      destinationId: VALID_CHANNEL_ID,
       scheduledAt: PAST_LOCAL,
     });
     expect(result.success).toBe(false);
@@ -84,7 +84,7 @@ describe("queueSchedulingSchema", () => {
   it("rejects a malformed scheduledAt without throwing", () => {
     const result = queueSchedulingSchema.safeParse({
       intent: "schedule",
-      channelId: VALID_CHANNEL_ID,
+      destinationId: VALID_CHANNEL_ID,
       scheduledAt: "not-a-datetime",
     });
     expect(result.success).toBe(false);
@@ -93,7 +93,7 @@ describe("queueSchedulingSchema", () => {
   it("accepts a valid publish_now payload without scheduledAt", () => {
     const result = queueSchedulingSchema.safeParse({
       intent: "publish_now",
-      channelId: VALID_CHANNEL_ID,
+      destinationId: VALID_CHANNEL_ID,
     });
     expect(result.success).toBe(true);
     if (result.success) {
@@ -102,7 +102,7 @@ describe("queueSchedulingSchema", () => {
     }
   });
 
-  it("rejects missing channelId on both intents", () => {
+  it("rejects missing destinationId on both intents", () => {
     const schedule = queueSchedulingSchema.safeParse({
       intent: "schedule",
       scheduledAt: FUTURE_LOCAL,
@@ -114,10 +114,10 @@ describe("queueSchedulingSchema", () => {
     expect(publishNow.success).toBe(false);
   });
 
-  it("rejects an empty channelId", () => {
+  it("rejects an empty destinationId", () => {
     const result = queueSchedulingSchema.safeParse({
       intent: "publish_now",
-      channelId: "",
+      destinationId: "",
     });
     expect(result.success).toBe(false);
   });
@@ -125,7 +125,7 @@ describe("queueSchedulingSchema", () => {
   it("rejects a malformed channel UUID", () => {
     const result = queueSchedulingSchema.safeParse({
       intent: "schedule",
-      channelId: "not-a-uuid",
+      destinationId: "not-a-uuid",
       scheduledAt: FUTURE_LOCAL,
     });
     expect(result.success).toBe(false);
@@ -134,7 +134,7 @@ describe("queueSchedulingSchema", () => {
   it("rejects an invalid intent", () => {
     const result = queueSchedulingSchema.safeParse({
       intent: "queued",
-      channelId: VALID_CHANNEL_ID,
+      destinationId: VALID_CHANNEL_ID,
       scheduledAt: FUTURE_LOCAL,
     });
     expect(result.success).toBe(false);

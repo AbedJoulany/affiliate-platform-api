@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { PageContainer, PageHeader } from "@/components/layout/page";
+import { useChannels, useFacebookPages } from "@/features/channels/hooks/useChannels";
 import { useProduct } from "@/features/products/hooks/useProducts";
 import { useCreateQueueItem, usePublishQueueItem } from "@/features/queue/hooks/useQueue";
 import { useWorkspaceSettings } from "@/features/settings/hooks/useWorkspaceSettings";
@@ -17,6 +18,11 @@ import { ResetStudioDialog } from "./ResetStudioDialog";
 import { RichDocumentCanvas } from "./RichDocumentCanvas";
 import { VariantCompareDialog } from "./VariantCompareDialog";
 import { VariantTabs } from "./VariantTabs";
+import {
+  PublishingDestinationSelector,
+  destinationSelectionIsReady,
+  type DestinationSelection,
+} from "@/features/queue/components/PublishingDestinationSelector";
 
 export function ContentWorkspaceView({
   initialProductId,
@@ -33,15 +39,36 @@ export function ContentWorkspaceView({
   const createQueue = useCreateQueueItem();
   const publishQueue = usePublishQueueItem();
   const workspaceSettings = useWorkspaceSettings();
+  const channels = useChannels();
+  const facebookPages = useFacebookPages();
   const selectedProduct = useProduct(sessionApi.session.productContext.productId ?? "");
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [compareOpen, setCompareOpen] = useState(false);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const [destination, setDestination] = useState<DestinationSelection>({
+    provider: "telegram",
+    channelId: null,
+    facebookPageId: null,
+  });
 
   const { session, activeVariant } = sessionApi;
   const busy = createQueue.isPending || publishQueue.isPending;
   const hasVariants = session.variants.length > 0;
+  const defaultTelegramChannelId =
+    workspaceSettings.data?.default_telegram_channel_id ?? null;
+  const effectiveDestination: DestinationSelection = {
+    ...destination,
+    channelId:
+      destination.provider === "telegram"
+        ? destination.channelId ?? defaultTelegramChannelId
+        : null,
+  };
+  const destinationReady = destinationSelectionIsReady(
+    effectiveDestination,
+    channels.data?.items ?? [],
+    facebookPages.data?.items ?? [],
+  );
 
   const canGenerate = useMemo(() => {
     if (session.productContext.sourceType === "product") {
@@ -73,6 +100,16 @@ export function ContentWorkspaceView({
     session.productContext.productLabel,
     sessionApi.updateProductContext,
   ]);
+
+  useEffect(() => {
+    if (
+      destination.provider === "telegram" &&
+      destination.channelId === null &&
+      defaultTelegramChannelId
+    ) {
+      setDestination((current) => ({ ...current, channelId: defaultTelegramChannelId }));
+    }
+  }, [defaultTelegramChannelId, destination.channelId, destination.provider]);
 
   const comparePair = useMemo(() => {
     if (session.variants.length < 2) return { left: null, right: null };
@@ -130,6 +167,10 @@ export function ContentWorkspaceView({
 
   const queueFromActive = async (status: "draft" | "queued", thenPublish = false) => {
     if (!activeVariant?.content.trim()) return;
+    if (status !== "draft" && !destinationReady) {
+      setActionError("اختر وجهة نشر جاهزة قبل إضافة المحتوى إلى قائمة النشر.");
+      return;
+    }
     setActionError(null);
     try {
       const item = await createQueue.mutateAsync(
@@ -138,7 +179,9 @@ export function ContentWorkspaceView({
           status,
           productId: activeVariant.productId ?? session.productContext.productId,
           title: session.productContext.productLabel,
-          channelId: workspaceSettings.data?.default_telegram_channel_id,
+          provider: effectiveDestination.provider,
+          channelId: effectiveDestination.channelId,
+          facebookPageId: effectiveDestination.facebookPageId,
           imageUrl: session.productContext.imageUrl,
           affiliateUrl: session.productContext.affiliateUrl,
         }),
@@ -244,6 +287,16 @@ export function ContentWorkspaceView({
               sessionApi.logDistribution("exported", activeVariant.id);
               setActionMessage(`تم تصدير الملف .${format}`);
             }}
+            destinationSlot={
+              <PublishingDestinationSelector
+                value={destination}
+                channels={channels.data?.items ?? []}
+                pages={facebookPages.data?.items ?? []}
+                onChange={setDestination}
+                disabled={busy}
+                idPrefix="ai-destination"
+              />
+            }
           />
         </section>
       </div>

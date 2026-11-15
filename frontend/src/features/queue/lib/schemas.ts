@@ -31,12 +31,14 @@ function parseDateTimeLocal(value: string): Date | null {
  * QueueItem.channel_id remains nullable at rest; this schema covers the
  * existing editable assignment field only.
  */
-export const channelAssignmentSchema = z
+export const destinationAssignmentSchema = z
   .string()
   .min(1, requiredField("القناة المستهدفة", { feminine: true }))
   .uuid(invalidUuid("معرّف القناة"));
 
-export type ChannelAssignment = z.infer<typeof channelAssignmentSchema>;
+/** @deprecated Use destinationAssignmentSchema for provider-aware destinations. */
+export const channelAssignmentSchema = destinationAssignmentSchema;
+export type ChannelAssignment = z.infer<typeof destinationAssignmentSchema>;
 
 const scheduledAtSchema = z
   .string()
@@ -59,12 +61,12 @@ const scheduledAtSchema = z
 export const queueSchedulingSchema = z.discriminatedUnion("intent", [
   z.object({
     intent: z.literal("schedule"),
-    channelId: channelAssignmentSchema,
+    destinationId: destinationAssignmentSchema,
     scheduledAt: scheduledAtSchema,
   }),
   z.object({
     intent: z.literal("publish_now"),
-    channelId: channelAssignmentSchema,
+    destinationId: destinationAssignmentSchema,
   }),
 ]);
 

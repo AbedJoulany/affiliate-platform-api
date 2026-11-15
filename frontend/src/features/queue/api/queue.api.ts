@@ -39,8 +39,13 @@ export async function createQueueItem(input: QueueCreate): Promise<QueueItem> {
   return data;
 }
 
-export async function publishQueueItem(id: string): Promise<PublishQueueResponse> {
-  const { data } = await apiClient.post<PublishQueueResponse>(`/queues/${id}/publish`);
+export async function publishQueueItem(
+  id: string,
+  options: { confirmAmbiguous?: boolean } = {},
+): Promise<PublishQueueResponse> {
+  const { data } = await apiClient.post<PublishQueueResponse>(`/queues/${id}/publish`, null, {
+    params: options.confirmAmbiguous ? { confirm_ambiguous: true } : undefined,
+  });
   return data;
 }
 
