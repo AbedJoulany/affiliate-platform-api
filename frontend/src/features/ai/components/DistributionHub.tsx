@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { RotateCcw, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/primitives";
 
@@ -18,6 +18,7 @@ export function DistributionHub({
   onReset,
   onCopy,
   onExport,
+  destinationSlot,
 }: {
   disabled: boolean;
   busy: boolean;
@@ -32,11 +33,13 @@ export function DistributionHub({
   onReset: () => void;
   onCopy: () => void;
   onExport: (format: "txt" | "md" | "html") => void;
+  destinationSlot?: ReactNode;
 }) {
   const [exportOpen, setExportOpen] = useState(false);
 
   return (
     <div className="rounded-xl border border-border bg-surface p-3">
+      {destinationSlot ? <div className="mb-4">{destinationSlot}</div> : null}
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <Button
           type="button"

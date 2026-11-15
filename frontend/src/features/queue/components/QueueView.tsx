@@ -9,7 +9,7 @@ import { ToastOverlay } from "@/components/common/ToastOverlay";
 import { PageContainer, PageHeader } from "@/components/layout/page";
 import { Button } from "@/components/ui/primitives";
 import { getApiErrorMessage } from "@/services/api-client";
-import { useChannels } from "@/features/channels/hooks/useChannels";
+import { useChannels, useFacebookPages } from "@/features/channels/hooks/useChannels";
 import { useProducts } from "@/features/products/hooks/useProducts";
 import { useActiveWorkspaceId } from "@/lib/workspace";
 import { getQueueOperationalStats } from "../lib/operations";
@@ -37,11 +37,18 @@ import {
 import { QueueSelectionBar } from "./QueueSelectionBar";
 import { QueueTable } from "./QueueTable";
 import { QueueToolbar } from "./QueueToolbar";
+import {
+  destinationSelectionFromQueue,
+  destinationSelectionIsReady,
+  destinationSelectionPatch,
+  type DestinationSelection,
+} from "./PublishingDestinationSelector";
 
 type SchedulingState = {
   itemIds: string[];
-  channelId: string;
+  destination: DestinationSelection;
   scheduledAt: string;
+  preserveDestinations: boolean;
 };
 
 type ToastState = {
@@ -69,6 +76,7 @@ function QueueViewBody({
   const workspaceId = useActiveWorkspaceId();
   const queue = useQueue(undefined, 200);
   const channels = useChannels();
+  const facebookPages = useFacebookPages();
   const products = useProducts({ limit: 200, skip: 0 });
   const updateQueue = useUpdateQueueItem();
   const deleteQueue = useDeleteQueueItem();
@@ -135,16 +143,40 @@ function QueueViewBody({
   const openSchedule = (selected: QueueItem[]) => {
     if (selected.length === 0) return;
     const first = selected[0];
+    const destinationsReady = selected.every((item) =>
+      destinationSelectionIsReady(
+        destinationSelectionFromQueue(item),
+        channels.data?.items ?? [],
+        facebookPages.data?.items ?? [],
+      ),
+    );
+    if (selected.length > 1 && !destinationsReady) {
+      setToast({
+        tone: "error",
+        message: "أكمل وجهة كل منشور قبل الجدولة الجماعية؛ لن يتم تعيين وجهة تلقائيًا.",
+      });
+      return;
+    }
     setSchedulingDialog({
       itemIds: selected.map((item) => item.id),
-      channelId: first.channel_id ?? "",
+      destination: destinationSelectionFromQueue(first),
       scheduledAt: first.scheduled_at ? toDateTimeLocal(new Date(first.scheduled_at)) : "",
+      preserveDestinations: selected.length > 1,
     });
   };
 
   const publishItems = async (selected: QueueItem[]) => {
     if (selected.length === 0) return;
-    if (selected.some((item) => !item.channel_id)) {
+    if (
+      selected.some(
+        (item) =>
+          !destinationSelectionIsReady(
+            destinationSelectionFromQueue(item),
+            channels.data?.items ?? [],
+            facebookPages.data?.items ?? [],
+          ),
+      )
+    ) {
       openSchedule(selected);
       setToast({
         tone: "error",
@@ -192,7 +224,9 @@ function QueueViewBody({
         await updateQueue.mutateAsync({
           id,
           input: {
-            channel_id: values.channelId,
+            ...(schedulingDialog.preserveDestinations
+              ? {}
+              : destinationSelectionPatch(values.destination)),
             status: "scheduled",
             scheduled_at: scheduledAt,
           },
@@ -219,7 +253,9 @@ function QueueViewBody({
         await updateQueue.mutateAsync({
           id: item.id,
           input: {
-            channel_id: values.channelId,
+            ...(schedulingDialog.preserveDestinations
+              ? {}
+              : destinationSelectionPatch(values.destination)),
             status: "queued",
           },
         });
@@ -228,7 +264,9 @@ function QueueViewBody({
       await publishItems(
         selected.map((item) => ({
           ...item,
-          channel_id: values.channelId,
+          ...(schedulingDialog.preserveDestinations
+            ? {}
+            : destinationSelectionPatch(values.destination)),
           status: "queued" as const,
         })),
       );
@@ -482,10 +520,16 @@ function QueueViewBody({
         open={schedulingDialog != null}
         itemCount={schedulingDialog?.itemIds.length ?? 0}
         defaultValues={{
-          channelId: schedulingDialog?.channelId ?? "",
+          destination: schedulingDialog?.destination ?? {
+            provider: "telegram",
+            channelId: null,
+            facebookPageId: null,
+          },
           scheduledAt: schedulingDialog?.scheduledAt ?? "",
         }}
         channels={channels.data?.items ?? []}
+        facebookPages={facebookPages.data?.items ?? []}
+        preserveDestinations={schedulingDialog?.preserveDestinations ?? false}
         busy={updateQueue.isPending || publishing.publishingIds.length > 0}
         onSchedule={(values) => void saveSchedule(values)}
         onPublishNow={(values) => void publishFromDialog(values)}

@@ -46,8 +46,12 @@ function renderDialog(
   const props: ComponentProps<typeof QueueSchedulingDialog> = {
     open: true,
     itemCount: 1,
-    defaultValues: { channelId: "", scheduledAt: "" },
+    defaultValues: {
+      destination: { provider: "telegram", channelId: null, facebookPageId: null },
+      scheduledAt: "",
+    },
     channels: [makeChannel()],
+    facebookPages: [],
     busy: false,
     onSchedule,
     onPublishNow,
@@ -71,7 +75,7 @@ describe("QueueSchedulingDialog", () => {
     const { onSchedule, onPublishNow } = renderDialog();
 
     await userEvent.selectOptions(
-      screen.getByLabelText("القناة المستهدفة"),
+      screen.getByLabelText("الوجهة"),
       VALID_CHANNEL_ID,
     );
     fireEvent.change(screen.getByLabelText("تاريخ ووقت مخصص"), {
@@ -82,8 +86,13 @@ describe("QueueSchedulingDialog", () => {
     await waitFor(() => {
       expect(onSchedule).toHaveBeenCalledWith({
         intent: "schedule",
-        channelId: VALID_CHANNEL_ID,
+        destinationId: VALID_CHANNEL_ID,
         scheduledAt: FUTURE_LOCAL,
+        destination: {
+          provider: "telegram",
+          channelId: VALID_CHANNEL_ID,
+          facebookPageId: null,
+        },
       });
     });
     expect(onPublishNow).not.toHaveBeenCalled();
@@ -92,7 +101,7 @@ describe("QueueSchedulingDialog", () => {
   it("shows a channel validation error and does not submit", async () => {
     const { onSchedule, onPublishNow } = renderDialog();
 
-    fireEvent.blur(screen.getByLabelText("القناة المستهدفة"));
+    fireEvent.blur(screen.getByLabelText("الوجهة"));
 
     expect(await screen.findByText("القناة المستهدفة مطلوبة")).toBeInTheDocument();
     expect(onSchedule).not.toHaveBeenCalled();
@@ -105,7 +114,7 @@ describe("QueueSchedulingDialog", () => {
     const { onSchedule } = renderDialog();
 
     await userEvent.selectOptions(
-      screen.getByLabelText("القناة المستهدفة"),
+      screen.getByLabelText("الوجهة"),
       VALID_CHANNEL_ID,
     );
     fireEvent.blur(screen.getByLabelText("تاريخ ووقت مخصص"));
@@ -119,7 +128,7 @@ describe("QueueSchedulingDialog", () => {
     const { onSchedule } = renderDialog();
 
     await userEvent.selectOptions(
-      screen.getByLabelText("القناة المستهدفة"),
+      screen.getByLabelText("الوجهة"),
       VALID_CHANNEL_ID,
     );
     fireEvent.change(screen.getByLabelText("تاريخ ووقت مخصص"), {
@@ -135,7 +144,7 @@ describe("QueueSchedulingDialog", () => {
     const { onSchedule, onPublishNow } = renderDialog();
 
     await userEvent.selectOptions(
-      screen.getByLabelText("القناة المستهدفة"),
+      screen.getByLabelText("الوجهة"),
       VALID_CHANNEL_ID,
     );
     fireEvent.change(screen.getByLabelText("تاريخ ووقت مخصص"), {
@@ -152,7 +161,7 @@ describe("QueueSchedulingDialog", () => {
     const { onSchedule, onPublishNow } = renderDialog();
 
     await userEvent.selectOptions(
-      screen.getByLabelText("القناة المستهدفة"),
+      screen.getByLabelText("الوجهة"),
       VALID_CHANNEL_ID,
     );
     await userEvent.click(screen.getByRole("button", { name: "نشر الآن" }));
@@ -160,7 +169,12 @@ describe("QueueSchedulingDialog", () => {
     await waitFor(() => {
       expect(onPublishNow).toHaveBeenCalledWith({
         intent: "publish_now",
-        channelId: VALID_CHANNEL_ID,
+        destinationId: VALID_CHANNEL_ID,
+        destination: {
+          provider: "telegram",
+          channelId: VALID_CHANNEL_ID,
+          facebookPageId: null,
+        },
       });
     });
     expect(onSchedule).not.toHaveBeenCalled();
@@ -169,7 +183,10 @@ describe("QueueSchedulingDialog", () => {
   it("keeps submit callbacks from firing while the mutation is busy", async () => {
     const { onSchedule, onPublishNow } = renderDialog({
       busy: true,
-      defaultValues: { channelId: VALID_CHANNEL_ID, scheduledAt: FUTURE_LOCAL },
+      defaultValues: {
+        destination: { provider: "telegram", channelId: VALID_CHANNEL_ID, facebookPageId: null },
+        scheduledAt: FUTURE_LOCAL,
+      },
     });
 
     expect(screen.getByRole("button", { name: "حفظ الجدولة" })).toBeDisabled();
@@ -182,7 +199,7 @@ describe("QueueSchedulingDialog", () => {
     const view = renderDialog();
 
     await userEvent.selectOptions(
-      screen.getByLabelText("القناة المستهدفة"),
+      screen.getByLabelText("الوجهة"),
       VALID_CHANNEL_ID,
     );
     fireEvent.change(screen.getByLabelText("تاريخ ووقت مخصص"), {
@@ -196,14 +213,17 @@ describe("QueueSchedulingDialog", () => {
 
     view.rerenderDialog({
       open: true,
-      defaultValues: { channelId: VALID_CHANNEL_ID, scheduledAt: FUTURE_LOCAL },
+      defaultValues: {
+        destination: { provider: "telegram", channelId: VALID_CHANNEL_ID, facebookPageId: null },
+        scheduledAt: FUTURE_LOCAL,
+      },
     });
 
     await waitFor(() => {
       expect(screen.getByRole("dialog")).toBeInTheDocument();
     });
     expect(screen.queryByText("لا يمكن جدولة وقت في الماضي")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("القناة المستهدفة")).toHaveValue(VALID_CHANNEL_ID);
+    expect(screen.getByLabelText("الوجهة")).toHaveValue(VALID_CHANNEL_ID);
     expect(screen.getByLabelText("تاريخ ووقت مخصص")).toHaveValue(FUTURE_LOCAL);
   });
 
@@ -211,7 +231,7 @@ describe("QueueSchedulingDialog", () => {
     const { onSchedule } = renderDialog();
 
     await userEvent.selectOptions(
-      screen.getByLabelText("القناة المستهدفة"),
+      screen.getByLabelText("الوجهة"),
       VALID_CHANNEL_ID,
     );
     fireEvent.change(screen.getByLabelText("تاريخ ووقت مخصص"), {
@@ -235,7 +255,12 @@ describe("QueueSchedulingDialog", () => {
     });
     expect(onSchedule.mock.calls[0][0]).toMatchObject({
       intent: "schedule",
-      channelId: VALID_CHANNEL_ID,
+      destinationId: VALID_CHANNEL_ID,
+      destination: {
+        provider: "telegram",
+        channelId: VALID_CHANNEL_ID,
+        facebookPageId: null,
+      },
     });
   });
 });

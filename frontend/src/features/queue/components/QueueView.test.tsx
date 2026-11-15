@@ -38,6 +38,7 @@ vi.mock("../api/queue.api", () => ({
 
 vi.mock("@/features/channels/api/channels.api", () => ({
   getChannels: vi.fn(),
+  getFacebookPages: vi.fn(async () => ({ items: [], total: 0, skip: 0, limit: 20 })),
   createChannel: vi.fn(),
   updateChannel: vi.fn(),
 }));

@@ -7,11 +7,15 @@ export const QUEUE_STATUSES = [
 ] as const;
 export type QueueStatus = (typeof QUEUE_STATUSES)[number];
 
+export const QUEUE_PROVIDERS = ["telegram", "facebook"] as const;
+export type QueueProvider = (typeof QUEUE_PROVIDERS)[number];
+
 /** Attempt-scoped only — not a QueueStatus value. */
 export const QUEUE_PUBLISH_ATTEMPT_STATUSES = [
   "started",
   "succeeded",
   "failed",
+  "ambiguous",
 ] as const;
 export type QueuePublishAttemptStatus =
   (typeof QUEUE_PUBLISH_ATTEMPT_STATUSES)[number];
@@ -25,6 +29,7 @@ export interface QueuePublishAttempt {
   error_message: string | null;
   provider_chat_id: string | null;
   provider_message_id: number | null;
+  provider_message_ref: string | null;
 }
 
 export interface QueuePublishAttemptListResponse {
@@ -40,7 +45,9 @@ export interface QueueItem {
   status: QueueStatus;
   scheduled_at: string | null;
   published_at: string | null;
+  provider: QueueProvider;
   channel_id: string | null;
+  facebook_page_id: string | null;
   product_id: string | null;
   image_url: string | null;
   button_text: string | null;
@@ -68,7 +75,9 @@ export interface QueueCreate {
   content: string;
   status: QueueStatus;
   scheduled_at?: string | null;
+  provider?: QueueProvider;
   channel_id?: string | null;
+  facebook_page_id?: string | null;
   product_id?: string | null;
   image_url?: string | null;
   button_text?: string | null;
@@ -101,8 +110,11 @@ export type QueuePublishFailure = {
 
 export interface PublishQueueResponse {
   queue_id: string;
-  telegram_message_id: number;
-  chat_id: string;
+  provider: QueueProvider;
+  telegram_message_id: number | null;
+  provider_message_ref: string | null;
+  chat_id: string | null;
+  destination_id: string | null;
   message_type: string;
   published_at: string;
 }

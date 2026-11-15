@@ -205,7 +205,7 @@ export function usePublishQueueItem() {
   const client = useQueryClient();
   const workspaceId = useActiveWorkspaceId();
   return useMutation({
-    mutationFn: publishQueueItem,
+    mutationFn: (id: string) => publishQueueItem(id),
     onSuccess: (_data, id) => {
       if (!workspaceId) return;
       void client.invalidateQueries({ queryKey: queueKey(workspaceId) });
