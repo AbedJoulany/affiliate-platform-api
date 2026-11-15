@@ -55,7 +55,7 @@ async def list_queue_publish_attempts(
     workspace_id: HttpWorkspaceId,
     service: Annotated[QueueService, Depends(get_queue_service)],
 ) -> QueuePublishAttemptListResponse:
-    """Return Telegram publish attempt history for a queue item, newest first.
+    """Return provider publish attempt history for a queue item, newest first.
 
     Attempt ``status`` values are attempt-scoped (started/succeeded/failed) and are
     not QueueStatus values. Idempotency-suppressed publishes do not create attempt
@@ -97,14 +97,22 @@ async def publish_queue_item(
     queue_id: UUID,
     workspace_id: HttpWorkspaceId,
     service: Annotated[QueueService, Depends(get_queue_service)],
+    confirm_ambiguous: bool = Query(
+        default=False,
+        description="Explicitly confirm retry after an ambiguous Facebook delivery",
+    ),
 ) -> PublishQueueResponse:
-    """Publish a queue item to Telegram.
+    """Publish a queue item to its configured provider.
 
     Idempotency-guard suppressions and other conflicts raise HTTP 409 with
     ``detail`` set to the ConflictError message. No attempt row is created when
     the guard suppresses a duplicate publish.
     """
     try:
+        if confirm_ambiguous:
+            return await service.publish(
+                queue_id, workspace_id, allow_ambiguous=True
+            )
         return await service.publish(queue_id, workspace_id)
     except ServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc

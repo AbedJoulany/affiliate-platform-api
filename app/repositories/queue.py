@@ -25,6 +25,7 @@ class QueueRepository(BaseRepository[QueueItem]):
             select(QueueItem)
             .options(
                 selectinload(QueueItem.channel),
+                selectinload(QueueItem.facebook_page),
                 selectinload(QueueItem.product),
             )
             .where(QueueItem.id == queue_id)
@@ -53,6 +54,7 @@ class QueueRepository(BaseRepository[QueueItem]):
             select(QueueItem)
             .options(
                 selectinload(QueueItem.channel),
+                selectinload(QueueItem.facebook_page),
                 selectinload(QueueItem.product),
             )
             .where(
@@ -112,12 +114,14 @@ class QueueRepository(BaseRepository[QueueItem]):
             select(QueueItem)
             .options(
                 selectinload(QueueItem.channel),
+                selectinload(QueueItem.facebook_page),
                 selectinload(QueueItem.product),
             )
             .where(
                 QueueItem.status == QueueStatus.SCHEDULED,
                 QueueItem.scheduled_at <= due_before,
-                QueueItem.channel_id.is_not(None),
+                ((QueueItem.provider == "telegram") & QueueItem.channel_id.is_not(None))
+                | ((QueueItem.provider == "facebook") & QueueItem.facebook_page_id.is_not(None)),
             )
             .order_by(QueueItem.scheduled_at.asc())
             .limit(limit)
@@ -133,7 +137,8 @@ class QueueRepository(BaseRepository[QueueItem]):
             )
             .where(
                 QueueItem.status == QueueStatus.QUEUED,
-                QueueItem.channel_id.is_not(None),
+                ((QueueItem.provider == "telegram") & QueueItem.channel_id.is_not(None))
+                | ((QueueItem.provider == "facebook") & QueueItem.facebook_page_id.is_not(None)),
             )
             .order_by(QueueItem.created_at.asc())
             .limit(limit)

@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.enums import BotPermissionStatus, QueueStatus
+from app.core.enums import BotPermissionStatus, FacebookPageValidationStatus, QueueStatus
 from app.events.publisher import NullEventPublisher
 from app.events.schemas import (
     EVENT_ENVELOPE_VERSION,
@@ -26,10 +26,14 @@ from app.events.schemas import (
     QueueEventEnvelope,
     QueueStatusChangedData,
 )
+from app.facebook.crypto import FacebookTokenCipher
+from app.facebook.publisher import FacebookPublisher, FacebookPublishResult
 from app.models.channel import TelegramChannel
+from app.models.facebook_page import FacebookPage
 from app.models.product import Product
 from app.models.queue import QueueItem, QueuePublishAttempt
 from app.repositories.channel import ChannelRepository
+from app.repositories.facebook_page import FacebookPageRepository
 from app.repositories.product import ProductRepository
 from app.repositories.queue import QueuePublishAttemptRepository, QueueRepository
 from app.repositories.workspace_settings import WorkspaceSettingsRepository
@@ -44,6 +48,7 @@ from app.schemas.queue import (
 )
 from app.services.exceptions import (
     ConflictError,
+    FacebookPublishError,
     ForbiddenError,
     NotFoundError,
     ServiceError,
@@ -129,11 +134,14 @@ class _PublishSnapshot:
     """Outbound Telegram payload captured under the claim lock."""
 
     chat_id: str | None
+    provider: str
+    destination_id: str | None
     text: str
     image_url: str | None
     button: InlineUrlButton | None
     message_type: str
     parse_mode: str | None
+    affiliate_url: str | None
     content_hash: str
 
 
@@ -156,6 +164,8 @@ class TelegramPublishingService:
         self.queue_repo = QueueRepository(session)
         self.attempt_repo = QueuePublishAttemptRepository(session)
         self.publisher = TelegramPublisher()
+        self.facebook_publisher = FacebookPublisher()
+        self.facebook_pages = FacebookPageRepository(session)
         self.events = events if events is not None else NullEventPublisher()
 
     async def publish_queue_item(
@@ -163,6 +173,7 @@ class TelegramPublishingService:
         queue_id: UUID,
         *,
         mark_transport_failure_terminal: bool = False,
+        allow_ambiguous: bool = False,
     ) -> PublishQueueResponse:
         """Publish through the shared claim/idempotency guard.
 
@@ -175,7 +186,7 @@ class TelegramPublishingService:
         Terminal failures are persisted as dead-letter attempts and the item is
         moved to ``QueueStatus.FAILED`` so the beat loop will not pick it again.
         """
-        claim = await self._claim_publish(queue_id)
+        claim = await self._claim_publish(queue_id, allow_ambiguous=allow_ambiguous)
         item = claim.item
         attempt = claim.attempt
         snapshot = claim.snapshot
@@ -185,25 +196,45 @@ class TelegramPublishingService:
             if item.status == QueueStatus.PUBLISHED:
                 raise ConflictError("Queue item is already published")
 
-            if not item.channel_id or not item.channel or snapshot.chat_id is None:
-                raise ValidationError("Queue item must have a channel assigned before publishing")
-
-            self._ensure_channel_can_publish(item.channel)
-
-            # Use only the locked snapshot — do not re-read mutable relations.
-            result = await self.publisher.publish(
-                chat_id=snapshot.chat_id,
-                text=snapshot.text,
-                image_url=snapshot.image_url,
-                button=snapshot.button,
-                parse_mode=snapshot.parse_mode,
-            )
+            if snapshot.provider == "telegram":
+                if not item.channel_id or not item.channel or snapshot.chat_id is None:
+                    raise ValidationError(
+                        "Queue item must have a channel assigned before publishing"
+                    )
+                self._ensure_channel_can_publish(item.channel)
+                result = await self.publisher.publish(
+                    chat_id=snapshot.chat_id,
+                    text=snapshot.text,
+                    image_url=snapshot.image_url,
+                    button=snapshot.button,
+                    parse_mode=snapshot.parse_mode,
+                )
+                provider_message_ref = None
+            else:
+                page = item.facebook_page
+                if not page:
+                    raise ValidationError(
+                        "Queue item must have a Facebook Page assigned before publishing"
+                    )
+                if page.workspace_id != item.workspace_id:
+                    raise ForbiddenError("Facebook Page does not belong to the queue workspace")
+                token = self._facebook_token(page)
+                self._ensure_facebook_page_can_publish(page)
+                result = await self.facebook_publisher.publish(
+                    page.facebook_page_id,
+                    token,
+                    snapshot.text,
+                    image_url=snapshot.image_url,
+                    affiliate_url=snapshot.affiliate_url,
+                )
+                provider_message_ref = result.post_id
 
             await self._mark_attempt_succeeded(attempt, result)
 
             item.status = QueueStatus.PUBLISHED
             item.published_at = datetime.now(UTC)
-            item.telegram_message_id = result.message_id
+            if snapshot.provider == "telegram":
+                item.telegram_message_id = result.message_id
             await self.queue_repo.update(item)
             # Commit success before returning so a later sibling failure in a
             # Celery batch cannot roll back a Telegram message that already sent.
@@ -217,7 +248,12 @@ class TelegramPublishingService:
                     QueueAttemptSucceededData(
                         queue_id=item.id,
                         attempt_number=attempt.attempt_number,
-                        provider_message_id=result.message_id,
+                        provider=snapshot.provider,
+                        provider_message_id=(
+                            result.message_id
+                            if snapshot.provider == "telegram"
+                            else provider_message_ref
+                        ),
                     ),
                     workspace_id=item.workspace_id,
                 ),
@@ -241,8 +277,11 @@ class TelegramPublishingService:
 
             return PublishQueueResponse(
                 queue_id=item.id,
-                telegram_message_id=result.message_id,
-                chat_id=result.chat_id,
+                provider=snapshot.provider,
+                telegram_message_id=result.message_id if snapshot.provider == "telegram" else None,
+                provider_message_ref=provider_message_ref,
+                chat_id=result.chat_id if snapshot.provider == "telegram" else None,
+                destination_id=snapshot.destination_id,
                 message_type=result.message_type,
                 published_at=item.published_at,
             )
@@ -252,9 +291,16 @@ class TelegramPublishingService:
             # caller reports that Celery (or the manual path) has no retries left.
             # Non-retryable Telegram 4xx (except 429) are also terminal so the
             # beat loop does not recreate failed attempts forever.
+            if isinstance(exc, FacebookPublishError) and exc.ambiguous:
+                await self._mark_attempt_failed(
+                    attempt, exc, terminal=True, ambiguous=True,
+                    workspace_id=item.workspace_id, queue_id=item.id,
+                )
+                await self._mark_item_failed(item, previous_status)
+                raise
             terminal = (
                 mark_transport_failure_terminal
-                or not isinstance(exc, TelegramPublishError)
+                or not isinstance(exc, (TelegramPublishError, FacebookPublishError))
                 or self._is_non_retryable_telegram_error(exc)
             )
             await self._mark_attempt_failed(
@@ -310,14 +356,22 @@ class TelegramPublishingService:
                         mark_transport_failure_terminal=mark_transport_failure_terminal,
                     )
                 )
-            except (ValidationError, ForbiddenError, ConflictError, TelegramPublishError):
+            except (
+                ValidationError,
+                ForbiddenError,
+                ConflictError,
+                TelegramPublishError,
+                FacebookPublishError,
+            ):
                 # Persist-and-continue: one item's failure must not block the rest
                 # of the due/queued batch for this beat tick. Attempt rows (and
                 # dead-letter markers) are written inside publish_queue_item.
                 continue
         return results
 
-    async def _claim_publish(self, queue_id: UUID) -> _PublishClaim:
+    async def _claim_publish(
+        self, queue_id: UUID, *, allow_ambiguous: bool = False
+    ) -> _PublishClaim:
         """Lock the queue item, apply the idempotency guard, and claim a started attempt.
 
         Suppressed publishes raise ``ConflictError`` without inserting an attempt row.
@@ -375,11 +429,21 @@ class TelegramPublishingService:
             )
 
         latest = await self.attempt_repo.latest_attempt(item.id)
+        if (
+            latest is not None
+            and latest.provider == "facebook"
+            and latest.status in {"started", "ambiguous"}
+            and not allow_ambiguous
+        ):
+            raise ConflictError(
+                "Facebook delivery is uncertain or in progress; verify the Page and explicitly "
+                "confirm retry"
+            )
         attempt_number = 1 if latest is None else latest.attempt_number + 1
         attempt = QueuePublishAttempt(
             queue_id=item.id,
             attempt_number=attempt_number,
-            provider="telegram",
+            provider=snapshot.provider,
             status="started",
             content_hash=snapshot.content_hash,
             idempotency_expires_at=now + IDEMPOTENCY_WINDOW,
@@ -408,9 +472,17 @@ class TelegramPublishingService:
         image_url = self._resolve_image_url(item)
         button = self._resolve_button(item)
         chat_id = item.channel.telegram_channel_id if item.channel else None
+        provider = item.provider or "telegram"
+        destination_id = (
+            chat_id
+            if provider == "telegram"
+            else item.facebook_page.facebook_page_id if item.facebook_page else None
+        )
         message_type = "photo" if image_url else "text"
         parse_mode = None
         content_hash = self._compute_content_hash(
+            provider=provider,
+            destination_id=destination_id,
             chat_id=chat_id,
             text=item.content,
             image_url=image_url,
@@ -419,12 +491,15 @@ class TelegramPublishingService:
             parse_mode=parse_mode,
         )
         return _PublishSnapshot(
+            provider=provider,
+            destination_id=destination_id,
             chat_id=chat_id,
             text=item.content,
             image_url=image_url,
             button=button,
             message_type=message_type,
             parse_mode=parse_mode,
+            affiliate_url=item.button_url,
             content_hash=content_hash,
         )
 
@@ -452,14 +527,21 @@ class TelegramPublishingService:
     async def _mark_attempt_succeeded(
         self,
         attempt: QueuePublishAttempt,
-        result: TelegramPublishResult,
+        result: TelegramPublishResult | FacebookPublishResult,
     ) -> QueuePublishAttempt:
         return await self._persist_attempt_outcome(
             attempt,
             values={
                 "status": "succeeded",
-                "provider_chat_id": result.chat_id,
-                "provider_message_id": result.message_id,
+                "provider_chat_id": (
+                    result.chat_id if isinstance(result, TelegramPublishResult) else None
+                ),
+                "provider_message_id": (
+                    result.message_id if isinstance(result, TelegramPublishResult) else None
+                ),
+                "provider_message_ref": (
+                    result.post_id if isinstance(result, FacebookPublishResult) else None
+                ),
                 "error_code": None,
                 "error_message": None,
             },
@@ -499,6 +581,7 @@ class TelegramPublishingService:
         exc: BaseException,
         *,
         terminal: bool = False,
+        ambiguous: bool = False,
         workspace_id: UUID | None = None,
         queue_id: UUID | None = None,
     ) -> QueuePublishAttempt:
@@ -510,7 +593,10 @@ class TelegramPublishingService:
         """
         underlying_code = self._error_code_for(exc)
         underlying_message = self._error_message_for(exc)
-        if terminal:
+        if ambiguous:
+            error_code = "facebook_ambiguous"
+            error_message = f"{underlying_code}: {underlying_message}"
+        elif terminal and not isinstance(exc, FacebookPublishError):
             error_code = DEAD_LETTER_ERROR_CODE
             error_message = f"{underlying_code}: {underlying_message}"
         else:
@@ -522,11 +608,12 @@ class TelegramPublishingService:
         attempt = await self._persist_attempt_outcome(
             attempt,
             values={
-                "status": "failed",
+                "status": "ambiguous" if ambiguous else "failed",
                 "error_code": error_code,
                 "error_message": error_message,
                 "provider_chat_id": None,
                 "provider_message_id": None,
+                "provider_message_ref": None,
             },
         )
         # Persist the failure before the exception propagates and triggers rollback.
@@ -550,6 +637,8 @@ class TelegramPublishingService:
     def _compute_content_hash(
         self,
         *,
+        provider: str = "telegram",
+        destination_id: str | None = None,
         chat_id: str | None,
         text: str,
         image_url: str | None,
@@ -561,10 +650,11 @@ class TelegramPublishingService:
             "button_text": button.text if button else None,
             "button_url": button.url if button else None,
             "chat_id": chat_id,
+            "destination_id": destination_id,
             "image_url": image_url,
             "message_type": message_type,
             "parse_mode": parse_mode,
-            "provider": "telegram",
+            "provider": provider,
             "text": text,
         }
         canonical = json.dumps(
@@ -574,6 +664,24 @@ class TelegramPublishingService:
             sort_keys=True,
         )
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _facebook_token(page: FacebookPage) -> str:
+        from app.core.config import get_settings
+        from app.services.exceptions import ServiceError
+        try:
+            return FacebookTokenCipher(get_settings().facebook_token_encryption_key).decrypt(
+                page.encrypted_access_token
+            )
+        except Exception as exc:
+            raise ServiceError("Facebook credential configuration is unavailable", 503) from exc
+
+    @staticmethod
+    def _ensure_facebook_page_can_publish(page: FacebookPage) -> None:
+        if not page.is_active:
+            raise ValidationError("Facebook Page is inactive")
+        if page.validation_status != FacebookPageValidationStatus.VALID:
+            raise ValidationError("Facebook Page credentials must be validated before publishing")
 
     def _error_code_for(self, exc: BaseException) -> str:
         if isinstance(exc, ValidationError):
@@ -588,6 +696,12 @@ class TelegramPublishingService:
             if exc.telegram_error_code is not None:
                 return f"telegram_{exc.telegram_error_code}"
             return "transport_error"
+        if isinstance(exc, FacebookPublishError):
+            if exc.ambiguous:
+                return "facebook_ambiguous"
+            if exc.http_status is not None:
+                return f"facebook_{exc.http_status}"
+            return "facebook_publish_error"
         if isinstance(exc, ServiceError):
             return "service_error"
         return "unexpected_error"
@@ -647,6 +761,7 @@ class QueueService:
         self.queue_repo = QueueRepository(session)
         self.attempt_repo = QueuePublishAttemptRepository(session)
         self.channel_repo = ChannelRepository(session)
+        self.facebook_page_repo = FacebookPageRepository(session)
         self.product_repo = ProductRepository(session)
         self.settings_repo = WorkspaceSettingsRepository(session)
         self.publishing_service = TelegramPublishingService(session, events=self.events)
@@ -654,11 +769,16 @@ class QueueService:
     async def create(self, payload: QueueCreate, workspace_id: UUID) -> QueueItem:
         self._validate_status_scheduling(payload.status, payload.scheduled_at)
         product = await self._load_product(payload.product_id)
-        channel_id = await self._resolve_create_channel_id(
-            payload.channel_id,
-            workspace_id,
-            payload.status,
-        )
+        channel_id = None
+        facebook_page_id = None
+        if payload.provider == "telegram":
+            channel_id = await self._resolve_create_channel_id(
+                payload.channel_id, workspace_id, payload.status
+            )
+        else:
+            facebook_page_id = await self._resolve_create_facebook_page_id(
+                payload.facebook_page_id, workspace_id, payload.status
+            )
         image_url, button_text, button_url = self._resolve_create_media(payload, product)
 
         item = QueueItem(
@@ -666,7 +786,9 @@ class QueueService:
             content=payload.content,
             status=payload.status,
             scheduled_at=payload.scheduled_at,
+            provider=payload.provider,
             channel_id=channel_id,
+            facebook_page_id=facebook_page_id,
             product_id=payload.product_id,
             workspace_id=workspace_id,
             image_url=image_url,
@@ -729,7 +851,7 @@ class QueueService:
         retry_count = 0
         if latest is not None:
             retry_count = latest.attempt_number
-            if latest.status == "failed":
+            if latest.status in {"failed", "ambiguous"}:
                 failure_reason = latest.error_message
         return QueueRead.model_validate(item).model_copy(
             update={
@@ -754,14 +876,29 @@ class QueueService:
 
         new_status = update_data.get("status", item.status)
         new_scheduled_at = update_data.get("scheduled_at", item.scheduled_at)
+        new_provider = update_data.get("provider", item.provider)
 
         if "channel_id" in update_data:
             await self._validate_channel(update_data["channel_id"], workspace_id)
+        if "facebook_page_id" in update_data:
+            await self._validate_facebook_page(update_data["facebook_page_id"], workspace_id)
         if "product_id" in update_data:
             await self._validate_product(update_data["product_id"])
 
         if new_status == QueueStatus.SCHEDULED and new_scheduled_at is None:
             raise ValidationError("scheduled_at is required when status is scheduled")
+        if new_status in PUBLISHABLE_STATUSES:
+            if new_provider == "telegram":
+                channel_id = update_data.get("channel_id", item.channel_id)
+                if channel_id is None:
+                    raise ValidationError("Queue item must have a Telegram channel assigned")
+            elif new_provider == "facebook":
+                page_id = update_data.get("facebook_page_id", item.facebook_page_id)
+                if page_id is None:
+                    raise ValidationError("Queue item must have a Facebook Page assigned")
+                await self._validate_facebook_page(page_id, workspace_id, require_ready=True)
+            else:
+                raise ValidationError("Unsupported publishing provider")
 
         if new_status != QueueStatus.FAILED:
             self._validate_status_scheduling(new_status, new_scheduled_at)
@@ -772,6 +909,10 @@ class QueueService:
 
         for field, value in update_data.items():
             setattr(item, field, value)
+        if item.provider == "telegram":
+            item.facebook_page_id = None
+        elif item.provider == "facebook":
+            item.channel_id = None
 
         if "status" in update_data:
             if item.status == QueueStatus.SCHEDULED and item.scheduled_at is None:
@@ -823,13 +964,23 @@ class QueueService:
             ),
         )
 
-    async def publish(self, queue_id: UUID, workspace_id: UUID) -> PublishQueueResponse:
+    async def publish(
+        self,
+        queue_id: UUID,
+        workspace_id: UUID,
+        *,
+        allow_ambiguous: bool = False,
+    ) -> PublishQueueResponse:
         item = await self.get(queue_id, workspace_id)
-        await self._validate_channel(item.channel_id, workspace_id)
+        if item.provider == "telegram":
+            await self._validate_channel(item.channel_id, workspace_id)
+        elif item.facebook_page_id is None:
+            raise ValidationError("Queue item must have a Facebook Page assigned before publishing")
         # Manual publish has no Celery autoretry, so transport failures are terminal.
         return await self.publishing_service.publish_queue_item(
             queue_id,
             mark_transport_failure_terminal=True,
+            allow_ambiguous=allow_ambiguous,
         )
 
     async def _validate_relations(
@@ -851,6 +1002,21 @@ class QueueService:
         channel = await self.channel_repo.get_by_id_in_workspace(channel_id, workspace_id)
         if not channel:
             raise NotFoundError("Channel not found")
+
+    async def _validate_facebook_page(
+        self,
+        page_id: UUID | None,
+        workspace_id: UUID,
+        *,
+        require_ready: bool = False,
+    ) -> None:
+        if page_id is None:
+            return
+        page = await self.facebook_page_repo.get_in_workspace(page_id, workspace_id)
+        if not page:
+            raise NotFoundError("Facebook Page not found")
+        if require_ready and (not page.is_active or page.validation_status.value != "valid"):
+            raise ValidationError("Facebook Page must be active and validated before publishing")
 
     async def _validate_product(self, product_id: UUID | None) -> None:
         if product_id is None:
@@ -902,6 +1068,23 @@ class QueueService:
         if not channel.is_active:
             raise ValidationError("Workspace default Telegram channel is inactive")
         return channel.id
+
+    async def _resolve_create_facebook_page_id(
+        self,
+        page_id: UUID | None,
+        workspace_id: UUID,
+        status: QueueStatus,
+    ) -> UUID | None:
+        if page_id is None:
+            if status in PUBLISHABLE_STATUSES:
+                raise ValidationError(
+                    "Queue item must have a Facebook Page assigned before it can be queued"
+                )
+            return None
+        await self._validate_facebook_page(
+            page_id, workspace_id, require_ready=status in PUBLISHABLE_STATUSES
+        )
+        return page_id
 
     def _resolve_create_media(
         self,
