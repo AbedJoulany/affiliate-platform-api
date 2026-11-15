@@ -110,6 +110,13 @@ async function stubFacebookQueue(
       return;
     }
     if (
+      request.method() === "GET" &&
+      url.endsWith(`/queues/${QUEUE_ID}`)
+    ) {
+      await route.fulfill({ json: current() });
+      return;
+    }
+    if (
       request.method() === "POST" &&
       url.includes(`/queues/${QUEUE_ID}/publish`)
     ) {
