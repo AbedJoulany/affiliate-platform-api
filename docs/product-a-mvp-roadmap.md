@@ -1,29 +1,34 @@
 # Product A MVP — Implementation Roadmap
 
-> **Document status:** Active roadmap. Updated 2026-10-26 for the Codex handover.  
-> **Repository:** `AbedJoulany/affiliate-platform-api`  
-> **Development baseline:** `main`, after PR #5 (`feat: integrate Manual Telegram MVP Phase 1`) was merged.  
-> **Verification source:** PR merge and passing CI were confirmed by the project owner; a live Telegram delivery has **not** been confirmed.  
-> **Next gate:** Live Manual Telegram Verification; then Recommendation Engine.
+> **Document status:** Canonical active roadmap. Updated 2026-11-15 after PR #11.
+> **Repository:** `AbedJoulany/affiliate-platform-api`
+> **Development baseline:** `main` at PR #11 merge commit `069c7192fd904cbc26248b53be582a9fcfb774c3`.
+> **Verification source:** merged PRs and CI are implementation evidence; live Telegram failure/retry and live Facebook publishing remain separate acceptance gates.
+> **Next phase:** Phase 3C.2 — Queue Display & Safe Ambiguous Retry.
 
 ### Naming convention
 
 - **Completed foundation — Manual Telegram MVP (historically called “Phase 1”):** implementation merged via PR #5. This is **not** the same as Roadmap Phase 1.
-- **Roadmap Phase 0:** Live Manual Verification (pending).
-- **Roadmap Phase 1:** Recommendation Engine (not started).
-- **Roadmap Phases 2–11:** subsequent work as numbered below.
+- **Roadmap Phase 0:** partially verified; controlled live failure/retry remains pending.
+- **Roadmap Phase 1:** implemented and merged via PR #7.
+- **Roadmap Phase 2:** implemented and merged via PR #8; public onboarding is deferred.
+- **Roadmap Phase 3:** 3A, 3B, and 3C.1 implemented via PRs #9–#11; 3C.2 is next and 3C.3 remains pending.
+- **Roadmap Phases 4–11:** planned or partially founded as described below.
 - A merged PR and green mocked CI do **not** substitute for a live provider test.
 
 ### Current delivery status
 
 | Deliverable | Status | Evidence / next action |
 | --- | --- | --- |
-| Product B removal | Merged | Historical migrations `001–017` retained |
-| Manual Telegram MVP code | Merged | PR #5 integrated into `main` |
-| PR #5 CI | Passed (owner-confirmed) | Backend, frontend and E2E checks reported green; check workflow records for exact details |
-| Live Telegram publishing | Pending | Run end-to-end verification with real credentials and confirm message delivery |
-| Recommendation Engine | Not started | Begin only after the Phase 0 verification gate, or explicitly record an exception |
-| Onboarding / Facebook / Automation | Planned | Follow roadmap phases |
+| Product B removal | Merged | Historical migrations `001–017` retained and protected |
+| Manual Telegram MVP foundation | Merged | PR #5 |
+| Recommendation Engine | Implemented | PR #7; deterministic scoring, filters, explanations, and Top N |
+| Manual MVP Polish | Implemented | PR #8; recommended mode, channel guidance, and permission refresh |
+| Facebook Page Connection | Implemented | PR #9; migration `018`; real Page connection operator-verified |
+| Facebook Publishing Backend | Implemented | PR #10; migration `019`; live Facebook publishing still pending |
+| Facebook Destination Selection | Implemented | PR #11; provider-aware AI Studio and Queue frontend |
+| Phase 0 live Telegram verification | Partially verified | Manual publish, image/link delivery, and scheduling verified; failure/retry pending |
+| PR #11 CI | Passed | Backend, frontend, and E2E checks completed successfully |
 
 ---
 
@@ -90,7 +95,7 @@ Retry
 
 ## 3. المراحل المتبقية
 
-> الترقيم التالي يخص **Roadmap** فقط؛ لا تخلطه مع اسم مرحلة Manual Telegram MVP السابقة. حالة Phase 0: pending. حالة Phase 1 وما بعدها: not started.
+> الترقيم التالي يخص **Roadmap** فقط؛ لا تخلطه مع اسم مرحلة Manual Telegram MVP السابقة. حالة Phase 0: partially verified. حالة Phase 1 وPhase 2 وPhase 3C.1: implemented; Phase 3C.2 هو التالي، وPhase 3C.3 ما زال pending.
 
 ```text
 Phase 0  — Live Manual Verification
@@ -183,7 +188,7 @@ Publisher
 
 ## الهدف
 
-إثبات أن Phase 1 تعمل فعلياً، وليس فقط عبر الاختبارات.
+إثبات أن Manual Telegram MVP تعمل فعلياً، وليس فقط عبر الاختبارات.
 
 ## المسار
 
@@ -382,6 +387,9 @@ Start Discovering
 
 # 8. Phase 3 — Facebook Publishing
 
+Phase 3 is divided into connection, backend publishing, frontend destination
+selection, and controlled live verification. The Queue remains shared with Telegram.
+
 ## الهدف
 
 إضافة Facebook كـ Publisher ثانٍ بدون Queue ثانية.
@@ -394,25 +402,21 @@ Provider
  └── Facebook
 ```
 
-## Connection
+## Phase 3A — Facebook Page Connection
 
 ```text
-OAuth
- ↓
-Facebook User
- ↓
-Pages
- ↓
-Select Page
- ↓
-Store Page Token
+Manual Page ID + Page Access Token
+  ↓
+Server-side validation
+  ↓
+Encrypted Page token storage
 ```
 
-لا تخزن credentials في frontend.
+لا تخزن credentials في frontend. OAuth وFacebook Login خارج نطاق MVP.
 
 ## Database
 
-غالباً جدول:
+الجدول المطبق:
 
 ```text
 facebook_pages
@@ -425,12 +429,34 @@ id
 workspace_id
 page_id
 page_name
-access_token
+    encrypted_access_token
 token_expires_at
 is_active
 created_at
 updated_at
 ```
+
+## Phase 3B — Facebook Publishing Backend
+
+يدعم الـ backend نشر text وphoto إلى Page نشطة ومتحقق منها، مع Queue/Celery
+مشتركة، حفظ `provider_message_ref`، وسجل محاولات provider-aware.
+
+## Phase 3C.1 — Frontend Destination Selection
+
+يدعم AI Studio وQueue اختيار Telegram channel أو Facebook Page، ويحافظ على
+الوجهات في الجدولة الجماعية المختلطة. اختيار الوجهة لا ينشر وحده.
+
+## Phase 3C.2 — Queue Display & Safe Ambiguous Retry
+
+المرحلة التالية: عرض provider والوجهة والنتيجة الخاصة بكل provider، تمييز
+`failed` عن `ambiguous`، وإجبار المشغل على فحص Facebook والتأكيد الصريح قبل
+إعادة محاولة نتيجة غير مؤكدة. لا توجد إعادة تلقائية لمحاولات Facebook الغامضة.
+
+## Phase 3C.3 — Controlled Live Publishing Validation
+
+التحقق اليدوي المنفصل يجب أن يغطي Facebook text/photo/scheduled publishing،
+حفظ Page post reference، affiliate CTA، وحالات الفشل/الغموض، إضافة إلى إكمال
+Telegram failure/retry verification. لا يُنشر فعلياً دون تفويض صريح.
 
 ## Queue
 
@@ -444,11 +470,11 @@ provider = facebook
 facebook_page_id = ...
 ```
 
-التصميم النهائي يتبع النماذج الحالية.
+التصميم المطبق يستخدم `QueueItem.provider`, `channel_id`, و`facebook_page_id`.
 
 ## Publisher
 
-إذا كان مناسباً:
+Publisher layer:
 
 ```text
 Publisher
@@ -458,13 +484,13 @@ Publisher
 
 ## Facebook MVP
 
-يدعم:
+يدعم backend Phase 3A/3B:
 - text
 - image
 - affiliate URL / link
 - publish
-- retry
-- failure handling
+- retry/failure handling مع حماية idempotency
+- ambiguous outcome يحتاج تأكيداً صريحاً قبل إعادة المحاولة
 
 خارج النطاق:
 - Reels
@@ -476,6 +502,19 @@ Publisher
 ---
 
 # 9. Phase 4 — Operational Dashboard
+
+**Status:** partial foundation exists. Provider-aware and automation-specific
+operational visibility is not complete.
+
+**MVP scope:** products, recommendations, Queue status, provider/destination,
+scheduled/published/failed/ambiguous attempts, channel/Page readiness, and the
+current automation state once automation exists.
+
+**Dependencies:** existing Dashboard, Queue attempt history, SSE/polling, and
+workspace authorization. No advanced click/conversion analytics.
+
+**Acceptance:** the operator can identify what is queued, scheduled, published,
+failed, ambiguous, and whether automation is enabled, without exposing tokens.
 
 Dashboard ليس Analytics System.
 
@@ -524,6 +563,20 @@ Failed: 1
 
 # 10. Phase 5 — Automation Configuration
 
+**Status:** not implemented.
+
+**MVP scope:** enabled state, discovery filters, products per run, posts per day,
+timezone/schedule, provider/destination, and content language/tone/type. Reuse
+`workspace_settings` where appropriate.
+
+**Deferred:** complex rule builders, billing, subscriptions, and SaaS onboarding.
+
+**Dependencies:** Recommendation Engine, validated destinations, daily limits, and
+safe pause/disable behavior.
+
+**Acceptance:** an operator can save, inspect, and safely disable one automation
+policy without changing existing manual Queue behavior.
+
 تبدأ بعد استقرار Manual MVP.
 
 ## Configuration
@@ -563,6 +616,15 @@ content type
 ---
 
 # 11. Phase 6 — Auto Discovery
+
+**Status:** not implemented. Existing scheduled AliExpress catalog refresh is not
+automation orchestration.
+
+**MVP scope:** reuse Discovery and Recommendation services for filtering,
+deterministic ranking, deduplication, and Top N selection.
+
+**Acceptance:** a run produces only eligible, ranked products and records per-run
+selection failures without publishing directly.
 
 ## الهدف
 
@@ -619,6 +681,14 @@ AutomationService.run(workspace_id)
 
 # 12. Phase 7 — Auto Content Generation
 
+**Status:** not implemented. Existing AI generation is manual-flow functionality.
+
+**MVP scope:** reuse `AIContentService`, validate content and affiliate URLs, and
+isolate per-product failures.
+
+**Acceptance:** each eligible product produces validated content or an isolated
+failure; no provider call exposes credentials or bypasses the Queue.
+
 إعادة استخدام:
 
 ```text
@@ -653,6 +723,14 @@ Product 5 → success
 
 # 13. Phase 8 — Automation → Queue
 
+**Status:** not implemented.
+
+**MVP scope:** create scheduled Queue items through the existing QueueService,
+respect destinations, posting windows, and daily limits.
+
+**Acceptance:** Automation prepares Queue items; the existing Scheduler and
+Publisher perform all publishing. No second Queue or publishing task is created.
+
 Automation لا ينشر مباشرة.
 
 ```text
@@ -682,6 +760,17 @@ AutomationService → Queue
 ---
 
 # 14. Phase 9 — Safety & Idempotency
+
+**Status:** partial provider-aware foundation exists from Phase 3B. Automation-
+specific safeguards remain to be implemented.
+
+**MVP scope:** product/Queue deduplication, concurrent-run safety, stale and
+ambiguous attempt handling, affiliate fail-closed behavior, daily limits, and
+safe pause/disable.
+
+**Acceptance:** repeated or concurrent runs cannot create unintended duplicate
+Queue items or provider posts, and missing affiliate URLs are skipped by
+unattended automation.
 
 هذه المرحلة إلزامية قبل unattended automation.
 
@@ -759,6 +848,15 @@ allow no-CTA post
 ---
 
 # 15. Phase 10 — Automation Observability
+
+**Status:** not implemented.
+
+**MVP scope:** minimal run identity, status, counts, failures, timestamps, and
+operator-visible diagnostics. Begin recording run outcomes when automation begins;
+do not postpone all observability to this phase.
+
+**Acceptance:** the operator can inspect the latest run and understand whether
+products were discovered, generated, queued, published, or failed.
 
 إذا لم تكف Queue history، ننشئ جدولاً صغيراً:
 
@@ -968,16 +1066,16 @@ Failed
 Migrations الحالية:
 
 ```text
-001 → 017
+001 → 019
 ```
 
-لا تعدل.
+لا تعدل migrations `001–019`.
 
-أي schema change جديد يبدأ بعد 017.
+أي schema change جديد يبدأ بعد `019`.
 
 المحتمل:
 - Recommendation: غالباً بدون migration.
-- Facebook: `facebook_pages` + أي queue/provider columns مطلوبة.
+- Facebook: `facebook_pages` (`018`) + queue/provider columns (`019`) مطبقة.
 - Automation: `automation_runs`.
 
 لكل migration:
@@ -1140,7 +1238,11 @@ docs/10-production-readiness.md
 
 ## Phase 0 — Live Verification
 
-**Goal:** إثبات أن Manual Telegram MVP يعمل فعلياً.
+**Status:** partially verified. Manual Telegram publishing, image/affiliate-link
+delivery, and scheduling were verified by the operator. Controlled live failure
+and retry remain pending.
+
+**Goal:** إكمال التحقق الحقيقي، وليس فقط عبر الاختبارات.
 
 **Completion:**
 
@@ -1156,6 +1258,8 @@ Discovery
 
 ## Phase 1 — Recommendation Engine
 
+**Status:** implemented and merged via PR #7.
+
 **Goal:** تحويل scoring إلى recommendation.
 
 **Work:**
@@ -1168,40 +1272,43 @@ Discovery
 7. frontend
 8. tests
 
-**Completion:** المستخدم يحصل على توصيات بناءً على معاييره.
+**Completion:** المستخدم يحصل على توصيات حتمية وقابلة للتفسير بناءً على معاييره. **Implemented via PR #7.**
 
 ---
 
 ## Phase 2 — Onboarding
 
-**Goal:** تشغيل مستخدم جديد بدون bootstrap يدوي.
+**Status:** Manual MVP Polish implemented and merged via PR #8. Public registration,
+self-service workspace creation, and SaaS onboarding are explicitly deferred.
+
+**Goal:** تحسين المسار اليدوي للمشغل الحالي.
 
 **Work:**
-1. registration
-2. workspace creation
-3. membership
-4. settings
-5. Telegram setup
+1. recommended default discovery mode
+2. Telegram setup guidance and permission refresh
+3. validation, loading, and empty states
+4. AI Studio handoff regression coverage
 
-**Completion:** مستخدم جديد يستطيع البدء.
+**Completion:** المشغل الحالي يستطيع بدء المسار اليدوي مع وضع Discovery الموصى به وإرشادات القنوات. Public registration وself-service onboarding مؤجلان.
 
 ---
 
 ## Phase 3 — Facebook
 
+**Status:** Phase 3A, 3B, and 3C.1 implemented and merged via PRs #9–#11.
+Phase 3C.2 is next; Phase 3C.3 is pending controlled live validation.
+
 **Goal:** إضافة Facebook إلى نفس Queue.
 
-**Work:**
-1. OAuth
-2. Page selection
-3. token storage
-4. publisher
-5. queue integration
-6. retry/failure
-7. UI
-8. tests
+**Work completed:** manual Page connection, encrypted token storage, Page
+validation, text/photo publisher, provider-aware Queue/Celery integration,
+frontend destination selection, and automated tests.
 
-**Completion:** Queue واحدة تنشر إلى Telegram أو Facebook.
+**Remaining:** provider-specific Queue display, safe ambiguous retry UX, and
+controlled live Facebook/Telegram validation. OAuth and Facebook Login remain
+out of scope.
+
+**Completion target:** Queue واحدة تنشر إلى Telegram أو Facebook، مع استكمال عرض الحالات وإعادة المحاولة الآمنة والتحقق الحي.
 
 ---
 
@@ -1282,6 +1389,16 @@ content style
 
 ## Phase 11 — Full Validation
 
+**Status:** not implemented.
+
+**MVP scope:** full manual and automated workflow validation, provider-specific
+live delivery, failure/recovery, duplicate prevention, workspace isolation,
+deployment configuration, backup/recovery, and safe automation pause.
+
+**Acceptance:** the complete workflow is demonstrated with authorized test
+destinations and documented evidence. Mocked CI alone is insufficient for MVP
+completion.
+
 اختبار:
 
 ```text
@@ -1303,8 +1420,7 @@ Deduplication
 # 24. MVP Definition of Done — Manual
 
 ```text
-[ ] User can register
-[ ] User receives a workspace
+[ ] Operator bootstrap/login flow is documented and usable
 [ ] User can login
 [ ] User can configure Telegram
 [ ] User can discover products
@@ -1320,7 +1436,7 @@ Deduplication
 [ ] User can edit content
 [ ] User can improve/regenerate content
 [ ] User can queue content
-[ ] Queue resolves Telegram channel
+[ ] Queue resolves the configured Telegram channel or validated Facebook Page
 [ ] Queue contains affiliate CTA
 [ ] Queue contains image when available
 [ ] User can schedule content
@@ -1333,7 +1449,7 @@ Deduplication
 [ ] Dashboard exposes operational failures
 [ ] Backend tests pass
 [ ] Frontend tests pass
-[ ] Manual Telegram E2E verification passes
+[ ] Manual Telegram core flow is verified; controlled failure/retry remains pending
 ```
 
 ---
@@ -1341,7 +1457,7 @@ Deduplication
 # 25. MVP Definition of Done — Facebook
 
 ```text
-[ ] User can connect Facebook
+[ ] User can connect Facebook through manual Page ID + Page Access Token setup
 [ ] User can select a Page
 [ ] Page token is stored securely
 [ ] Token expiration is handled
@@ -1351,7 +1467,7 @@ Deduplication
 [ ] Images work
 [ ] Affiliate URL works
 [ ] Failed Facebook posts are visible
-[ ] Facebook retry works
+[ ] Facebook retry is safe for definitive failures; ambiguous retry requires explicit confirmation
 [ ] Facebook publishing is idempotent
 [ ] Integration tests pass
 [ ] Manual live Facebook verification passes

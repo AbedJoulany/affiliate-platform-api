@@ -10,9 +10,12 @@ Later automation reuses existing services: `Discovery → Recommendation → AIC
 
 ## Current baseline and status
 
-- PR #5 integrated the **Manual Telegram MVP foundation** into `main` (owner-confirmed, CI passed).
-- **Live Telegram Verification is still pending.** Do not claim successful real publishing from mocked tests or CI.
-- Roadmap **Phase 0** = Live Manual Verification; **Phase 1** = Recommendation Engine. The old name “Phase 1 Manual Telegram MVP” refers to the already-merged foundation, **not** Roadmap Phase 1.
+- PRs #5, #7, #8, #9, #10, and #11 are merged into `main`; PR #11 is the current baseline (`069c7192fd904cbc26248b53be582a9fcfb774c3`).
+- **Phase 0 is partially verified:** manual Telegram publishing, image/affiliate-link delivery, and scheduling were operator-verified; controlled live failure/retry verification remains pending.
+- Phase 3A Page connection, Phase 3B Facebook publishing backend, and Phase 3C.1 frontend destination selection are implemented and merged. **Phase 3C.2 — Queue Display & Safe Ambiguous Retry is next.**
+- Facebook uses manual Page ID + Page Access Token connection for this MVP. OAuth and Facebook Login are deferred.
+- Live Facebook publishing is still pending. Do not claim live provider success from mocked tests or CI.
+- Current Alembic head is `019`; historical migrations `001–019` are protected unless a later migration is explicitly approved.
 - Before beginning work, check the actual branch, HEAD, working tree, migrations, and tests. Do not assume this status note is forever current.
 
 ## Non-negotiable scope
@@ -28,9 +31,12 @@ Later automation reuses existing services: `Discovery → Recommendation → AIC
 
 - Prefer existing FastAPI API/service/repository/schema layers and Next.js feature structure. Reuse established patterns rather than broad refactors.
 - Preserve the existing queue, scheduler, publish-attempt history, retry/idempotency behavior, and provider-specific publisher integration.
-- **Never modify historical Alembic migrations `001–017`**. Add a new migration after `017` only when a real schema change requires one; include upgrade/downgrade and verify compatibility.
+- **Never modify historical Alembic migrations `001–019`**. Add a later migration only when a real schema change requires one; include upgrade/downgrade and verify compatibility.
 - Do not alter existing catalog product score semantics accidentally. For Recommendation Engine, prefer a separate deterministic and explainable recommendation score, with defined normalization, missing-data policy, stable tie-breakers, and tests.
 - Treat credentials and tokens as secrets: never print, commit, or put them in frontend storage unless existing approved flows require it. Facebook page tokens (when implemented) must be handled server-side.
+- Provider-aware Queue, existing SSE/polling fallback, Celery scheduling, and publish-attempt history must remain compatible.
+- An ambiguous Facebook attempt requires operator inspection and explicit confirmation before retry; it must never be retried automatically.
+- Automation must reuse Discovery, Recommendation, AIContentService, QueueService, the existing Scheduler, and the existing Publisher. Unattended automation must fail closed when a valid affiliate URL is missing.
 
 ## Workflow for every task
 

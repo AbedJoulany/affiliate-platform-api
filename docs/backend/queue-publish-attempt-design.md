@@ -1,16 +1,18 @@
 # QueuePublishAttempt Design
 
-**Scope:** Phase A.1, Backend Task 1 only  
-**Provider:** Telegram only  
-**Authority:** `docs/08-implementation-roadmap.md` §3
+**Scope:** Historical Phase A.1 design record
+**Provider:** Telegram-only design; superseded by the provider-aware implementation in Phase 3B
+**Authority:** `docs/product-a-mvp-roadmap.md` and the current API/service code
+
+> This document is retained as the original Telegram attempt design. Current attempt records also support Facebook, `provider_message_ref`, and the `ambiguous` status. Use [06-api-integration.md](../06-api-integration.md) and the implementation as the current contract.
 
 ## Purpose and boundaries
 
-`QueuePublishAttempt` is the durable record of a guard-authorized Telegram send try for an existing queue item. A row is created before the try can contact Telegram and is then finalized with its outcome. A retry that reaches the provider is a new attempt and receives a new attempt number; an invocation rejected by the idempotency or concurrency guard does not create a fictitious attempt.
+`QueuePublishAttempt` is the durable record of a guard-authorized provider send try for an existing queue item. In this historical design, examples describe Telegram; the current service applies the same durable guard to Telegram and Facebook. A retry that reaches the provider is a new attempt and receives a new attempt number; an invocation rejected by the idempotency or concurrency guard does not create a fictitious attempt.
 
 The entity is additive. It does not change `queue_items`, existing queue endpoints, or existing response schemas. It follows the repository's `UUIDPrimaryKeyMixin` and `TimestampMixin` conventions.
 
-The current `QueueStatus` remains exactly `draft`, `queued`, `scheduled`, and `published`. Attempt `status` is a separate, attempt-scoped value; `failed` describes one send try and is never a queue item status because a queue item may remain queued or scheduled and later succeed.
+The current `QueueStatus` is `draft`, `queued`, `scheduled`, `published`, or `failed`. Attempt `status` is separate and attempt-scoped; the current values are `started`, `succeeded`, `failed`, and Facebook-specific `ambiguous`.
 
 ## Current publishing facts that shape the design
 

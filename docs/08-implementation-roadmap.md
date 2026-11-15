@@ -1,7 +1,9 @@
 # Implementation Roadmap
 
-**Document Version:** 3.3  
-**Last Updated:** 2026-09-06
+**Document Version:** 3.4
+**Last Updated:** 2026-11-15
+
+> **Historical/superseded tracker:** This document records the older Phase A–E implementation sequence. The canonical current roadmap and Product A status are [product-a-mvp-roadmap.md](./product-a-mvp-roadmap.md). Do not treat older “next phase”, Product B, Telegram-only, or open/complete labels below as current without reconciling them with that roadmap.
 
 **2026-09-06 revision (Product B removal):** Affiliate, Campaign, AffiliateCampaign, Click, Conversion, and campaign analytics were removed. Product A MEASURE is the operational dashboard. Historical Phase D/E notes below that describe those APIs are superseded.
 

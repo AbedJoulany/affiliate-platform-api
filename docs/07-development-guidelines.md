@@ -1,7 +1,9 @@
 # Development Guidelines
 
-**Document Version:** 2.2  
-**Last Updated:** 2026-09-04
+**Document Version:** 2.3
+**Last Updated:** 2026-11-15
+
+> **Current baseline:** These guidelines apply to the Product A single-operator MVP. Preserve the existing provider-aware Queue/Celery path for Telegram and Facebook, workspace authorization, affiliate-link safety, and encrypted server-side Facebook credentials. Do not add SaaS onboarding, OAuth, billing, or another publishing pipeline without approval.
 
 **2026-09-04 revision (CI hardening):** §18 Playwright smoke runs in GitHub Actions job `e2e` (not a required branch-protection check yet).
 
@@ -118,7 +120,7 @@ AI coding assistants must:
 4. Not claim features are connected unless the API module + hook exist
 5. Keep Arabic RTL labels on user-facing controls
 6. Use `ToastOverlay` for transient success/error — do not add duplicate toast libraries
-7. Match backend queue/product status strings exactly — no invented `failed` queue status
+7. Match backend queue and attempt status strings exactly. `failed` is a valid queue status; `ambiguous` is an attempt-scoped Facebook state and must not be treated as an automatic retry signal.
 
 ---
 
@@ -877,4 +879,4 @@ AI-Assisted Development
 Continuous Improvement
 ```
 
-The goal is to build a frontend that remains understandable and maintainable as the platform evolves from a personal automation tool into a scalable SaaS product.
+The goal is to keep the Product A MVP understandable and maintainable while later automation remains a roadmap concern. Do not infer SaaS onboarding or billing scope from future extensibility.
