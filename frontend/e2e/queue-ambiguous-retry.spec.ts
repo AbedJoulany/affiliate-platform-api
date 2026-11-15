@@ -172,7 +172,11 @@ test("shows an ambiguous Facebook attempt and cancellation sends no retry", asyn
   await expect(page.getByText("Facebook • صفحة الاختبار")).toBeVisible();
   await expect(page.getByText("غير مؤكد", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "مراجعة النشر" }).click();
-  await expect(page.getByText("نتيجة غير مؤكدة · راجع الصفحة")).toBeVisible();
+  await expect(
+    page
+      .getByLabel("تفاصيل عملية النشر")
+      .getByText("نتيجة غير مؤكدة · راجع الصفحة"),
+  ).toBeVisible();
   await page.getByRole("button", { name: "مراجعة وإعادة المحاولة" }).click();
   await expect(page.getByRole("alertdialog")).toContainText(
     "قد يكون Meta قد قبل المنشور بالفعل",
