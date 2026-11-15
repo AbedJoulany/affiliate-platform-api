@@ -12,10 +12,13 @@ export type DestinationSelection = {
 };
 
 export function destinationSelectionFromQueue(item: QueueItem): DestinationSelection {
+  // Keep pre-provider Telegram responses usable while older clients/fixtures
+  // still omit the additive provider field.
+  const provider = item.provider ?? "telegram";
   return {
-    provider: item.provider,
-    channelId: item.provider === "telegram" ? item.channel_id : null,
-    facebookPageId: item.provider === "facebook" ? item.facebook_page_id : null,
+    provider,
+    channelId: provider === "telegram" ? item.channel_id : null,
+    facebookPageId: provider === "facebook" ? item.facebook_page_id : null,
   };
 }
 

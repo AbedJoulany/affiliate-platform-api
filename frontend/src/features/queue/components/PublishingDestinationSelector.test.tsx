@@ -5,6 +5,7 @@ import type { Channel } from "@/features/channels/types/api";
 import type { FacebookPage } from "@/features/channels/types/api";
 import {
   PublishingDestinationSelector,
+  destinationSelectionFromQueue,
   type DestinationSelection,
 } from "./PublishingDestinationSelector";
 
@@ -58,6 +59,19 @@ function makeChannel(overrides: Partial<Channel> = {}): Channel {
 }
 
 describe("PublishingDestinationSelector", () => {
+  it("treats legacy Queue items without a provider as Telegram", () => {
+    const legacyItem = {
+      channel_id: CHANNEL_ID,
+      facebook_page_id: null,
+    } as never;
+
+    expect(destinationSelectionFromQueue(legacyItem)).toEqual({
+      provider: "telegram",
+      channelId: CHANNEL_ID,
+      facebookPageId: null,
+    });
+  });
+
   it("keeps Telegram as the default and disables channels that are not ready", () => {
     render(
       <PublishingDestinationSelector
