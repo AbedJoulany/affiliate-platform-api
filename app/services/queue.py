@@ -385,7 +385,7 @@ class TelegramPublishingService:
             raise NotFoundError("Queue item not found")
         if item.status == QueueStatus.PUBLISHED:
             raise ConflictError(
-                "Queue item is already published; create a new queue item to publish again"
+                "Publish already completed for this queue item; create a new queue item to publish again"
             )
 
         now = datetime.now(UTC)
@@ -426,7 +426,7 @@ class TelegramPublishingService:
                         ),
                     )
                 raise ConflictError(
-                    "Queue item is already published; create a new queue item to publish again"
+                    "Publish already completed for this queue item; create a new queue item to publish again"
                 )
             raise ConflictError(
                 "Publish already in progress for this content; wait for the in-flight "
