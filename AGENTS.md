@@ -10,11 +10,11 @@ Later automation reuses existing services: `Discovery → Recommendation → AIC
 
 ## Current baseline and status
 
-- PRs #5, #7, #8, #9, #10, #11, #12, and #13 are merged into `main`; PR #13 is the current baseline (`54138d4eb55e537fccdde70ce305c87350568d22`).
+- PRs #5, #7, #8, #9, #10, #11, #12, #13, #14, and #15 are merged into `main`; PR #15 is the current baseline (`b0593f8a72c8ec2866793e8df2d70d04070272bc`).
 - **Phase 0 is partially verified:** manual Telegram publishing, image/affiliate-link delivery, and scheduling were operator-verified; controlled live failure/retry verification remains pending.
-- Phase 3A Page connection, Phase 3B Facebook publishing backend, Phase 3C.1 frontend destination selection, and Phase 3C.2 Queue Display & Safe Ambiguous Retry are implemented and merged. **Phase 3C.3 — Controlled Live Publishing Validation is next.**
+- Phase 3A Page connection, Phase 3B Facebook publishing backend, Phase 3C.1 frontend destination selection, Phase 3C.2 Queue Display & Safe Ambiguous Retry, and Phase 3C.3 publishing safety/live validation are implemented and merged. **Phase 4 — Operational Dashboard is next.**
 - Facebook uses manual Page ID + Page Access Token connection for this MVP. OAuth and Facebook Login are deferred.
-- Live Facebook publishing is still pending. Do not claim live provider success from mocked tests or CI.
+- Controlled live Facebook text, image, and scheduled publishing were operator-verified before PR #15; do not treat mocked tests or CI as live provider evidence. Strict exactly-once delivery is not claimed.
 - Current Alembic head is `019`; historical migrations `001–019` are protected unless a later migration is explicitly approved.
 - Before beginning work, check the actual branch, HEAD, working tree, migrations, and tests. Do not assume this status note is forever current.
 

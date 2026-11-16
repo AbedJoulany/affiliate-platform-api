@@ -1,10 +1,10 @@
 # Product A MVP — Implementation Roadmap
 
-> **Document status:** Canonical active roadmap. Updated 2026-11-15 after PR #13 and the PR #12 documentation synchronization.
+> **Document status:** Canonical active roadmap. Updated 2026-11-16 after PR #15 and the PR #15 documentation synchronization.
 > **Repository:** `AbedJoulany/affiliate-platform-api`
-> **Development baseline:** `main` at PR #13 merge commit `54138d4eb55e537fccdde70ce305c87350568d22`.
-> **Verification source:** merged PRs and CI are implementation evidence; live Telegram failure/retry and live Facebook publishing remain separate acceptance gates.
-> **Next phase:** Phase 3C.3 — Controlled Live Publishing Validation.
+> **Development baseline:** `main` at PR #15 merge commit `b0593f8a72c8ec2866793e8df2d70d04070272bc`.
+> **Verification source:** merged PRs and CI are implementation evidence; controlled live Facebook publishing was operator-verified separately, while Telegram failure/retry and PostgreSQL concurrency remain open verification items.
+> **Next phase:** Phase 4 — Operational Dashboard.
 
 ### Naming convention
 
@@ -12,7 +12,7 @@
 - **Roadmap Phase 0:** partially verified; controlled live failure/retry remains pending.
 - **Roadmap Phase 1:** implemented and merged via PR #7.
 - **Roadmap Phase 2:** implemented and merged via PR #8; public onboarding is deferred.
-- **Roadmap Phase 3:** 3A, 3B, and 3C.1 implemented via PRs #9–#11; Phase 3C.2 implemented and CI-verified via PR #13; Phase 3C.3 is next.
+- **Roadmap Phase 3:** 3A, 3B, and 3C.1 implemented via PRs #9–#11; Phase 3C.2 implemented and CI-verified via PR #13; Phase 3C.3 implemented and merged via PR #15.
 - **Roadmap Phases 4–11:** planned or partially founded as described below.
 - A merged PR and green mocked CI do **not** substitute for a live provider test.
 
@@ -25,13 +25,15 @@
 | Recommendation Engine | Implemented | PR #7; deterministic scoring, filters, explanations, and Top N |
 | Manual MVP Polish | Implemented | PR #8; recommended mode, channel guidance, and permission refresh |
 | Facebook Page Connection | Implemented | PR #9; migration `018`; real Page connection operator-verified |
-| Facebook Publishing Backend | Implemented | PR #10; migration `019`; live Facebook publishing still pending |
+| Facebook Publishing Backend | Implemented | PR #10; migration `019`; controlled text/photo/scheduled Facebook publishing operator-verified; permission readiness remains operationally separate |
 | Facebook Destination Selection | Implemented | PR #11; provider-aware AI Studio and Queue frontend |
 | Queue Display & Safe Ambiguous Retry | Implemented & CI Verified | PR #13; provider-aware destination/attempt display, explicit ambiguous retry confirmation, and duplicate-click protection |
+| Phase 3C.3 publishing safety and controlled live validation | Implemented & CI Verified | PR #15, merge commit `b0593f8a72c8ec2866793e8df2d70d04070272bc`; live text/photo/scheduled Facebook publishing was operator-verified separately |
 | Phase 0 live Telegram verification | Partially verified | Manual publish, image/link delivery, and scheduling verified; failure/retry pending |
 | PR #11 CI | Passed | Backend, frontend, and E2E checks completed successfully |
 | PR #12 documentation synchronization | Completed | Documentation-only roadmap synchronization |
 | PR #13 CI | Passed | Backend 423, frontend 220 Vitest, Playwright 13; TypeScript, lint, production build, and Ruff passed |
+| PR #15 CI | Passed | Backend, frontend, and E2E jobs passed; Phase 3C.3 regression coverage merged |
 
 ---
 
@@ -98,7 +100,7 @@ Retry
 
 ## 3. المراحل المتبقية
 
-> الترقيم التالي يخص **Roadmap** فقط؛ لا تخلطه مع اسم مرحلة Manual Telegram MVP السابقة. حالة Phase 0: partially verified. حالة Phase 1 وPhase 2 وPhase 3C.1 وPhase 3C.2: implemented؛ Phase 3C.2 CI verified، وPhase 3C.3 هو التالي.
+> الترقيم التالي يخص **Roadmap** فقط؛ لا تخلطه مع اسم مرحلة Manual Telegram MVP السابقة. حالة Phase 0: partially verified. حالة Phase 1 وPhase 2 وPhase 3C.1 وPhase 3C.2 وPhase 3C.3: implemented؛ Phase 3C.3 CI verified، وPhase 4 هو التالي.
 
 ```text
 Phase 0  — Live Manual Verification
@@ -463,14 +465,29 @@ updated_at
 Playwright: 13 tests passed; TypeScript, lint, production build, and Ruff passed.
 هذه النتائج لا تثبت live Facebook publishing.
 
-## Phase 3C.3 — Controlled Live Publishing Validation
+## Phase 3C.3 — Controlled Live Publishing Validation & Publishing Safety Hardening
 
-**Next planned phase.** التحقق اليدوي المنفصل يجب أن يغطي Facebook text publishing،
-وFacebook photo publishing مع caption، وFacebook scheduled publishing، والتحقق
-من نتائج provider الفعلية وحفظ Page post reference، affiliate CTA، وحالات
-الفشل/الغموض. يجب أن يتطلب أي ambiguous retry تحقق المشغل الصريح قبل التأكيد،
-مع الحفاظ على سلوك Telegram الحالي وإكمال Telegram failure/retry verification.
-لا يُنشر فعلياً دون تفويض صريح.
+**Status: Implemented & CI Verified via PR #15.** تم التحقق اليدوي المنفصل من
+Facebook text publishing وFacebook photo publishing مع caption وFacebook scheduled
+publishing، مع ظهور حالة `published` وسجل المحاولة ومرجع provider في Queue.
+
+يشمل التنفيذ حماية Queue items المنشورة داخل مسار claim المقفول حتى بعد انتهاء نافذة
+24 ساعة، ومنع إنشاء محاولة أو استدعاء provider جديد لها، وجعل أخطاء Facebook غير
+الغامضة — ومنها HTTP 429 — نهائية للمحاولة الحالية حتى لا يعيدها scheduler بلا حدود.
+تبقى النتائج الغامضة بلا إعادة تلقائية وتتطلب فحص المشغل والتأكيد الصريح قبل retry.
+كما يعرض Queue provider المحفوظ لكل محاولة تاريخية، ويحافظ على سلوك Telegram وأولوية
+affiliate URL. لا ندعي exactly-once delivery؛ قد يتطلب قبول provider قبل حفظ النتيجة
+تحقيقاً يدوياً.
+
+**CI evidence:** PR #15 passed Backend, Frontend, and E2E GitHub Actions jobs.
+Regression tests cover published-item protection داخل وبعد نافذة idempotency، scheduled
+Facebook success، 429/401/403 handling، sanitized permission errors، active-attempt and
+ambiguous-retry safeguards، and historical provider display. PostgreSQL concurrent
+row-lock integration remains an open verification item، وكذلك Telegram live
+failure/retry verification.
+
+Live Facebook validation here refers to the prior operator-observed text/photo/scheduled
+publishing checks; no new provider calls were made during PR #15.
 
 ## Queue
 
@@ -1310,7 +1327,8 @@ self-service workspace creation, and SaaS onboarding are explicitly deferred.
 ## Phase 3 — Facebook
 
 **Status:** Phase 3A, 3B, and 3C.1 implemented and merged via PRs #9–#11.
-Phase 3C.2 is implemented and CI verified via PR #13; Phase 3C.3 is next for controlled live validation.
+Phase 3C.2 is implemented and CI verified via PR #13; Phase 3C.3 is implemented and
+CI verified via PR #15.
 
 **Goal:** إضافة Facebook إلى نفس Queue.
 
@@ -1318,8 +1336,8 @@ Phase 3C.2 is implemented and CI verified via PR #13; Phase 3C.3 is next for con
 validation, text/photo publisher, provider-aware Queue/Celery integration,
 frontend destination selection, and automated tests.
 
-**Remaining:** controlled live Facebook/Telegram validation. OAuth and Facebook
-Login remain out of scope.
+**Remaining:** PostgreSQL concurrency verification and Telegram live failure/retry
+verification. OAuth and Facebook Login remain out of scope.
 
 **Completion target:** Queue واحدة تنشر إلى Telegram أو Facebook، مع استكمال عرض الحالات وإعادة المحاولة الآمنة والتحقق الحي.
 
@@ -1481,9 +1499,9 @@ Deduplication
 [ ] Affiliate URL works
 [ ] Failed Facebook posts are visible
 [x] Facebook retry is safe for definitive failures; ambiguous retry requires explicit confirmation
-[ ] Facebook publishing is idempotent
-[ ] Integration tests pass
-[ ] Manual live Facebook verification passes
+[ ] Strict exactly-once Facebook delivery (not claimed; ambiguous provider outcomes require operator investigation)
+[x] Integration tests and CI checks pass
+[x] Controlled live Facebook text/photo/scheduled verification passes (operator-observed)
 ```
 
 ---
