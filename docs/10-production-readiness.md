@@ -1,9 +1,17 @@
 # Production Readiness and Release Runbook
 
-**Document Version:** 3.2
-**Last Updated:** 2026-11-15
+**Document Version:** 3.3
+**Last Updated:** 2026-11-16
 
-> **Current baseline:** PRs #7–#13 are merged. The Product A MVP now includes provider-aware Telegram/Facebook Queue publishing, migration 019, server-side encrypted Facebook Page tokens, frontend destination selection, and Phase 3C.2 provider-aware Queue display with safe ambiguous retry UX. Phase 0 controlled Telegram failure/retry verification and Phase 3C.3 live Facebook validation remain pending. Use [product-a-mvp-roadmap.md](./product-a-mvp-roadmap.md) for canonical phase status.
+> **Current baseline:** PRs #7–#15 are merged. The Product A MVP now includes provider-aware Telegram/Facebook Queue publishing, migration 019, server-side encrypted Facebook Page tokens, frontend destination selection, Phase 3C.2 provider-aware Queue display with safe ambiguous retry UX, and Phase 3C.3 publishing safety hardening. Controlled live Facebook text/photo/scheduled publishing was operator-verified separately. Telegram failure/retry and PostgreSQL concurrent row-lock verification remain pending. Use [product-a-mvp-roadmap.md](./product-a-mvp-roadmap.md) for canonical phase status.
+
+**2026-11-16 revision (Phase 3C.3 closeout):** PR #15 merged the publishing safety
+hardening and regression coverage. Already-published Queue items are rejected inside
+the locked claim flow even after the 24-hour idempotency window; non-ambiguous Facebook
+failures, including HTTP 429, are terminal for the current attempt and are not
+reselected by the scheduler; ambiguous outcomes still require explicit operator
+verification before retry. Queue attempt history displays its persisted provider.
+These controls reduce duplicate risk but do not claim exactly-once external delivery.
 
 **2026-09-04 revision (CI hardening):** GitHub Actions Ruff step is `ruff check .` on first-party Python (vendored `iop/` excluded). Playwright smoke is job `e2e` (API-mocked; not a required branch-protection check yet). See §3, §9.5.
 
@@ -267,7 +275,7 @@ Also: `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`, `REDIS_HOST` / `REDIS_PORT` 
 | Integration | Policy | Status |
 | --- | --- | --- |
 | **Telegram Bot API** | In-process: up to 3 retries (1 initial + 3 = ≤4 HTTP attempts), exponential backoff from `0.5s` + jitter; honor 429 `parameters.retry_after`. Celery publish tasks: `autoretry_for=(TelegramPublishError,)`, `max_retries=3`, `retry_backoff=True`, `retry_jitter=True`. Non-retryable 4xx Telegram errors (excluding 429) are marked terminal immediately so the beat loop does not recreate failed attempts forever. Failures persist on `queue_publish_attempts`; terminal → `error_code=dead_letter` | ✅ Implemented (Phase A.1) |
-| **Meta Graph API** | Provider-aware Queue/Celery path publishes Page text/photo posts. Page must be active and validated; tokens are decrypted only server-side when needed. Definitive failures are recorded; timeout/connection-reset/ambiguous outcomes are not automatically retried and require operator verification before `confirm_ambiguous=true` | ✅ Implemented backend (Phase 3B); live validation pending |
+| **Meta Graph API** | Provider-aware Queue/Celery path publishes Page text/photo posts. Page must be active and validated; tokens are decrypted only server-side when needed. Non-ambiguous failures, including HTTP 429, are terminal for the current attempt and are not reselected by the scheduler. Timeout/connection-reset/ambiguous outcomes are not automatically retried and require operator verification before `confirm_ambiguous=true`. Published items are blocked inside the locked claim flow even after the 24-hour window. | ✅ Implemented and CI verified (Phase 3C.3); controlled text/photo/scheduled publishing operator-verified; Page validation is not a comprehensive permission-readiness check |
 | **AliExpress IOP** | Client-owned only: `_execute_with_retries` in `app/aliexpress/api_client.py`. Budget `aliexpress_max_retries + 1` (default **4**). Retryable: rate-limit errors; codes `{408,429,500,502,503,504}` or message `timeout`/`temporarily`. Credentials errors re-raise immediately. Backoff `0.5s * 2^attempt` + jitter `[0,0.25)`; inter-request gate default **0.2s**. Discovery Celery tasks: **no** AliExpress HTTP `autoretry_for` (nesting would multiply outbound calls). Canonical discovery exception: `app.aliexpress.exceptions.AliExpressAPIError` | ✅ Implemented (Phase C') |
 | **OpenAI / Gemini** | Provider-owned via `app/ai/retry.py` (max **2** total attempts). Retryable: `httpx.TransportError`, HTTP 429, HTTP 5xx. Non-retryable: 400/401/403/404 and unexpected non-httpx errors. Malformed response parsing is **outside** the retry loop (1 call). Backoff base **1.0s** × `2^attempt` + jitter `[0,0.5)`; honor numeric `Retry-After` (cap **60s**). Timeout **60s**/attempt. Exhaustion → existing `AIProviderError` contract. **No** Celery path | ✅ Implemented (Phase C') |
 | **Celery publish tasks** | Provider-aware dispatch; preserve Telegram retry semantics and Facebook ambiguous-attempt guard | ✅ Implemented (Phase 3B) |
