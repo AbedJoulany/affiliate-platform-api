@@ -1,6 +1,6 @@
 # Product A MVP — Implementation Roadmap
 
-> **Document status:** Canonical active roadmap. Updated 2026-11-16 after PR #15 and the PR #15 documentation synchronization.
+> **Document status:** Canonical active roadmap. Updated 2026-11-16 after Phase 3C.3 merged via PR #15; documentation synchronization proposed in PR #16.
 > **Repository:** `AbedJoulany/affiliate-platform-api`
 > **Development baseline:** `main` at PR #15 merge commit `b0593f8a72c8ec2866793e8df2d70d04070272bc`.
 > **Verification source:** merged PRs and CI are implementation evidence; controlled live Facebook publishing was operator-verified separately, while Telegram failure/retry and PostgreSQL concurrency remain open verification items.
