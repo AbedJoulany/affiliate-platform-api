@@ -231,6 +231,9 @@ export function QueueDetailsDrawer({
                         timeStyle: "short",
                       }).format(new Date(attempt.occurred_at))}
                     </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      المزوّد: {attempt.provider === "facebook" ? "Facebook" : "Telegram"}
+                    </p>
                     {(attempt.status === "failed" || attempt.status === "ambiguous") &&
                     (attempt.error_message || attempt.error_code) ? (
                       <p className="mt-2 text-sm leading-6 text-muted-foreground">
