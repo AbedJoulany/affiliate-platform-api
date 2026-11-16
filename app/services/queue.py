@@ -193,9 +193,6 @@ class TelegramPublishingService:
         previous_status = item.status
 
         try:
-            if item.status == QueueStatus.PUBLISHED:
-                raise ConflictError("Queue item is already published")
-
             if snapshot.provider == "telegram":
                 if not item.channel_id or not item.channel or snapshot.chat_id is None:
                     raise ValidationError(
@@ -289,8 +286,9 @@ class TelegramPublishingService:
             # Celery autoretries only TelegramPublishError. All other failures are
             # terminal immediately. Transport failures become terminal when the
             # caller reports that Celery (or the manual path) has no retries left.
-            # Non-retryable Telegram 4xx (except 429) are also terminal so the
-            # beat loop does not recreate failed attempts forever.
+            # Non-ambiguous Facebook errors and non-retryable Telegram 4xx
+            # (except 429) are terminal so the beat loop does not recreate
+            # failed attempts forever.
             if isinstance(exc, FacebookPublishError) and exc.ambiguous:
                 await self._mark_attempt_failed(
                     attempt, exc, terminal=True, ambiguous=True,
@@ -300,8 +298,12 @@ class TelegramPublishingService:
                 raise
             terminal = (
                 mark_transport_failure_terminal
+                or isinstance(exc, FacebookPublishError)
                 or not isinstance(exc, (TelegramPublishError, FacebookPublishError))
-                or self._is_non_retryable_telegram_error(exc)
+                or (
+                    isinstance(exc, TelegramPublishError)
+                    and self._is_non_retryable_telegram_error(exc)
+                )
             )
             await self._mark_attempt_failed(
                 attempt,
@@ -381,6 +383,11 @@ class TelegramPublishingService:
         item = await self.queue_repo.get_with_relations_for_update(queue_id)
         if not item:
             raise NotFoundError("Queue item not found")
+        if item.status == QueueStatus.PUBLISHED:
+            raise ConflictError(
+                "Publish already completed for this queue item; "
+                "create a new queue item to publish again"
+            )
 
         now = datetime.now(UTC)
         snapshot = self._build_publish_snapshot(item)
@@ -420,8 +427,8 @@ class TelegramPublishingService:
                         ),
                     )
                 raise ConflictError(
-                    "Publish already completed for this content; edit content to republish "
-                    "or wait for the idempotency window to expire"
+                    "Publish already completed for this queue item; "
+                    "create a new queue item to publish again"
                 )
             raise ConflictError(
                 "Publish already in progress for this content; wait for the in-flight "

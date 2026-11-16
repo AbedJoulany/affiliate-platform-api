@@ -1,7 +1,7 @@
 """Backend-only Facebook Queue publishing tests with mocked provider calls."""
 
 import base64
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import httpx
@@ -9,7 +9,7 @@ import pytest
 
 from app.core.config import get_settings
 from app.core.enums import FacebookPageValidationStatus, QueueStatus
-from app.facebook.client import FacebookGraphClient
+from app.facebook.client import FacebookGraphClient, FacebookGraphError
 from app.facebook.crypto import FacebookTokenCipher
 from app.facebook.publisher import FacebookPublisher, FacebookPublishResult
 from app.models.facebook_page import FacebookPage
@@ -73,6 +73,76 @@ async def test_facebook_text_publishing_preserves_affiliate_url(monkeypatch, ses
     assert result.provider_message_ref == "123456_789"
     assert calls[0]["affiliate_url"] == "https://affiliate.example/offer"
     assert calls[0]["token"] == "test-token"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "expires_at",
+    [
+        pytest.param(datetime.now(UTC) + timedelta(hours=1), id="within-window"),
+        pytest.param(datetime.now(UTC) - timedelta(hours=1), id="after-window"),
+    ],
+)
+async def test_published_facebook_item_cannot_create_a_republish_attempt(
+    monkeypatch, session, expires_at
+):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "facebook_token_encryption_key", _key())
+    workspace_id = uuid4()
+    page = FacebookPage(
+        workspace_id=workspace_id,
+        facebook_page_id="1234560",
+        page_name="Test Page",
+        encrypted_access_token=FacebookTokenCipher(_key()).encrypt("test-token"),
+        validation_status=FacebookPageValidationStatus.VALID,
+    )
+    session.add(page)
+    await session.flush()
+    item = QueueItem(
+        workspace_id=workspace_id,
+        provider="facebook",
+        facebook_page_id=page.id,
+        content="Already published",
+        status=QueueStatus.PUBLISHED,
+        published_at=datetime.now(UTC),
+    )
+    session.add(item)
+    await session.flush()
+    item.facebook_page = page
+    service = TelegramPublishingService(session)
+    snapshot = service._build_publish_snapshot(item)
+    repository = QueuePublishAttemptRepository(session)
+    original_attempt = await repository.create_attempt(
+        QueuePublishAttempt(
+            queue_id=item.id,
+            attempt_number=1,
+            provider="facebook",
+            status="succeeded",
+            content_hash=snapshot.content_hash,
+            idempotency_expires_at=expires_at,
+            occurred_at=datetime.now(UTC),
+            provider_message_ref="1234560_789",
+        )
+    )
+    calls: list[bool] = []
+
+    async def should_not_publish(*args, **kwargs):
+        calls.append(True)
+        raise AssertionError("published Queue items must not reach the provider")
+
+    monkeypatch.setattr("app.facebook.publisher.FacebookPublisher.publish", should_not_publish)
+
+    with pytest.raises(ConflictError, match="already completed"):
+        await service.publish_queue_item(item.id)
+
+    await session.refresh(item)
+    attempts = await repository.list_attempts(item.id)
+    assert item.status == QueueStatus.PUBLISHED
+    assert len(attempts) == 1
+    assert attempts[0].id == original_attempt.id
+    assert attempts[0].status == "succeeded"
+    assert attempts[0].provider_message_ref == "1234560_789"
+    assert calls == []
 
 
 @pytest.mark.asyncio
@@ -259,6 +329,102 @@ async def test_active_facebook_attempt_cannot_be_bypassed_by_confirmation(sessio
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("status_code", [429, 401, 403])
+async def test_scheduled_facebook_provider_errors_are_terminal_and_not_reselected(
+    monkeypatch, session, status_code
+):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "facebook_token_encryption_key", _key())
+    workspace_id = uuid4()
+    page = FacebookPage(
+        workspace_id=workspace_id,
+        facebook_page_id="1234561",
+        page_name="Test Page",
+        encrypted_access_token=FacebookTokenCipher(_key()).encrypt("test-token"),
+        validation_status=FacebookPageValidationStatus.VALID,
+    )
+    session.add(page)
+    await session.flush()
+    item = QueueItem(
+        workspace_id=workspace_id,
+        provider="facebook",
+        facebook_page_id=page.id,
+        content="Rate limited scheduled post",
+        status=QueueStatus.SCHEDULED,
+        scheduled_at=datetime.now(UTC) - timedelta(minutes=1),
+    )
+    session.add(item)
+    await session.flush()
+    calls: list[bool] = []
+
+    async def rate_limited(*args, **kwargs):
+        calls.append(True)
+        raise FacebookPublishError("Facebook provider error", http_status=status_code)
+
+    monkeypatch.setattr("app.facebook.publisher.FacebookPublisher.publish", rate_limited)
+    service = TelegramPublishingService(session)
+
+    assert await service.publish_due_scheduled(limit=1) == []
+    await session.refresh(item)
+    attempt = await QueuePublishAttemptRepository(session).latest_attempt(item.id)
+    assert item.status == QueueStatus.FAILED
+    assert attempt is not None
+    assert attempt.status == "failed"
+    assert attempt.error_code == f"facebook_{status_code}"
+    assert calls == [True]
+
+    assert await service.publish_due_scheduled(limit=1) == []
+    assert calls == [True]
+
+
+@pytest.mark.asyncio
+async def test_scheduled_facebook_success_is_persisted_once(monkeypatch, session):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "facebook_token_encryption_key", _key())
+    workspace_id = uuid4()
+    page = FacebookPage(
+        workspace_id=workspace_id,
+        facebook_page_id="1234562",
+        page_name="Test Page",
+        encrypted_access_token=FacebookTokenCipher(_key()).encrypt("test-token"),
+        validation_status=FacebookPageValidationStatus.VALID,
+    )
+    session.add(page)
+    await session.flush()
+    item = QueueItem(
+        workspace_id=workspace_id,
+        provider="facebook",
+        facebook_page_id=page.id,
+        content="Scheduled Facebook post",
+        status=QueueStatus.SCHEDULED,
+        scheduled_at=datetime.now(UTC) - timedelta(minutes=1),
+    )
+    session.add(item)
+    await session.flush()
+    calls: list[bool] = []
+
+    async def publish_once(*args, **kwargs):
+        calls.append(True)
+        return FacebookPublishResult("1234562", "1234562_789", "text")
+
+    monkeypatch.setattr("app.facebook.publisher.FacebookPublisher.publish", publish_once)
+    service = TelegramPublishingService(session)
+
+    results = await service.publish_due_scheduled(limit=1)
+    assert len(results) == 1
+    await session.refresh(item)
+    attempts = await QueuePublishAttemptRepository(session).list_attempts(item.id)
+    assert item.status == QueueStatus.PUBLISHED
+    assert len(attempts) == 1
+    assert attempts[0].status == "succeeded"
+    assert attempts[0].provider_message_ref == "1234562_789"
+    assert calls == [True]
+
+    assert await service.publish_due_scheduled(limit=1) == []
+    assert calls == [True]
+
+
+@pytest.mark.asyncio
 async def test_graph_publish_token_is_not_in_url():
     requests: list[httpx.Request] = []
 
@@ -277,6 +443,29 @@ async def test_graph_publish_token_is_not_in_url():
     assert result == "123_456"
     assert "test-token" not in str(requests[0].url)
     assert requests[0].headers["authorization"].startswith("Bearer ")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status_code", [401, 403])
+async def test_graph_publish_permission_errors_are_sanitized(status_code):
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(status_code, json={"error": {"message": "secret provider detail"}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(FacebookGraphError) as exc_info:
+            await FacebookGraphClient(http_client=client).publish_feed(
+                "123",
+                "test-token",
+                message="hello",
+            )
+
+    assert exc_info.value.status_code == 422
+    assert str(exc_info.value) == "Facebook credentials lack publishing access"
+    assert "secret provider detail" not in str(exc_info.value)
+    assert "test-token" not in str(requests[0].url)
 
 
 @pytest.mark.asyncio

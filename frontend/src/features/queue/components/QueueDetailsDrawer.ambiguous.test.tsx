@@ -97,6 +97,7 @@ describe("QueueDetailsDrawer ambiguous Facebook attempts", () => {
     );
 
     expect(screen.getByText("نتيجة غير مؤكدة · راجع الصفحة")).toBeInTheDocument();
+    expect(screen.getByText("المزوّد: Facebook")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "مراجعة وإعادة المحاولة" }));
     expect(onRetry).not.toHaveBeenCalled();
     expect(screen.getByRole("alertdialog")).toHaveTextContent("قد يكون Meta قد قبل المنشور بالفعل");
