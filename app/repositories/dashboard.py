@@ -195,6 +195,11 @@ class DashboardRepository:
         )
         ambiguous_result = await self.session.execute(
             select(func.count(QueueItem.id))
+            .select_from(QueueItem)
+            .join(
+                latest_attempt_numbers,
+                latest_attempt_numbers.c.queue_id == QueueItem.id,
+            )
             .join(
                 QueuePublishAttempt,
                 and_(
