@@ -246,7 +246,7 @@ async def test_dashboard_publishing_snapshot_is_scoped_and_dst_aware():
     assert attention_by_id[telegram_failed.id].issue == "failed"
     assert attention_by_id[facebook_failed.id].issue == "failed"
     assert attention_by_id[unresolved_ambiguous.id].issue == "ambiguous"
-    assert resolved_ambiguous.id not in attention_by_id
+    assert attention_by_id[resolved_ambiguous.id].issue == "failed"
     assert published_after_ambiguous.id not in attention_by_id
     assert other_workspace_failed.id not in attention_by_id
 
