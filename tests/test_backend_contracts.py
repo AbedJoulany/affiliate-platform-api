@@ -164,6 +164,35 @@ async def test_dashboard_returns_canonical_aggregates(client, session):
     }
     assert body["system_status"]["status"] == "operational"
     assert body["system_status"]["database"] == "up"
+    assert body["reporting"]["timezone"] == "UTC"
+    assert body["reporting"]["day_start_utc"].endswith("T00:00:00Z")
+    assert body["reporting"]["day_end_utc"].endswith("T00:00:00Z")
+    assert body["reporting"]["generated_at"] == body["system_status"]["generated_at"]
+    assert body["publishing"] == {
+        "published_today": 0,
+        "failed_today": 0,
+        "ambiguous_unresolved": 0,
+        "by_provider": {
+            "telegram": {"published": 1, "failed": 1},
+            "facebook": {"published": 0, "failed": 0},
+        },
+    }
+    assert len(body["attention_items"]) == 1
+    assert body["attention_items"][0]["queue_id"] is not None
+    assert body["attention_items"][0]["issue"] == "failed"
+    assert body["attention_items"][0]["provider"] == "telegram"
+    assert body["attention_items"][0]["error_code"] is None
+    assert body["attention_items"][0]["message"] is None
+    assert body["destination_readiness"] == {
+        "telegram": {"total": 2, "active": 1, "permission_granted": 0},
+        "facebook": {
+            "total": 0,
+            "active": 0,
+            "validated": 0,
+            "publishing_permission_verified": False,
+        },
+    }
+    assert body["automation"] == {"status": "not_configured", "last_run_at": None}
 
     await session.execute(delete(QueueItem))
     await session.execute(delete(Product))
