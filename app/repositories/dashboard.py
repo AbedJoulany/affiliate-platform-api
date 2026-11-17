@@ -137,13 +137,21 @@ class DashboardRepository:
         day_start_utc: datetime,
         day_end_utc: datetime,
     ) -> PublishingSummary:
+        published_today_result = await self.session.execute(
+            select(func.count(QueueItem.id)).where(
+                QueueItem.workspace_id == workspace_id,
+                QueueItem.status == QueueStatus.PUBLISHED,
+                QueueItem.published_at >= day_start_utc,
+                QueueItem.published_at < day_end_utc,
+            )
+        )
+        published_today = int(published_today_result.scalar_one() or 0)
+
         published_result = await self.session.execute(
             select(QueueItem.provider, func.count(QueueItem.id))
             .where(
                 QueueItem.workspace_id == workspace_id,
                 QueueItem.status == QueueStatus.PUBLISHED,
-                QueueItem.published_at >= day_start_utc,
-                QueueItem.published_at < day_end_utc,
             )
             .group_by(QueueItem.provider)
         )
@@ -154,16 +162,11 @@ class DashboardRepository:
         failed_result = await self.session.execute(
             select(
                 QueueItem.provider,
-                func.count(distinct(QueueItem.id)),
+                func.count(QueueItem.id),
             )
-            .select_from(QueuePublishAttempt)
-            .join(QueueItem, QueueItem.id == QueuePublishAttempt.queue_id)
             .where(
                 QueueItem.workspace_id == workspace_id,
                 QueueItem.status == QueueStatus.FAILED,
-                QueuePublishAttempt.status == "failed",
-                QueuePublishAttempt.occurred_at >= day_start_utc,
-                QueuePublishAttempt.occurred_at < day_end_utc,
             )
             .group_by(QueueItem.provider)
         )
@@ -224,7 +227,7 @@ class DashboardRepository:
             for provider in ("telegram", "facebook")
         }
         return PublishingSummary(
-            published_today=sum(published_by_provider.values()),
+            published_today=published_today,
             failed_today=failed_today,
             ambiguous_unresolved=ambiguous_unresolved,
             by_provider=provider_counts,

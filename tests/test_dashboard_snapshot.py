@@ -24,6 +24,7 @@ def _attempt(
     provider: str,
     status: str,
     occurred_at: datetime,
+    provider_message_ref: str | None = None,
 ) -> QueuePublishAttempt:
     is_outcome = status in {"failed", "ambiguous"}
     return QueuePublishAttempt(
@@ -35,6 +36,7 @@ def _attempt(
         idempotency_expires_at=occurred_at + timedelta(hours=24),
         error_code="provider_error" if is_outcome else None,
         error_message="provider response was inconclusive" if is_outcome else None,
+        provider_message_ref=provider_message_ref,
         occurred_at=occurred_at,
     )
 
@@ -112,6 +114,16 @@ async def test_dashboard_publishing_snapshot_is_scoped_and_dst_aware():
             provider="facebook",
             status=QueueStatus.FAILED,
         )
+        stale_failed = _queue_item(
+            workspace.id,
+            provider="facebook",
+            status=QueueStatus.FAILED,
+        )
+        failed_without_attempt = _queue_item(
+            workspace.id,
+            provider="telegram",
+            status=QueueStatus.FAILED,
+        )
         published_after_ambiguous = _queue_item(
             workspace.id,
             provider="facebook",
@@ -143,6 +155,8 @@ async def test_dashboard_publishing_snapshot_is_scoped_and_dst_aware():
                 facebook_failed,
                 unresolved_ambiguous,
                 resolved_ambiguous,
+                stale_failed,
+                failed_without_attempt,
                 published_after_ambiguous,
                 boundary_failed,
                 other_workspace_published,
@@ -202,6 +216,13 @@ async def test_dashboard_publishing_snapshot_is_scoped_and_dst_aware():
                     occurred_at=day_start + timedelta(hours=9),
                 ),
                 _attempt(
+                    stale_failed.id,
+                    attempt_number=1,
+                    provider="facebook",
+                    status="failed",
+                    occurred_at=day_start - timedelta(seconds=1),
+                ),
+                _attempt(
                     published_after_ambiguous.id,
                     attempt_number=1,
                     provider="facebook",
@@ -238,10 +259,20 @@ async def test_dashboard_publishing_snapshot_is_scoped_and_dst_aware():
     assert response.publishing.published_today == 3
     assert response.publishing.failed_today == 4
     assert response.publishing.ambiguous_unresolved == 1
-    assert response.publishing.by_provider.telegram.published == 1
-    assert response.publishing.by_provider.telegram.failed == 1
+    assert response.publishing.by_provider.telegram.published == 2
+    assert response.publishing.by_provider.telegram.failed == 3
     assert response.publishing.by_provider.facebook.published == 2
-    assert response.publishing.by_provider.facebook.failed == 3
+    assert response.publishing.by_provider.facebook.failed == 4
+    assert (
+        response.publishing.by_provider.telegram.failed
+        + response.publishing.by_provider.facebook.failed
+        == 7
+    )
+    assert (
+        response.publishing.by_provider.telegram.published
+        + response.publishing.by_provider.facebook.published
+        == 4
+    )
     attention_by_id = {item.queue_id: item for item in response.attention_items}
     assert attention_by_id[telegram_failed.id].issue == "failed"
     assert attention_by_id[facebook_failed.id].issue == "failed"
@@ -249,6 +280,56 @@ async def test_dashboard_publishing_snapshot_is_scoped_and_dst_aware():
     assert attention_by_id[resolved_ambiguous.id].issue == "failed"
     assert published_after_ambiguous.id not in attention_by_id
     assert other_workspace_failed.id not in attention_by_id
+
+
+@pytest.mark.asyncio
+async def test_dashboard_provider_counts_keep_daily_metrics_distinct():
+    async with SessionLocal() as session:
+        workspace = Workspace(name="Dashboard provider state workspace")
+        session.add(workspace)
+        await session.flush()
+        session.add(WorkspaceSettings(workspace_id=workspace.id, timezone="UTC"))
+
+        generated_at = datetime(2026, 11, 17, 12, 0, tzinfo=UTC)
+        day_start = datetime(2026, 11, 17, 0, 0, tzinfo=UTC)
+        recovered = _queue_item(
+            workspace.id,
+            provider="facebook",
+            status=QueueStatus.PUBLISHED,
+            published_at=day_start - timedelta(seconds=1),
+        )
+        session.add(recovered)
+        await session.flush()
+        session.add_all(
+            [
+                _attempt(
+                    recovered.id,
+                    attempt_number=1,
+                    provider="facebook",
+                    status="failed",
+                    occurred_at=day_start + timedelta(hours=1),
+                ),
+                _attempt(
+                    recovered.id,
+                    attempt_number=2,
+                    provider="facebook",
+                    status="succeeded",
+                    occurred_at=day_start + timedelta(hours=2),
+                    provider_message_ref="facebook-post-1",
+                ),
+            ]
+        )
+        await session.commit()
+
+        response = await DashboardService(session).get_dashboard(
+            workspace.id,
+            now=generated_at,
+        )
+
+    assert response.publishing.by_provider.facebook.published == 1
+    assert response.publishing.by_provider.facebook.failed == 0
+    assert response.publishing.published_today == 0
+    assert response.publishing.failed_today == 1
 
 
 @pytest.mark.asyncio
