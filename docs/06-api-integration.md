@@ -182,10 +182,20 @@ Status definitions:
 
 | Endpoint | Frontend module | Status | Types / notes |
 | --- | --- | --- | --- |
-| `GET /dashboard` | `dashboard.api.ts` | Connected | `DashboardOverview` — counts, activity, DB status. **Requires** `X-Workspace-Id`. Queue and channel aggregates/activity are scoped to the header workspace; **product** counts remain global (shared catalog). |
+| `GET /dashboard` | `dashboard.api.ts` | Connected | `DashboardOverview` — counts, activity, DB status, reporting window, and publishing summary. **Requires** `X-Workspace-Id`. Queue, channel, and publishing aggregates/activity are scoped to the header workspace; **product** counts remain global (shared catalog). |
 | `GET /ready` | `categories.api.ts` | Connected | `ReadinessResponse` — settings pages still use this for **database + redis** badges only |
 | `GET /health` | — | Backend only | API process liveness (ops) |
 | `GET /worker/health` | — | Backend only | Celery Beat→worker pipeline heartbeat (ops; root path, not under `/api/v1`) |
+
+`GET /dashboard` returns the backward-compatible overview fields plus:
+
+- `reporting`: the validated workspace timezone, UTC start/end of the current local calendar day (the end is exclusive), and one request timestamp shared with `system_status.generated_at`.
+- `publishing`: `published_today`, distinct queue items with a failed attempt today, unresolved latest ambiguous attempts, and published/failed counts by `telegram` and `facebook`.
+- `attention_items`: at most 10 deterministic, workspace-scoped failed or unresolved-ambiguous Queue items. Diagnostic messages are nullable and never contain raw provider payloads.
+- `destination_readiness`: persisted Telegram channel posting-permission readiness and Facebook Page active/validated counts. Facebook validation does not imply verified publishing permission.
+- `automation`: the explicit `not_configured` placeholder with a null `last_run_at` until automation is implemented.
+
+Publishing counts use the workspace-local reporting window and exclude its end boundary. Provider breakdowns use the Queue item's persisted provider and current Queue status; `failed_today` remains an event-based distinct-item metric. A failed item may contribute to `failed_today` even if a later attempt publishes it; an ambiguous item is counted only when its latest attempt remains ambiguous and the queue item is not published. Invalid or absent workspace timezones fall back to UTC.
 
 ### 4.3 Products catalog
 
