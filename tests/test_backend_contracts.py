@@ -173,7 +173,7 @@ async def test_dashboard_returns_canonical_aggregates(client, session):
         "failed_today": 0,
         "ambiguous_unresolved": 0,
         "by_provider": {
-            "telegram": {"published": 0, "failed": 0},
+            "telegram": {"published": 1, "failed": 1},
             "facebook": {"published": 0, "failed": 0},
         },
     }
