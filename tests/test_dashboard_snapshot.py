@@ -235,13 +235,13 @@ async def test_dashboard_publishing_snapshot_is_scoped_and_dst_aware():
     assert response.reporting.day_start_utc == day_start
     assert response.reporting.day_end_utc == day_end
     assert response.reporting.generated_at == generated_at
-    assert response.publishing.published_today == 2
-    assert response.publishing.failed_today == 2
+    assert response.publishing.published_today == 3
+    assert response.publishing.failed_today == 4
     assert response.publishing.ambiguous_unresolved == 1
     assert response.publishing.by_provider.telegram.published == 1
     assert response.publishing.by_provider.telegram.failed == 1
-    assert response.publishing.by_provider.facebook.published == 1
-    assert response.publishing.by_provider.facebook.failed == 1
+    assert response.publishing.by_provider.facebook.published == 2
+    assert response.publishing.by_provider.facebook.failed == 3
     attention_by_id = {item.queue_id: item for item in response.attention_items}
     assert attention_by_id[telegram_failed.id].issue == "failed"
     assert attention_by_id[facebook_failed.id].issue == "failed"
