@@ -33,7 +33,7 @@ export function DashboardView() {
   if (!workspaceId) {
     return (
       <PageContainer>
-        <PageHeader title="لوحة العمليات" description="نظرة عملية على قائمة النشر والوجهات." />
+        <PageHeader title="لوحة التحكم" description="نظرة عملية على قائمة النشر والوجهات." />
         <NoActiveWorkspaceState />
       </PageContainer>
     );
@@ -42,7 +42,7 @@ export function DashboardView() {
   if (overview.isPending) {
     return (
       <PageContainer>
-        <PageHeader title="لوحة العمليات" description="نظرة عملية على قائمة النشر والوجهات." />
+        <PageHeader title="لوحة التحكم" description="نظرة عملية على قائمة النشر والوجهات." />
         <LoadingState rows={8} />
       </PageContainer>
     );
@@ -51,9 +51,9 @@ export function DashboardView() {
   if (overview.isError) {
     return (
       <PageContainer>
-        <PageHeader title="لوحة العمليات" description="نظرة عملية على قائمة النشر والوجهات." />
+        <PageHeader title="لوحة التحكم" description="نظرة عملية على قائمة النشر والوجهات." />
         <ErrorState
-          message={getApiErrorMessage(overview.error, "تعذر تحميل لوحة العمليات.")}
+          message={getApiErrorMessage(overview.error, "تعذر تحميل لوحة التحكم.")}
           onRetry={() => void overview.refetch()}
         />
       </PageContainer>
@@ -64,7 +64,7 @@ export function DashboardView() {
   return (
     <PageContainer>
       <PageHeader
-        title="لوحة العمليات"
+        title="لوحة التحكم"
         description="نظرة عملية على قائمة النشر والوجهات وما يحتاج إلى متابعة."
         actions={
           <div className="rounded-md border border-border bg-surface px-3 py-2 text-end text-xs">
