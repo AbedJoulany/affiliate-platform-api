@@ -27,6 +27,9 @@ import { useQueueRealtimePollingEnabled } from "./QueueRealtimePollingContext";
 export const queueKey = (workspaceId: string) =>
   workspaceScopedQueryKey("queue", workspaceId);
 
+export const queueItemKey = (workspaceId: string, id: string) =>
+  [...queueKey(workspaceId), "item", id] as const;
+
 export const queueAttemptsKey = (workspaceId: string, id: string) =>
   [...queueKey(workspaceId), "attempts", id] as const;
 
@@ -48,9 +51,9 @@ function getApiErrorMessage(error: unknown, fallback: string): string {
 function isConflictError(error: unknown): boolean {
   return Boolean(
     error &&
-      typeof error === "object" &&
-      "status" in error &&
-      (error as ApiError).status === 409,
+    typeof error === "object" &&
+    "status" in error &&
+    (error as ApiError).status === 409,
   );
 }
 
@@ -97,6 +100,19 @@ export function useQueue(status?: QueueStatus, limit = 20, skip = 0) {
   });
 }
 
+export function useQueueItem(id: string | null, enabled: boolean) {
+  const workspaceId = useActiveWorkspaceId();
+
+  return useQuery({
+    queryKey:
+      workspaceId && id
+        ? queueItemKey(workspaceId, id)
+        : (["queue", workspaceId ?? "none", "item", id ?? "idle"] as const),
+    queryFn: () => getQueueItem(id!),
+    enabled: enabled && Boolean(id) && Boolean(workspaceId),
+  });
+}
+
 /**
  * GET /queues does not populate attempt summary fields. Enrich non-published
  * items via GET /queues/{id} with limited concurrency after list load/invalidate.
@@ -131,22 +147,26 @@ export function useQueueAttemptSummaryEnrichment(items: QueueItem[]) {
     setEnriching(true);
 
     void (async () => {
-      await mapWithConcurrency(targets, ENRICHMENT_CONCURRENCY, async (item) => {
-        try {
-          const detail = await getQueueItem(item.id);
-          if (cancelled || generationRef.current !== generation) return;
-          setSummariesById((previous) => ({
-            ...previous,
-            [item.id]: {
-              last_attempt: detail.last_attempt ?? null,
-              failure_reason: detail.failure_reason ?? null,
-              retry_count: detail.retry_count ?? 0,
-            },
-          }));
-        } catch {
-          // Leave list defaults; client fallback / drawer fetch still apply.
-        }
-      });
+      await mapWithConcurrency(
+        targets,
+        ENRICHMENT_CONCURRENCY,
+        async (item) => {
+          try {
+            const detail = await getQueueItem(item.id);
+            if (cancelled || generationRef.current !== generation) return;
+            setSummariesById((previous) => ({
+              ...previous,
+              [item.id]: {
+                last_attempt: detail.last_attempt ?? null,
+                failure_reason: detail.failure_reason ?? null,
+                retry_count: detail.retry_count ?? 0,
+              },
+            }));
+          } catch {
+            // Leave list defaults; client fallback / drawer fetch still apply.
+          }
+        },
+      );
       if (!cancelled && generationRef.current === generation) {
         setEnriching(false);
       }
@@ -171,7 +191,10 @@ export function useQueueAttemptSummaryEnrichment(items: QueueItem[]) {
   return { enrichedItems, enriching };
 }
 
-export function useQueuePublishAttempts(queueId: string | null, enabled: boolean) {
+export function useQueuePublishAttempts(
+  queueId: string | null,
+  enabled: boolean,
+) {
   const workspaceId = useActiveWorkspaceId();
   const pollingEnabled = useQueueRealtimePollingEnabled();
   const refetchInterval = useMemo(
@@ -183,7 +206,12 @@ export function useQueuePublishAttempts(queueId: string | null, enabled: boolean
     queryKey:
       workspaceId && queueId
         ? queueAttemptsKey(workspaceId, queueId)
-        : (["queue", workspaceId ?? "none", "attempts", queueId ?? "idle"] as const),
+        : ([
+            "queue",
+            workspaceId ?? "none",
+            "attempts",
+            queueId ?? "idle",
+          ] as const),
     queryFn: () => getQueuePublishAttempts(queueId!),
     enabled: enabled && Boolean(queueId) && Boolean(workspaceId),
     refetchInterval: enabled ? refetchInterval : false,
@@ -196,7 +224,8 @@ export function useCreateQueueItem() {
   return useMutation({
     mutationFn: createQueueItem,
     onSuccess: () => {
-      if (workspaceId) void client.invalidateQueries({ queryKey: queueKey(workspaceId) });
+      if (workspaceId)
+        void client.invalidateQueries({ queryKey: queueKey(workspaceId) });
     },
   });
 }
@@ -209,7 +238,9 @@ export function usePublishQueueItem() {
     onSuccess: (_data, id) => {
       if (!workspaceId) return;
       void client.invalidateQueries({ queryKey: queueKey(workspaceId) });
-      void client.invalidateQueries({ queryKey: queueAttemptsKey(workspaceId, id) });
+      void client.invalidateQueries({
+        queryKey: queueAttemptsKey(workspaceId, id),
+      });
     },
   });
 }
@@ -221,7 +252,8 @@ export function useUpdateQueueItem() {
     mutationFn: ({ id, input }: { id: string; input: QueueUpdate }) =>
       updateQueueItem(id, input),
     onSuccess: () => {
-      if (workspaceId) void client.invalidateQueries({ queryKey: queueKey(workspaceId) });
+      if (workspaceId)
+        void client.invalidateQueries({ queryKey: queueKey(workspaceId) });
     },
   });
 }
@@ -232,7 +264,8 @@ export function useDeleteQueueItem() {
   return useMutation({
     mutationFn: deleteQueueItem,
     onSuccess: () => {
-      if (workspaceId) void client.invalidateQueries({ queryKey: queueKey(workspaceId) });
+      if (workspaceId)
+        void client.invalidateQueries({ queryKey: queueKey(workspaceId) });
     },
   });
 }
@@ -260,7 +293,9 @@ export function useQueuePublishingOperations() {
   const client = useQueryClient();
   const workspaceId = useActiveWorkspaceId();
   const [publishingIds, setPublishingIds] = useState<string[]>([]);
-  const [failures, setFailures] = useState<Record<string, QueuePublishFailure>>({});
+  const [failures, setFailures] = useState<Record<string, QueuePublishFailure>>(
+    {},
+  );
   const inFlightIds = useRef(new Set<string>());
 
   const publishItems = useCallback(
@@ -282,7 +317,9 @@ export function useQueuePublishingOperations() {
           failureMessage: null,
         };
       }
-      setPublishingIds((previous) => Array.from(new Set([...previous, ...uniqueIds])));
+      setPublishingIds((previous) =>
+        Array.from(new Set([...previous, ...uniqueIds])),
+      );
       let published = 0;
       let failed = 0;
       let conflicts = 0;
@@ -323,7 +360,9 @@ export function useQueuePublishingOperations() {
           }
         } finally {
           inFlightIds.current.delete(id);
-          setPublishingIds((previous) => previous.filter((value) => value !== id));
+          setPublishingIds((previous) =>
+            previous.filter((value) => value !== id),
+          );
         }
       }
 
@@ -371,7 +410,9 @@ export function useQueuePublishingOperations() {
 }
 
 export function useQueueWorkspaceState(items: QueueItem[]) {
-  const [selectedQueueItemIds, setSelectedQueueItemIds] = useState<string[]>([]);
+  const [selectedQueueItemIds, setSelectedQueueItemIds] = useState<string[]>(
+    [],
+  );
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<QueueStatus | "">("");
   const [channelFilter, setChannelFilter] = useState("");
@@ -391,7 +432,9 @@ export function useQueueWorkspaceState(items: QueueItem[]) {
       const matchesStatus = !statusFilter || item.status === statusFilter;
       const matchesChannel =
         !channelFilter ||
-        (channelFilter === "missing" ? !item.channel_id : item.channel_id === channelFilter);
+        (channelFilter === "missing"
+          ? !item.channel_id
+          : item.channel_id === channelFilter);
       return matchesSearch && matchesStatus && matchesChannel;
     });
 
@@ -445,7 +488,8 @@ export function useQueueWorkspaceState(items: QueueItem[]) {
   const toggleAll = useCallback(() => {
     const pageIds = pagedItems.map((item) => item.id);
     const allSelected =
-      pageIds.length > 0 && pageIds.every((id) => selectedQueueItemIds.includes(id));
+      pageIds.length > 0 &&
+      pageIds.every((id) => selectedQueueItemIds.includes(id));
     setSelectedQueueItemIds((previous) =>
       allSelected
         ? previous.filter((id) => !pageIds.includes(id))
@@ -455,7 +499,9 @@ export function useQueueWorkspaceState(items: QueueItem[]) {
 
   return {
     selectedQueueItemIds,
-    selectedItems: items.filter((item) => selectedQueueItemIds.includes(item.id)),
+    selectedItems: items.filter((item) =>
+      selectedQueueItemIds.includes(item.id),
+    ),
     filteredItems,
     pagedItems,
     allPageSelected:

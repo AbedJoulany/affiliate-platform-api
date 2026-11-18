@@ -4,12 +4,20 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
-import { EmptyState, ErrorState, LoadingState, NoActiveWorkspaceState } from "@/components/common/states";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  NoActiveWorkspaceState,
+} from "@/components/common/states";
 import { ToastOverlay } from "@/components/common/ToastOverlay";
 import { PageContainer, PageHeader } from "@/components/layout/page";
-import { Button } from "@/components/ui/primitives";
+import { Button, Card } from "@/components/ui/primitives";
 import { getApiErrorMessage } from "@/services/api-client";
-import { useChannels, useFacebookPages } from "@/features/channels/hooks/useChannels";
+import {
+  useChannels,
+  useFacebookPages,
+} from "@/features/channels/hooks/useChannels";
 import type { FacebookPage } from "@/features/channels/types/api";
 import { useProducts } from "@/features/products/hooks/useProducts";
 import { useActiveWorkspaceId } from "@/lib/workspace";
@@ -18,6 +26,7 @@ import { nextStatusAfterFailedRetry } from "../lib/retry";
 import {
   useDeleteQueueItem,
   useQueue,
+  useQueueItem,
   useQueueAttemptSummaryEnrichment,
   useQueuePublishingOperations,
   useQueueWorkspaceState,
@@ -58,6 +67,13 @@ type ToastState = {
   tone: "success" | "error";
 } | null;
 
+const QUEUE_ITEM_ID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isValidQueueItemId(value: string | null): value is string {
+  return value != null && QUEUE_ITEM_ID_RE.test(value);
+}
+
 export function QueueView() {
   // Single workspace-scoped SSE → query invalidation (not in child components).
   const realtime = useQueueRealtimeInvalidation();
@@ -84,17 +100,30 @@ function QueueViewBody({
   const updateQueue = useUpdateQueueItem();
   const deleteQueue = useDeleteQueueItem();
   const publishing = useQueuePublishingOperations();
-  const listItems = useMemo(
-    () => queue.data?.items ?? [],
-    [queue.data?.items],
-  );
-  const { enrichedItems, enriching } = useQueueAttemptSummaryEnrichment(listItems);
+  const listItems = useMemo(() => queue.data?.items ?? [], [queue.data?.items]);
+  const { enrichedItems, enriching } =
+    useQueueAttemptSummaryEnrichment(listItems);
   const workspace = useQueueWorkspaceState(enrichedItems);
 
-  const [activePostId, setActivePostId] = useState<string | null>(null);
-  const [schedulingDialog, setSchedulingDialog] = useState<SchedulingState | null>(
-    null,
+  const requestedItemId = searchParams.get("item");
+  const validRequestedItemId = isValidQueueItemId(requestedItemId)
+    ? requestedItemId
+    : null;
+  const requestedItemInList = Boolean(
+    validRequestedItemId &&
+    listItems.some((item) => item.id === validRequestedItemId),
   );
+  const deepLinkedItem = useQueueItem(
+    validRequestedItemId,
+    queue.isFetched && !queue.isError && !requestedItemInList,
+  );
+
+  const [activePostId, setActivePostId] = useState<string | null>(null);
+  const [selectionWorkspaceId, setSelectionWorkspaceId] = useState<
+    string | null
+  >(null);
+  const [schedulingDialog, setSchedulingDialog] =
+    useState<SchedulingState | null>(null);
   const [deleteTargets, setDeleteTargets] = useState<QueueItem[]>([]);
   const [toast, setToast] = useState<ToastState>(null);
 
@@ -103,17 +132,26 @@ function QueueViewBody({
   }, [enrichedItems, publishing.syncFailuresFromBackend]);
 
   const productsById = useMemo(
-    () => new Map((products.data?.items ?? []).map((product) => [product.id, product])),
+    () =>
+      new Map(
+        (products.data?.items ?? []).map((product) => [product.id, product]),
+      ),
     [products.data?.items],
   );
   const channelsById = useMemo(
-    () => new Map((channels.data?.items ?? []).map((channel) => [channel.id, channel])),
+    () =>
+      new Map(
+        (channels.data?.items ?? []).map((channel) => [channel.id, channel]),
+      ),
     [channels.data?.items],
   );
   const facebookPagesById = useMemo(
     () =>
       new Map(
-        (facebookPages.data?.items ?? []).map((page: FacebookPage) => [page.id, page]),
+        (facebookPages.data?.items ?? []).map((page: FacebookPage) => [
+          page.id,
+          page,
+        ]),
       ),
     [facebookPages.data?.items],
   );
@@ -129,33 +167,91 @@ function QueueViewBody({
 
   const activePost = useMemo(
     () =>
-      activePostId
-        ? enrichedItems.find((item) => item.id === activePostId) ?? null
+      activePostId && selectionWorkspaceId === workspaceId
+        ? (enrichedItems.find((item) => item.id === activePostId) ??
+          (deepLinkedItem.data?.id === activePostId
+            ? deepLinkedItem.data
+            : null))
         : null,
-    [activePostId, enrichedItems],
+    [
+      activePostId,
+      deepLinkedItem.data,
+      enrichedItems,
+      selectionWorkspaceId,
+      workspaceId,
+    ],
   );
+
+  const replaceItemParam = (itemId: string | null) => {
+    const nextParams = new URLSearchParams(searchParams.toString());
+    if (itemId) nextParams.set("item", itemId);
+    else nextParams.delete("item");
+    const query = nextParams.toString();
+    router.replace(query ? `/queue?${query}` : "/queue", { scroll: false });
+  };
+
+  const selectItem = (itemId: string) => {
+    setActivePostId(itemId);
+    setSelectionWorkspaceId(workspaceId);
+    replaceItemParam(itemId);
+  };
+
+  const clearSelectedItem = () => {
+    setActivePostId(null);
+    setSelectionWorkspaceId(null);
+    if (searchParams.has("item")) replaceItemParam(null);
+  };
+
+  useEffect(() => {
+    setActivePostId(null);
+    setSelectionWorkspaceId(null);
+  }, [workspaceId]);
 
   // Close inspector when the authoritative list no longer contains the item
   // (e.g. queue.deleted → invalidate → refetch), without a separate client store.
   useEffect(() => {
     if (activePostId == null || queue.isPending) return;
-    if (!listItems.some((item) => item.id === activePostId)) {
+    if (
+      !listItems.some((item) => item.id === activePostId) &&
+      deepLinkedItem.data?.id !== activePostId
+    ) {
       setActivePostId(null);
     }
-  }, [activePostId, listItems, queue.isPending]);
+  }, [activePostId, deepLinkedItem.data?.id, listItems, queue.isPending]);
 
   useEffect(() => {
-    const requestedItemId = searchParams.get("item");
-    if (!requestedItemId || queue.isPending) return;
-    if (listItems.some((item) => item.id === requestedItemId)) {
-      setActivePostId(requestedItemId);
+    if (!requestedItemId) {
+      setActivePostId(null);
+      setSelectionWorkspaceId(null);
+      return;
     }
-  }, [listItems, queue.isPending, searchParams]);
+    if (!validRequestedItemId || queue.isPending) {
+      setActivePostId(null);
+      setSelectionWorkspaceId(null);
+      return;
+    }
+    if (
+      requestedItemInList ||
+      deepLinkedItem.data?.id === validRequestedItemId
+    ) {
+      setActivePostId(validRequestedItemId);
+      setSelectionWorkspaceId(workspaceId);
+    }
+  }, [
+    deepLinkedItem.data?.id,
+    queue.isPending,
+    requestedItemInList,
+    requestedItemId,
+    validRequestedItemId,
+    workspaceId,
+  ]);
 
-  const activeProduct =
-    activePost?.product_id ? productsById.get(activePost.product_id) ?? null : null;
-  const activeChannel =
-    activePost?.channel_id ? channelsById.get(activePost.channel_id) ?? null : null;
+  const activeProduct = activePost?.product_id
+    ? (productsById.get(activePost.product_id) ?? null)
+    : null;
+  const activeChannel = activePost?.channel_id
+    ? (channelsById.get(activePost.channel_id) ?? null)
+    : null;
   const busy = updateQueue.isPending || deleteQueue.isPending;
 
   const openSchedule = (selected: QueueItem[]) => {
@@ -171,14 +267,17 @@ function QueueViewBody({
     if (selected.length > 1 && !destinationsReady) {
       setToast({
         tone: "error",
-        message: "أكمل وجهة كل منشور قبل الجدولة الجماعية؛ لن يتم تعيين وجهة تلقائيًا.",
+        message:
+          "أكمل وجهة كل منشور قبل الجدولة الجماعية؛ لن يتم تعيين وجهة تلقائيًا.",
       });
       return;
     }
     setSchedulingDialog({
       itemIds: selected.map((item) => item.id),
       destination: destinationSelectionFromQueue(first),
-      scheduledAt: first.scheduled_at ? toDateTimeLocal(new Date(first.scheduled_at)) : "",
+      scheduledAt: first.scheduled_at
+        ? toDateTimeLocal(new Date(first.scheduled_at))
+        : "",
       preserveDestinations: selected.length > 1,
     });
   };
@@ -302,14 +401,20 @@ function QueueViewBody({
     }
   };
 
-  const retryFailedItem = async (item: QueueItem, options: PublishOptions = {}) => {
+  const retryFailedItem = async (
+    item: QueueItem,
+    options: PublishOptions = {},
+  ) => {
     try {
       if (options.confirmAmbiguous) {
         await publishItems([item], options);
         return;
       }
       const next = nextStatusAfterFailedRetry(item);
-      const updated = await updateQueue.mutateAsync({ id: item.id, input: next });
+      const updated = await updateQueue.mutateAsync({
+        id: item.id,
+        input: next,
+      });
       if (updated.status === "queued") {
         await publishItems([{ ...item, ...updated }]);
         return;
@@ -323,7 +428,9 @@ function QueueViewBody({
     }
   };
 
-  const changeStatus = async (status: Extract<QueueStatus, "draft" | "queued">) => {
+  const changeStatus = async (
+    status: Extract<QueueStatus, "draft" | "queued">,
+  ) => {
     try {
       for (const item of workspace.selectedItems) {
         await updateQueue.mutateAsync({ id: item.id, input: { status } });
@@ -344,7 +451,7 @@ function QueueViewBody({
         await deleteQueue.mutateAsync(item.id);
       }
       if (deleteTargets.some((item) => item.id === activePostId)) {
-        setActivePostId(null);
+        clearSelectedItem();
       }
       setToast({
         tone: "success",
@@ -437,7 +544,10 @@ function QueueViewBody({
           <LoadingState rows={8} />
         ) : queue.isError ? (
           <ErrorState
-            message={getApiErrorMessage(queue.error, "تعذر تحميل عمليات النشر.")}
+            message={getApiErrorMessage(
+              queue.error,
+              "تعذر تحميل عمليات النشر.",
+            )}
             onRetry={() => void queue.refetch()}
           />
         ) : noItems ? (
@@ -481,8 +591,10 @@ function QueueViewBody({
               failures={publishing.failures}
               onToggle={workspace.toggle}
               onToggleAll={workspace.toggleAll}
-              onView={(item) => setActivePostId(item.id)}
-              onOpenProduct={(productId) => router.push(`/products/${productId}`)}
+              onView={(item) => selectItem(item.id)}
+              onOpenProduct={(productId) =>
+                router.push(`/products/${productId}`)
+              }
               onSchedule={(item) => openSchedule([item])}
               onPublish={(item) => void publishItems([item])}
               onRetry={(item) => void retryFailedItem(item)}
@@ -494,7 +606,9 @@ function QueueViewBody({
                 صفحة {(workspace.page + 1).toLocaleString("ar")} من{" "}
                 {Math.max(
                   1,
-                  Math.ceil(workspace.filteredItems.length / workspace.pageSize),
+                  Math.ceil(
+                    workspace.filteredItems.length / workspace.pageSize,
+                  ),
                 ).toLocaleString("ar")}
               </p>
               <div className="flex gap-2">
@@ -531,19 +645,45 @@ function QueueViewBody({
         />
       </div>
 
+      {requestedItemId && !validRequestedItemId ? (
+        <QueueDeepLinkNotice
+          message="رابط عملية النشر غير صالح."
+          onClear={clearSelectedItem}
+        />
+      ) : validRequestedItemId &&
+        queue.isFetched &&
+        !queue.isError &&
+        !requestedItemInList &&
+        deepLinkedItem.isPending ? (
+        <QueueDeepLinkNotice message="جاري فتح عملية النشر المطلوبة…" loading />
+      ) : validRequestedItemId &&
+        queue.isFetched &&
+        !queue.isError &&
+        !requestedItemInList &&
+        deepLinkedItem.isError ? (
+        <QueueDeepLinkNotice
+          message="تعذر فتح عملية النشر المطلوبة أو لم تعد متاحة."
+          onClear={clearSelectedItem}
+        />
+      ) : null}
+
       <QueueDetailsDrawer
         item={activePost}
         product={activeProduct}
         channel={activeChannel}
         facebookPage={
           activePost?.facebook_page_id
-            ? facebookPagesById.get(activePost.facebook_page_id) ?? null
+            ? (facebookPagesById.get(activePost.facebook_page_id) ?? null)
             : null
         }
-        publishing={Boolean(activePost && publishing.publishingIdSet.has(activePost.id))}
-        clientFailure={activePost ? publishing.failures[activePost.id] : undefined}
+        publishing={Boolean(
+          activePost && publishing.publishingIdSet.has(activePost.id),
+        )}
+        clientFailure={
+          activePost ? publishing.failures[activePost.id] : undefined
+        }
         open={activePost != null}
-        onClose={() => setActivePostId(null)}
+        onClose={clearSelectedItem}
         onPublish={(item) => void publishItems([item])}
         onRetry={(item, options) => void retryFailedItem(item, options)}
         onSchedule={(item) => openSchedule([item])}
@@ -593,4 +733,29 @@ function QueueViewBody({
 function toDateTimeLocal(date: Date): string {
   const offset = date.getTimezoneOffset();
   return new Date(date.getTime() - offset * 60_000).toISOString().slice(0, 16);
+}
+
+function QueueDeepLinkNotice({
+  message,
+  loading = false,
+  onClear,
+}: {
+  message: string;
+  loading?: boolean;
+  onClear?: () => void;
+}) {
+  return (
+    <Card
+      className="mt-4 flex flex-wrap items-center justify-between gap-3"
+      role={loading ? "status" : "alert"}
+      aria-live="polite"
+    >
+      <p className="text-sm text-muted-foreground">{message}</p>
+      {onClear ? (
+        <Button variant="outline" onClick={onClear}>
+          عرض قائمة النشر
+        </Button>
+      ) : null}
+    </Card>
+  );
 }
