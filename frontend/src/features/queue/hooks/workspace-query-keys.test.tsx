@@ -34,6 +34,32 @@ vi.mock("@/features/dashboard/api/dashboard.api", () => ({
     channels: { total: 0, active: 0, inactive: 0 },
     recent_activity: [],
     system_status: { status: "operational", database: "up", generated_at: "" },
+    reporting: {
+      timezone: "UTC",
+      day_start_utc: "",
+      day_end_utc: "",
+      generated_at: "",
+    },
+    publishing: {
+      published_today: 0,
+      failed_today: 0,
+      ambiguous_unresolved: 0,
+      by_provider: {
+        telegram: { published: 0, failed: 0 },
+        facebook: { published: 0, failed: 0 },
+      },
+    },
+    attention_items: [],
+    destination_readiness: {
+      telegram: { total: 0, active: 0, permission_granted: 0 },
+      facebook: {
+        total: 0,
+        active: 0,
+        validated: 0,
+        publishing_permission_verified: false,
+      },
+    },
+    automation: { status: "not_configured", last_run_at: null },
   })),
 }));
 
