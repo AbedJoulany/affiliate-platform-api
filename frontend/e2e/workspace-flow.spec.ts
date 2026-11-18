@@ -29,6 +29,27 @@ const dashboardBody = {
     database: "up",
     generated_at: "2026-07-16T00:00:00Z",
   },
+  reporting: {
+    timezone: "UTC",
+    day_start_utc: "2026-07-16T00:00:00Z",
+    day_end_utc: "2026-07-17T00:00:00Z",
+    generated_at: "2026-07-16T00:00:00Z",
+  },
+  publishing: {
+    published_today: 0,
+    failed_today: 0,
+    ambiguous_unresolved: 0,
+    by_provider: {
+      telegram: { published: 0, failed: 0 },
+      facebook: { published: 0, failed: 0 },
+    },
+  },
+  attention_items: [],
+  destination_readiness: {
+    telegram: { total: 3, active: 2, permission_granted: 2 },
+    facebook: { total: 0, active: 0, validated: 0, publishing_permission_verified: false },
+  },
+  automation: { status: "not_configured", last_run_at: null },
 };
 
 async function fulfillJson(page: Page, glob: string, body: unknown, status = 200) {
