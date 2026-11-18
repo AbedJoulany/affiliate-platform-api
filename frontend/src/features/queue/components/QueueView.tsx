@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { EmptyState, ErrorState, LoadingState, NoActiveWorkspaceState } from "@/components/common/states";
 import { ToastOverlay } from "@/components/common/ToastOverlay";
@@ -75,6 +75,7 @@ function QueueViewBody({
   realtimeStatus: QueueEventStreamStatus;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const workspaceId = useActiveWorkspaceId();
   const queue = useQueue(undefined, 200);
   const channels = useChannels();
@@ -142,6 +143,14 @@ function QueueViewBody({
       setActivePostId(null);
     }
   }, [activePostId, listItems, queue.isPending]);
+
+  useEffect(() => {
+    const requestedItemId = searchParams.get("item");
+    if (!requestedItemId || queue.isPending) return;
+    if (listItems.some((item) => item.id === requestedItemId)) {
+      setActivePostId(requestedItemId);
+    }
+  }, [listItems, queue.isPending, searchParams]);
 
   const activeProduct =
     activePost?.product_id ? productsById.get(activePost.product_id) ?? null : null;

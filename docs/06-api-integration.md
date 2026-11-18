@@ -197,6 +197,8 @@ Status definitions:
 
 The daily metrics `published_today` and `failed_today` use the workspace-local reporting window and exclude its end boundary. Provider breakdowns are current Queue-state snapshots: they use the Queue item's persisted provider and current `published` or `failed` status, with no reporting-day filter and no publish-attempt requirement. Thus, a historical published item and a failed item with no attempts are included in the provider breakdown. `failed_today` remains an event-based distinct-item metric; a failed item may contribute to it even if a later attempt publishes it. An ambiguous item is counted only when its latest attempt remains ambiguous and the queue item is not published. Invalid or absent workspace timezones fall back to UTC.
 
+The Phase 4.3 Dashboard UI consumes these fields directly. Attention items link to the existing Queue detail view without triggering retries, and Facebook readiness is labeled as Page validation only rather than verified publishing permission. Realtime dashboard updates remain outside this UI phase; the existing Queue SSE and polling behavior is unchanged.
+
 ### 4.3 Products catalog
 
 Product is a **global shared catalog**. There is no `products.workspace_id`, `user_id`, `campaign_id`, or `affiliate_id`. AliExpress identity (`aliexpress_product_id`) is globally unique; discovery, import, and Celery persistence upsert into the same table. Reads do **not** require `X-Workspace-Id`. ADMIN mutations are global catalog writes, not workspace-scoped. Queue items may attach the same Product from any workspace (`product_id` is existence-only).
