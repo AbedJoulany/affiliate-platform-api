@@ -1,5 +1,6 @@
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
-import { queueAttemptsKey, queueKey } from "../hooks/useQueue";
+import { queueAttemptsKey, queueItemKey, queueKey } from "../hooks/useQueue";
+import { dashboardKey } from "@/features/dashboard/hooks/useDashboard";
 import { getActiveWorkspaceId, normalizeWorkspaceId } from "@/lib/workspace";
 import {
   QUEUE_EVENT_NAMES,
@@ -25,7 +26,7 @@ export function getQueryKeysForQueueEvent(
   const eventWorkspace = normalizeWorkspaceId(event.workspace_id);
   if (eventWorkspace && eventWorkspace !== workspaceId) return [];
 
-  const keys: QueryKey[] = [queueKey(workspaceId)];
+  const keys: QueryKey[] = [queueKey(workspaceId), dashboardKey(workspaceId)];
 
   switch (event.event) {
     case QUEUE_EVENT_NAMES.ATTEMPT_STARTED:
@@ -56,8 +57,10 @@ export type QueueEventInvalidator = {
 export function createDebouncedQueueEventInvalidator(
   queryClient: QueryClient,
   debounceMs: number = QUEUE_EVENT_INVALIDATION_DEBOUNCE_MS,
+  workspaceId: string | null = getActiveWorkspaceId(),
 ): QueueEventInvalidator {
   const pending = new Map<string, QueryKey>();
+  const pendingRemovals = new Map<string, QueryKey>();
   let timer: ReturnType<typeof setTimeout> | null = null;
   let disposed = false;
 
@@ -69,16 +72,27 @@ export function createDebouncedQueueEventInvalidator(
     for (const key of keys) {
       void queryClient.invalidateQueries({ queryKey: key });
     }
+    for (const key of pendingRemovals.values()) {
+      queryClient.removeQueries({ queryKey: key });
+    }
+    pendingRemovals.clear();
   };
 
   return {
     handle(event: QueueEventEnvelope) {
       if (disposed) return;
       try {
-        const keys = getQueryKeysForQueueEvent(event);
+        const keys = getQueryKeysForQueueEvent(event, workspaceId);
         if (keys.length === 0) return;
         for (const key of keys) {
           pending.set(JSON.stringify(key), key);
+        }
+        if (event.event === QUEUE_EVENT_NAMES.DELETED) {
+          const queueId = normalizeQueueId(event.queue_id);
+          if (queueId && workspaceId) {
+            const key = queueItemKey(workspaceId, queueId);
+            pendingRemovals.set(JSON.stringify(key), key);
+          }
         }
         if (debounceMs <= 0) {
           flush();
@@ -96,6 +110,7 @@ export function createDebouncedQueueEventInvalidator(
       if (timer) clearTimeout(timer);
       timer = null;
       pending.clear();
+      pendingRemovals.clear();
     },
   };
 }

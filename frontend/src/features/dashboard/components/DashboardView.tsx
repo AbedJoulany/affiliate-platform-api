@@ -16,11 +16,21 @@ import {
   Settings2,
   TriangleAlert,
 } from "lucide-react";
-import { ErrorState, EmptyState, LoadingState, NoActiveWorkspaceState } from "@/components/common/states";
+import {
+  ErrorState,
+  EmptyState,
+  LoadingState,
+  NoActiveWorkspaceState,
+} from "@/components/common/states";
 import { PageContainer, PageHeader } from "@/components/layout/page";
 import { Badge, Card } from "@/components/ui/primitives";
 import { getApiErrorMessage } from "@/services/api-client";
 import { useActiveWorkspaceId } from "@/lib/workspace";
+import {
+  useQueueRealtimePollingEnabled,
+  useQueueRealtimeStatus,
+} from "@/features/queue/hooks/QueueRealtimePollingContext";
+import type { QueueEventStreamStatus } from "@/features/queue/hooks/useQueueEventStream";
 import { useDashboard } from "../hooks/useDashboard";
 import type { DashboardOverview } from "../types/api";
 
@@ -29,11 +39,16 @@ const numberFormatter = new Intl.NumberFormat("ar");
 export function DashboardView() {
   const workspaceId = useActiveWorkspaceId();
   const overview = useDashboard();
+  const realtimeStatus = useQueueRealtimeStatus();
+  const pollingEnabled = useQueueRealtimePollingEnabled();
 
   if (!workspaceId) {
     return (
       <PageContainer>
-        <PageHeader title="لوحة التحكم" description="نظرة عملية على قائمة النشر والوجهات." />
+        <PageHeader
+          title="لوحة التحكم"
+          description="نظرة عملية على قائمة النشر والوجهات."
+        />
         <NoActiveWorkspaceState />
       </PageContainer>
     );
@@ -42,7 +57,10 @@ export function DashboardView() {
   if (overview.isPending) {
     return (
       <PageContainer>
-        <PageHeader title="لوحة التحكم" description="نظرة عملية على قائمة النشر والوجهات." />
+        <PageHeader
+          title="لوحة التحكم"
+          description="نظرة عملية على قائمة النشر والوجهات."
+        />
         <LoadingState rows={8} />
       </PageContainer>
     );
@@ -51,9 +69,15 @@ export function DashboardView() {
   if (overview.isError) {
     return (
       <PageContainer>
-        <PageHeader title="لوحة التحكم" description="نظرة عملية على قائمة النشر والوجهات." />
+        <PageHeader
+          title="لوحة التحكم"
+          description="نظرة عملية على قائمة النشر والوجهات."
+        />
         <ErrorState
-          message={getApiErrorMessage(overview.error, "تعذر تحميل لوحة التحكم.")}
+          message={getApiErrorMessage(
+            overview.error,
+            "تعذر تحميل لوحة التحكم.",
+          )}
           onRetry={() => void overview.refetch()}
         />
       </PageContainer>
@@ -67,11 +91,20 @@ export function DashboardView() {
         title="لوحة التحكم"
         description="نظرة عملية على قائمة النشر والوجهات وما يحتاج إلى متابعة."
         actions={
-          <div className="rounded-md border border-border bg-surface px-3 py-2 text-end text-xs">
-            <p className="text-muted-foreground">مساحة العمل النشطة</p>
-            <p className="mt-1 max-w-48 truncate font-mono" title={workspaceId}>
-              {workspaceId}
-            </p>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <DashboardFreshnessBadge
+              status={realtimeStatus}
+              pollingEnabled={pollingEnabled}
+            />
+            <div className="rounded-md border border-border bg-surface px-3 py-2 text-end text-xs">
+              <p className="text-muted-foreground">مساحة العمل النشطة</p>
+              <p
+                className="mt-1 max-w-48 truncate font-mono"
+                title={workspaceId}
+              >
+                {workspaceId}
+              </p>
+            </div>
           </div>
         }
       />
@@ -81,17 +114,29 @@ export function DashboardView() {
           <Info className="size-4" aria-hidden />
           التقرير حسب اليوم المحلي لمساحة العمل
         </span>
-        <span data-testid="dashboard-timezone">المنطقة الزمنية: {data.reporting.timezone}</span>
+        <span data-testid="dashboard-timezone">
+          المنطقة الزمنية: {data.reporting.timezone}
+        </span>
         <span>
-          آخر تحديث: {formatTimestamp(data.reporting.generated_at, data.reporting.timezone)}
+          آخر تحديث:{" "}
+          {formatTimestamp(
+            data.reporting.generated_at,
+            data.reporting.timezone,
+          )}
         </span>
       </div>
 
       <DashboardKpis data={data} />
 
-      <section className="mt-6 grid gap-4 lg:grid-cols-[1fr_1.5fr]" aria-label="ملخص الحالة">
+      <section
+        className="mt-6 grid gap-4 lg:grid-cols-[1fr_1.5fr]"
+        aria-label="ملخص الحالة"
+      >
         <Card>
-          <SectionHeading icon={<ListChecks className="size-5" />} title="ملخص قائمة النشر" />
+          <SectionHeading
+            icon={<ListChecks className="size-5" />}
+            title="ملخص قائمة النشر"
+          />
           <div className="mt-4 grid grid-cols-2 gap-3">
             <Metric label="إجمالي العناصر" value={data.queue.total} />
             <Metric label="مسودات" value={data.queue.by_status.draft} />
@@ -102,11 +147,18 @@ export function DashboardView() {
                 data.publishing.by_provider.facebook.published
               }
             />
-            <Metric label="غير مؤكدة" value={data.publishing.ambiguous_unresolved} tone="warning" />
+            <Metric
+              label="غير مؤكدة"
+              value={data.publishing.ambiguous_unresolved}
+              tone="warning"
+            />
           </div>
         </Card>
         <Card>
-          <SectionHeading icon={<Radio className="size-5" />} title="الحالة حسب المزوّد" />
+          <SectionHeading
+            icon={<Radio className="size-5" />}
+            title="الحالة حسب المزوّد"
+          />
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <ProviderSummary
               label="Telegram"
@@ -137,7 +189,8 @@ export function DashboardView() {
             />
             {data.publishing.ambiguous_unresolved > 0 ? (
               <Badge tone="warning">
-                {numberFormatter.format(data.publishing.ambiguous_unresolved)} غير مؤكدة
+                {numberFormatter.format(data.publishing.ambiguous_unresolved)}{" "}
+                غير مؤكدة
               </Badge>
             ) : null}
           </div>
@@ -148,7 +201,10 @@ export function DashboardView() {
               description="لا توجد حاليًا حالات فشل أو نتائج نشر غير مؤكدة ضمن مساحة العمل."
             />
           ) : (
-            <ul className="mt-4 divide-y divide-border" aria-label="عناصر تحتاج إلى متابعة">
+            <ul
+              className="mt-4 divide-y divide-border"
+              aria-label="عناصر تحتاج إلى متابعة"
+            >
               {data.attention_items.map((item) => (
                 <li key={item.queue_id} className="py-4 first:pt-1 last:pb-1">
                   <Link
@@ -157,19 +213,34 @@ export function DashboardView() {
                   >
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="truncate font-medium group-hover:text-primary">{item.title}</p>
-                        <Badge tone={item.issue === "ambiguous" ? "warning" : "error"}>
-                          {item.issue === "ambiguous" ? "نتيجة غير مؤكدة" : "فشل النشر"}
+                        <p className="truncate font-medium group-hover:text-primary">
+                          {item.title}
+                        </p>
+                        <Badge
+                          tone={
+                            item.issue === "ambiguous" ? "warning" : "error"
+                          }
+                        >
+                          {item.issue === "ambiguous"
+                            ? "نتيجة غير مؤكدة"
+                            : "فشل النشر"}
                         </Badge>
-                        <Badge tone="neutral">{providerLabel(item.provider)}</Badge>
+                        <Badge tone="neutral">
+                          {providerLabel(item.provider)}
+                        </Badge>
                       </div>
                       <p className="mt-1 text-sm text-muted-foreground">
                         {item.issue === "ambiguous"
                           ? "قد يكون المزوّد قبل المنشور؛ راجع قائمة النشر قبل أي إعادة محاولة."
-                          : item.message ?? item.error_code ?? "تعذر نشر هذا العنصر."}
+                          : (item.message ??
+                            item.error_code ??
+                            "تعذر نشر هذا العنصر.")}
                       </p>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        {formatTimestamp(item.occurred_at, data.reporting.timezone)}
+                        {formatTimestamp(
+                          item.occurred_at,
+                          data.reporting.timezone,
+                        )}
                         {item.error_code ? ` · ${item.error_code}` : ""}
                       </p>
                     </div>
@@ -185,14 +256,20 @@ export function DashboardView() {
         </Card>
       </section>
 
-      <section className="mt-6 grid gap-4 lg:grid-cols-2" aria-label="جاهزية الوجهات">
+      <section
+        className="mt-6 grid gap-4 lg:grid-cols-2"
+        aria-label="جاهزية الوجهات"
+      >
         <ReadinessCard
           title="جاهزية Telegram"
           icon={<Send className="size-5" />}
           lines={[
             ["إجمالي القنوات", data.destination_readiness.telegram.total],
             ["القنوات النشطة", data.destination_readiness.telegram.active],
-            ["صلاحيات البوت المفحوصة", data.destination_readiness.telegram.permission_granted],
+            [
+              "صلاحيات البوت المفحوصة",
+              data.destination_readiness.telegram.permission_granted,
+            ],
           ]}
           note="يشمل العدد الأخير الحالات المؤكدة أو الجزئية من فحص صلاحيات البوت."
           href="/channels"
@@ -204,7 +281,10 @@ export function DashboardView() {
           lines={[
             ["إجمالي الصفحات", data.destination_readiness.facebook.total],
             ["الصفحات النشطة", data.destination_readiness.facebook.active],
-            ["الصفحات التي تم التحقق منها", data.destination_readiness.facebook.validated],
+            [
+              "الصفحات التي تم التحقق منها",
+              data.destination_readiness.facebook.validated,
+            ],
           ]}
           note={
             data.destination_readiness.facebook.publishing_permission_verified
@@ -213,15 +293,22 @@ export function DashboardView() {
           }
           href="/channels"
           linkLabel="إدارة الصفحات"
-          warning={!data.destination_readiness.facebook.publishing_permission_verified}
+          warning={
+            !data.destination_readiness.facebook.publishing_permission_verified
+          }
         />
       </section>
 
       <section className="mt-6 grid gap-4 lg:grid-cols-[1.4fr_1fr]">
         <Card>
-          <SectionHeading icon={<Radio className="size-5" />} title="النشاط الأخير" />
+          <SectionHeading
+            icon={<Radio className="size-5" />}
+            title="النشاط الأخير"
+          />
           {data.recent_activity.length === 0 ? (
-            <p className="mt-4 text-sm text-muted-foreground">لا يوجد نشاط حديث.</p>
+            <p className="mt-4 text-sm text-muted-foreground">
+              لا يوجد نشاط حديث.
+            </p>
           ) : (
             <ul className="mt-4 divide-y divide-border">
               {data.recent_activity.map((item) => {
@@ -237,12 +324,18 @@ export function DashboardView() {
                     >
                       <span className="min-w-0 truncate">
                         <span className="me-2 text-xs text-muted-foreground">
-                          {item.resource_type === "queue" ? "قائمة النشر" : "منتج"}
+                          {item.resource_type === "queue"
+                            ? "قائمة النشر"
+                            : "منتج"}
                         </span>
                         {item.title}
                       </span>
                       <span className="shrink-0 text-muted-foreground">
-                        {item.status} · {formatTimestamp(item.occurred_at, data.reporting.timezone)}
+                        {item.status} ·{" "}
+                        {formatTimestamp(
+                          item.occurred_at,
+                          data.reporting.timezone,
+                        )}
                       </span>
                     </Link>
                   </li>
@@ -253,27 +346,83 @@ export function DashboardView() {
         </Card>
         <div className="space-y-4">
           <Card>
-            <SectionHeading icon={<Package className="size-5" />} title="الكتالوج والمنتجات" />
+            <SectionHeading
+              icon={<Package className="size-5" />}
+              title="الكتالوج والمنتجات"
+            />
             <p className="mt-4 text-3xl font-semibold tabular-nums">
               {numberFormatter.format(data.products.total)}
             </p>
             <p className="mt-1 text-sm text-muted-foreground">
               إجمالي المنتجات في الكتالوج المشترك، وليس خاصًا بمساحة العمل.
             </p>
-            <Link href="/products" className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-primary">
+            <Link
+              href="/products"
+              className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-primary"
+            >
               فتح الكتالوج <ArrowUpLeft className="size-4" aria-hidden />
             </Link>
           </Card>
           <Card>
-            <SectionHeading icon={<Settings2 className="size-5" />} title="الأتمتة" />
+            <SectionHeading
+              icon={<Settings2 className="size-5" />}
+              title="الأتمتة"
+            />
             <p className="mt-3 font-medium">غير مهيأة</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              لا توجد أتمتة قيد التشغيل. سيظهر وقت آخر تشغيل بعد تفعيل هذه المرحلة.
+              لا توجد أتمتة قيد التشغيل. سيظهر وقت آخر تشغيل بعد تفعيل هذه
+              المرحلة.
             </p>
           </Card>
         </div>
       </section>
     </PageContainer>
+  );
+}
+
+function DashboardFreshnessBadge({
+  status,
+  pollingEnabled,
+}: {
+  status: QueueEventStreamStatus;
+  pollingEnabled: boolean;
+}) {
+  if (pollingEnabled) {
+    return (
+      <Badge
+        tone="warning"
+        role="status"
+        title="يتم تحديث البيانات دوريًا حتى يعود البث الحي."
+      >
+        تحديث احتياطي
+      </Badge>
+    );
+  }
+
+  const labels: Record<QueueEventStreamStatus, string> = {
+    connected: "تحديث حي",
+    connecting: "جاري الاتصال",
+    disconnected: "قد تكون البيانات قديمة",
+    error: "البث متوقف",
+  };
+  const tones: Record<
+    QueueEventStreamStatus,
+    "success" | "info" | "warning" | "error"
+  > = {
+    connected: "success",
+    connecting: "info",
+    disconnected: "warning",
+    error: "error",
+  };
+
+  return (
+    <Badge
+      tone={tones[status]}
+      role="status"
+      title="المؤشرات مصدرها آخر لقطة موثوقة من الخادم."
+    >
+      {labels[status]}
+    </Badge>
   );
 }
 
@@ -314,12 +463,17 @@ function DashboardKpis({ data }: { data: DashboardOverview }) {
   ] as const;
 
   return (
-    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="مؤشرات لوحة العمليات">
+    <section
+      className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
+      aria-label="مؤشرات لوحة العمليات"
+    >
       {items.map(({ id, label, helper, value, icon: Icon, className }) => (
         <Card key={id} data-testid={`dashboard-kpi-${id}`}>
           <Icon className={`mb-4 size-5 ${className}`} aria-hidden />
           <p className="text-sm text-muted-foreground">{label}</p>
-          <p className="mt-1 text-3xl font-semibold tabular-nums">{numberFormatter.format(value)}</p>
+          <p className="mt-1 text-3xl font-semibold tabular-nums">
+            {numberFormatter.format(value)}
+          </p>
           <p className="mt-2 text-xs text-muted-foreground">{helper}</p>
         </Card>
       ))}
@@ -360,7 +514,9 @@ function Metric({
   return (
     <div className="rounded-md bg-muted/40 p-3">
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p className={`mt-1 text-xl font-semibold tabular-nums ${tone === "warning" ? "text-amber-700 dark:text-amber-300" : ""}`}>
+      <p
+        className={`mt-1 text-xl font-semibold tabular-nums ${tone === "warning" ? "text-amber-700 dark:text-amber-300" : ""}`}
+      >
         {numberFormatter.format(value)}
       </p>
     </div>
@@ -387,11 +543,15 @@ function ProviderSummary({
       <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
         <div>
           <dt className="text-xs text-muted-foreground">منشور</dt>
-          <dd className="mt-1 font-semibold text-emerald-700 dark:text-emerald-300">{numberFormatter.format(published)}</dd>
+          <dd className="mt-1 font-semibold text-emerald-700 dark:text-emerald-300">
+            {numberFormatter.format(published)}
+          </dd>
         </div>
         <div>
           <dt className="text-xs text-muted-foreground">فاشل</dt>
-          <dd className="mt-1 font-semibold text-red-700 dark:text-red-300">{numberFormatter.format(failed)}</dd>
+          <dd className="mt-1 font-semibold text-red-700 dark:text-red-300">
+            {numberFormatter.format(failed)}
+          </dd>
         </div>
       </dl>
     </div>
@@ -422,15 +582,24 @@ function ReadinessCard({
         {lines.map(([label, value]) => (
           <div key={label}>
             <dt className="text-xs text-muted-foreground">{label}</dt>
-            <dd className="mt-1 text-xl font-semibold tabular-nums">{numberFormatter.format(value)}</dd>
+            <dd className="mt-1 text-xl font-semibold tabular-nums">
+              {numberFormatter.format(value)}
+            </dd>
           </div>
         ))}
       </dl>
-      <p className={`mt-4 flex items-start gap-2 text-xs ${warning ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground"}`}>
-        {warning ? <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden /> : null}
+      <p
+        className={`mt-4 flex items-start gap-2 text-xs ${warning ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground"}`}
+      >
+        {warning ? (
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+        ) : null}
         {note}
       </p>
-      <Link href={href} className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-primary">
+      <Link
+        href={href}
+        className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-primary"
+      >
         {linkLabel} <ArrowUpLeft className="size-4" aria-hidden />
       </Link>
     </Card>

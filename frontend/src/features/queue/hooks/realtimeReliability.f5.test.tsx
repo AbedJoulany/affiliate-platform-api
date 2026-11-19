@@ -1,15 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import {
-  cleanup,
-  renderHook,
-  waitFor,
-} from "@testing-library/react";
+import { cleanup, renderHook, waitFor } from "@testing-library/react";
 import { StrictMode, createElement, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { session } from "@/services/session";
 import { setActiveWorkspaceId } from "@/lib/workspace";
 import { WORKSPACE_A } from "@/test/workspace";
 import { queueAttemptsKey, queueKey } from "../hooks/useQueue";
+import { dashboardKey } from "@/features/dashboard/hooks/useDashboard";
 import { useQueueEventStream } from "../hooks/useQueueEventStream";
 import { useQueueRealtimeInvalidation } from "../hooks/useQueueRealtimeInvalidation";
 import {
@@ -68,7 +65,9 @@ describe("F5 — single active stream lifecycle", () => {
       signals.push(options.signal);
       options.onOpen?.();
       await new Promise<void>((resolve) => {
-        options.signal.addEventListener("abort", () => resolve(), { once: true });
+        options.signal.addEventListener("abort", () => resolve(), {
+          once: true,
+        });
       });
     });
 
@@ -91,7 +90,9 @@ describe("F5 — single active stream lifecycle", () => {
       signals.push(options.signal);
       options.onOpen?.();
       await new Promise<void>((resolve) => {
-        options.signal.addEventListener("abort", () => resolve(), { once: true });
+        options.signal.addEventListener("abort", () => resolve(), {
+          once: true,
+        });
       });
     });
 
@@ -126,7 +127,9 @@ describe("F5 — single active stream lifecycle", () => {
       );
       options.onOpen?.();
       await new Promise<void>((resolve) => {
-        options.signal.addEventListener("abort", () => resolve(), { once: true });
+        options.signal.addEventListener("abort", () => resolve(), {
+          once: true,
+        });
       });
     });
 
@@ -159,14 +162,15 @@ describe("F5 — no stale event handling after unmount", () => {
       captured = options;
       options.onOpen?.();
       await new Promise<void>((resolve) => {
-        options.signal.addEventListener("abort", () => resolve(), { once: true });
+        options.signal.addEventListener("abort", () => resolve(), {
+          once: true,
+        });
       });
     });
 
-    const { unmount } = renderHook(
-      () => useQueueEventStream({ onEvent }),
-      { wrapper: wrapper(new QueryClient()) },
-    );
+    const { unmount } = renderHook(() => useQueueEventStream({ onEvent }), {
+      wrapper: wrapper(new QueryClient()),
+    });
 
     await waitFor(() => expect(captured).not.toBeNull());
     unmount();
@@ -198,7 +202,9 @@ describe("F5 — no stale event handling after unmount", () => {
       captured = options;
       options.onOpen?.();
       await new Promise<void>((resolve) => {
-        options.signal.addEventListener("abort", () => resolve(), { once: true });
+        options.signal.addEventListener("abort", () => resolve(), {
+          once: true,
+        });
       });
     });
 
@@ -233,8 +239,13 @@ describe("F5 — invalidation deduplication", () => {
     expect(invalidateQueries).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(300);
 
-    expect(invalidateQueries).toHaveBeenCalledTimes(2);
-    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: queueKey(WORKSPACE_A) });
+    expect(invalidateQueries).toHaveBeenCalledTimes(3);
+    expect(invalidateQueries).toHaveBeenCalledWith({
+      queryKey: queueKey(WORKSPACE_A),
+    });
+    expect(invalidateQueries).toHaveBeenCalledWith({
+      queryKey: dashboardKey(WORKSPACE_A),
+    });
     expect(invalidateQueries).toHaveBeenCalledWith({
       queryKey: queueAttemptsKey(WORKSPACE_A, "q-1"),
     });
@@ -246,13 +257,17 @@ describe("F5 — invalidation deduplication", () => {
   it("maps attempt events to queue + attempts keys and ignores unknown events", () => {
     expect(
       getQueryKeysForQueueEvent(envelope(QUEUE_EVENT_NAMES.ATTEMPT_FAILED)),
-    ).toEqual([queueKey(WORKSPACE_A), queueAttemptsKey(WORKSPACE_A, "q-1")]);
+    ).toEqual([
+      queueKey(WORKSPACE_A),
+      dashboardKey(WORKSPACE_A),
+      queueAttemptsKey(WORKSPACE_A, "q-1"),
+    ]);
     expect(
       getQueryKeysForQueueEvent(envelope(QUEUE_EVENT_NAMES.DELETED)),
-    ).toEqual([queueKey(WORKSPACE_A)]);
-    expect(
-      getQueryKeysForQueueEvent(envelope("queue.unknown_event")),
-    ).toEqual([]);
+    ).toEqual([queueKey(WORKSPACE_A), dashboardKey(WORKSPACE_A)]);
+    expect(getQueryKeysForQueueEvent(envelope("queue.unknown_event"))).toEqual(
+      [],
+    );
   });
 });
 
@@ -267,7 +282,9 @@ describe("F5 — reconnect invalidation", () => {
       captured = options;
       options.onOpen?.();
       await new Promise<void>((resolve) => {
-        options.signal.addEventListener("abort", () => resolve(), { once: true });
+        options.signal.addEventListener("abort", () => resolve(), {
+          once: true,
+        });
       });
     });
 
@@ -277,14 +294,18 @@ describe("F5 — reconnect invalidation", () => {
     );
 
     await waitFor(() => expect(result.current.status).toBe("connected"));
-    expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: queueKey(WORKSPACE_A) });
+    expect(invalidateQueries).not.toHaveBeenCalledWith({
+      queryKey: queueKey(WORKSPACE_A),
+    });
 
     captured!.onReconnect?.(1, 5);
     await waitFor(() => expect(result.current.status).toBe("connecting"));
     captured!.onOpen?.();
     await waitFor(() => expect(result.current.status).toBe("connected"));
     await waitFor(() =>
-      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: queueKey(WORKSPACE_A) }),
+      expect(invalidateQueries).toHaveBeenCalledWith({
+        queryKey: queueKey(WORKSPACE_A),
+      }),
     );
 
     unmount();
@@ -300,7 +321,9 @@ describe("F5 — reconnect invalidation", () => {
       captured = options;
       options.onOpen?.();
       await new Promise<void>((resolve) => {
-        options.signal.addEventListener("abort", () => resolve(), { once: true });
+        options.signal.addEventListener("abort", () => resolve(), {
+          once: true,
+        });
       });
     });
 
@@ -340,7 +363,9 @@ describe("F5 — reconnect invalidation", () => {
     createStreamMock.mockImplementation(async (options) => {
       options.onOpen?.();
       await new Promise<void>((resolve) => {
-        options.signal.addEventListener("abort", () => resolve(), { once: true });
+        options.signal.addEventListener("abort", () => resolve(), {
+          once: true,
+        });
       });
     });
 
@@ -354,7 +379,9 @@ describe("F5 — reconnect invalidation", () => {
     );
     // Allow status effects from StrictMode double-invoke to settle.
     await new Promise((resolve) => setTimeout(resolve, 30));
-    expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: queueKey(WORKSPACE_A) });
+    expect(invalidateQueries).not.toHaveBeenCalledWith({
+      queryKey: queueKey(WORKSPACE_A),
+    });
     unmount();
   });
 });
@@ -368,7 +395,9 @@ describe("F5 — auth failure stops retrying", () => {
       captured = options;
       options.onOpen?.();
       await new Promise<void>((resolve) => {
-        options.signal.addEventListener("abort", () => resolve(), { once: true });
+        options.signal.addEventListener("abort", () => resolve(), {
+          once: true,
+        });
       });
     });
 

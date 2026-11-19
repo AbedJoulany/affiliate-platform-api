@@ -267,6 +267,10 @@ Product is a **global shared catalog**. There is no `products.workspace_id`, `us
 
 Queue and channel HTTP routes require `Authorization: Bearer <access_token>` and `X-Workspace-Id`. Missing/invalid/unknown/non-member workspace → **403**. Unauthenticated → **401**. Cross-workspace queue or channel ids → **404** (existence is not leaked). `workspace_id` is taken from the header, never from the JSON body. `Campaign.workspace_id`, `QueueItem.workspace_id`, and `TelegramChannel.workspace_id` are **NOT NULL** with `ON DELETE RESTRICT` (migration `013`; upgrade aborts if NULL tenant rows remain). Attaching or publishing a queue item to a channel in another workspace → **404** (`Channel not found`). `GET /queues/{id}/attempts` authorizes the parent `QueueItem` in the active workspace first; attempts have no `workspace_id` column. `UserRole.ADMIN` may name any existing workspace without membership, still scoped to that header. Celery `process_publish_queue` / `publish_queue_item_task` remain workspace-agnostic.
 
+#### Operational Dashboard realtime (Phase 4.4)
+
+The authenticated dashboard layout owns one workspace-scoped Queue SSE connection, enabled only on `/dashboard` and `/queue`; Queue and Dashboard consume the same connection status and bounded fallback polling. SSE events are freshness signals only: known Queue events debounce invalidation of the workspace Queue, Dashboard, and attempt-history query families, while the backend REST responses remain authoritative. Deleted Queue detail cache is removed, and reconnect performs an authoritative refresh because events are not replayed. Queue, destination, and workspace-settings mutations also invalidate Dashboard when they can change its snapshot without an emitted event. The Dashboard revalidates at the server-provided `reporting.day_end_utc` boundary and on return from a hidden tab, using the workspace timezone’s UTC boundary rather than browser midnight or a fixed 24-hour interval. No live or exactly-once delivery guarantee is implied.
+
 #### Publish attempt schemas (Phase A.1 backend)
 
 **`QueuePublishAttemptRead`** — attempt-scoped only; `status` is **not** a `QueueStatus` value:

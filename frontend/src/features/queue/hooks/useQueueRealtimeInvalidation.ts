@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { dashboardKey } from "@/features/dashboard/hooks/useDashboard";
+import { session } from "@/services/session";
 import {
   QUEUE_EVENT_INVALIDATION_DEBOUNCE_MS,
   createDebouncedQueueEventInvalidator,
@@ -52,8 +54,13 @@ export function useQueueRealtimeInvalidation(
   const [pollingEnabled, setPollingEnabled] = useState(false);
 
   const invalidator = useMemo(
-    () => createDebouncedQueueEventInvalidator(queryClient, debounceMs),
-    [queryClient, debounceMs],
+    () =>
+      createDebouncedQueueEventInvalidator(
+        queryClient,
+        debounceMs,
+        workspaceId,
+      ),
+    [queryClient, debounceMs, workspaceId],
   );
 
   useEffect(() => () => invalidator.dispose(), [invalidator]);
@@ -94,6 +101,9 @@ export function useQueueRealtimeInvalidation(
     // Reconnect recovery: refill any gap while disconnected (no event replay).
     if (workspaceId) {
       void queryClient.invalidateQueries({ queryKey: queueKey(workspaceId) });
+      void queryClient.invalidateQueries({
+        queryKey: dashboardKey(workspaceId),
+      });
     }
   }, [status, queryClient, workspaceId]);
 
@@ -105,8 +115,13 @@ export function useQueueRealtimeInvalidation(
       return;
     }
 
-    if (status === "connected" || status === "error") {
+    if (status === "connected") {
       setPollingEnabled(false);
+      return;
+    }
+
+    if (status === "error") {
+      setPollingEnabled(Boolean(session.getAccessToken()));
       return;
     }
 

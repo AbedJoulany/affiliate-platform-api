@@ -1,10 +1,14 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { getWorkspaceSettings, patchWorkspaceSettings } from "../api/settings.api";
+import {
+  getWorkspaceSettings,
+  patchWorkspaceSettings,
+} from "../api/settings.api";
 import type { WorkspaceSettings, WorkspaceSettingsPatch } from "../types/api";
 import { useActiveWorkspaceId, workspaceScopedQueryKey } from "@/lib/workspace";
 import type { ApiError } from "@/services/api-client";
+import { dashboardKey } from "@/features/dashboard/hooks/useDashboard";
 
 export const workspaceSettingsKey = (workspaceId: string) =>
   workspaceScopedQueryKey("workspace-settings", workspaceId);
@@ -29,6 +33,7 @@ export function usePatchWorkspaceSettings() {
     onSuccess: (data) => {
       if (workspaceId) {
         client.setQueryData(workspaceSettingsKey(workspaceId), data);
+        void client.invalidateQueries({ queryKey: dashboardKey(workspaceId) });
       }
     },
   });

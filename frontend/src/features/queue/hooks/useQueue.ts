@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useActiveWorkspaceId, workspaceScopedQueryKey } from "@/lib/workspace";
+import { dashboardKey } from "@/features/dashboard/hooks/useDashboard";
 import type { ApiError } from "@/services/api-client";
 import {
   createQueueItem,
@@ -32,6 +33,14 @@ export const queueItemKey = (workspaceId: string, id: string) =>
 
 export const queueAttemptsKey = (workspaceId: string, id: string) =>
   [...queueKey(workspaceId), "attempts", id] as const;
+
+function invalidateQueueAndDashboard(
+  client: ReturnType<typeof useQueryClient>,
+  workspaceId: string,
+) {
+  void client.invalidateQueries({ queryKey: queueKey(workspaceId) });
+  void client.invalidateQueries({ queryKey: dashboardKey(workspaceId) });
+}
 
 const ENRICHMENT_CONCURRENCY = 5;
 
@@ -102,6 +111,11 @@ export function useQueue(status?: QueueStatus, limit = 20, skip = 0) {
 
 export function useQueueItem(id: string | null, enabled: boolean) {
   const workspaceId = useActiveWorkspaceId();
+  const pollingEnabled = useQueueRealtimePollingEnabled();
+  const refetchInterval = useMemo(
+    () => (pollingEnabled ? createQueuePollIntervalSelector() : false),
+    [pollingEnabled],
+  );
 
   return useQuery({
     queryKey:
@@ -110,6 +124,7 @@ export function useQueueItem(id: string | null, enabled: boolean) {
         : (["queue", workspaceId ?? "none", "item", id ?? "idle"] as const),
     queryFn: () => getQueueItem(id!),
     enabled: enabled && Boolean(id) && Boolean(workspaceId),
+    refetchInterval: enabled ? refetchInterval : false,
   });
 }
 
@@ -224,8 +239,7 @@ export function useCreateQueueItem() {
   return useMutation({
     mutationFn: createQueueItem,
     onSuccess: () => {
-      if (workspaceId)
-        void client.invalidateQueries({ queryKey: queueKey(workspaceId) });
+      if (workspaceId) invalidateQueueAndDashboard(client, workspaceId);
     },
   });
 }
@@ -237,7 +251,7 @@ export function usePublishQueueItem() {
     mutationFn: (id: string) => publishQueueItem(id),
     onSuccess: (_data, id) => {
       if (!workspaceId) return;
-      void client.invalidateQueries({ queryKey: queueKey(workspaceId) });
+      invalidateQueueAndDashboard(client, workspaceId);
       void client.invalidateQueries({
         queryKey: queueAttemptsKey(workspaceId, id),
       });
@@ -252,8 +266,7 @@ export function useUpdateQueueItem() {
     mutationFn: ({ id, input }: { id: string; input: QueueUpdate }) =>
       updateQueueItem(id, input),
     onSuccess: () => {
-      if (workspaceId)
-        void client.invalidateQueries({ queryKey: queueKey(workspaceId) });
+      if (workspaceId) invalidateQueueAndDashboard(client, workspaceId);
     },
   });
 }
@@ -264,8 +277,7 @@ export function useDeleteQueueItem() {
   return useMutation({
     mutationFn: deleteQueueItem,
     onSuccess: () => {
-      if (workspaceId)
-        void client.invalidateQueries({ queryKey: queueKey(workspaceId) });
+      if (workspaceId) invalidateQueueAndDashboard(client, workspaceId);
     },
   });
 }
@@ -368,6 +380,7 @@ export function useQueuePublishingOperations() {
 
       if (workspaceId) {
         await client.invalidateQueries({ queryKey: queueKey(workspaceId) });
+        await client.invalidateQueries({ queryKey: dashboardKey(workspaceId) });
       }
       return { published, failed, conflicts, conflictMessage, failureMessage };
     },

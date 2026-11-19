@@ -9,12 +9,21 @@ function read(relativePath: string): string {
 }
 
 describe("Queue SSE mount topology", () => {
-  it("mounts realtime invalidation once from QueueView", () => {
+  it("consumes the shared operational realtime status from QueueView", () => {
     const view = read("components/QueueView.tsx");
-    expect(view).toContain("useQueueRealtimeInvalidation");
-    expect(view.match(/useQueueRealtimeInvalidation\(/g)?.length).toBe(1);
-    expect(view).toContain("QueueRealtimePollingContext.Provider");
+    expect(view).toContain("useQueueRealtimeStatus");
+    expect(view).not.toContain("useQueueRealtimeInvalidation");
+    expect(view).not.toContain("QueueRealtimePollingContext.Provider");
     expect(view).not.toContain("useQueueEventStream(");
+  });
+
+  it("owns the shared stream from the operational layout provider", () => {
+    const provider = read("../realtime/OperationalRealtimeProvider.tsx");
+    expect(provider).toContain("useQueueRealtimeInvalidation");
+    expect(provider.match(/useQueueRealtimeInvalidation\(/g)?.length).toBe(1);
+    expect(provider).toContain("QueueRealtimePollingContext.Provider");
+    expect(provider).toContain('"/dashboard"');
+    expect(provider).toContain('"/queue"');
   });
 
   it("does not open SSE connections from child workspace components", () => {
