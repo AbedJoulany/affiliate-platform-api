@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import ProductStatus
@@ -79,13 +79,14 @@ class ProductRepository(BaseRepository[Product]):
         min_discount: Decimal | None = None,
         min_commission: Decimal | None = None,
         max_commission: Decimal | None = None,
+        keyword_tokens: tuple[str, ...] = (),
         limit: int = 1001,
     ) -> list[Product]:
         """Return a deterministically bounded active catalog slice.
 
-        Numeric recommendation filters are applied in SQL before the limit.
-        Keyword matching and score normalization intentionally remain in the
-        existing RecommendationService so semantics stay identical.
+        Numeric recommendation filters and an optional database keyword
+        prefilter are applied before the limit. Exact keyword matching and
+        score normalization remain in RecommendationService.
         """
         filters = [Product.status == ProductStatus.ACTIVE]
         if min_price is not None:
@@ -102,6 +103,30 @@ class ProductRepository(BaseRepository[Product]):
             filters.append(Product.commission_rate >= min_commission)
         if max_commission is not None:
             filters.append(Product.commission_rate <= max_commission)
+        if keyword_tokens:
+            searchable_fields = (
+                Product.title,
+                Product.description,
+                Product.category,
+                Product.store_name,
+            )
+            for token in keyword_tokens:
+                escaped_token = (
+                    token.replace("\\", "\\\\")
+                    .replace("%", "\\%")
+                    .replace("_", "\\_")
+                )
+                filters.append(
+                    or_(
+                        *(
+                            field.ilike(
+                                f"%{escaped_token}%",
+                                escape="\\",
+                            )
+                            for field in searchable_fields
+                        )
+                    )
+                )
 
         statement = (
             select(Product)

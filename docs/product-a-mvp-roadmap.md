@@ -709,7 +709,13 @@ feature branch; automatic execution is not implemented.
 reuses the persisted global catalog and the existing deterministic Recommendation
 Engine. It applies active-product and valid-affiliate-URL eligibility, workspace
 queue/history exclusions, a 1000-candidate inspection cap, deterministic ranking,
-and Top N selection. The response reports the policy revision, UTC selection time,
+and Top N selection. Numeric filters and an optional PostgreSQL `ILIKE` prefilter
+for ASCII keyword tokens run before the cap; exact all-token Python `casefold()`
+matching across title, description, category, and store name remains authoritative.
+Non-ASCII searches retain the bounded deterministic window because PostgreSQL
+`ILIKE` is not universally equivalent to Python Unicode `casefold()`. A
+truncated response ranks only the inspected slice and does not claim global Top N
+optimality. The response reports the policy revision, UTC selection time,
 truncation, ranking scope, exclusion counts, and preview-only warnings.
 
 The preview is workspace-scoped through `X-Workspace-Id`, is readable by

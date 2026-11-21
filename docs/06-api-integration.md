@@ -529,6 +529,15 @@ Recommendation Engine filters and weights, and returns Top N selected product
 IDs with recommendation scores. Products without a valid HTTP(S)
 `affiliate_url` are excluded; `product_url` is never substituted.
 
+For keyword searches, numeric filters and an optional PostgreSQL `ILIKE`
+prefilter for ASCII tokens are applied before the bounded candidate slice.
+The exact all-token, case-insensitive semantics remain authoritative in
+Python using `casefold()` across title, description, category, and store name.
+Because PostgreSQL `ILIKE` is not universally equivalent to Python Unicode
+`casefold()`, non-ASCII searches use the deterministic bounded window without
+claiming global catalog coverage. When truncation is reported, ranking is
+limited to the inspected slice and is not a global Top N claim.
+
 Candidates are also excluded when the same workspace has them queued or
 scheduled, published within the rolling seven-day UTC window, or associated
 with an unresolved ambiguous publishing attempt. The response reports the

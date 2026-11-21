@@ -81,6 +81,26 @@ class RecommendationService:
         ranked.sort(key=self._ranking_key)
         return ranked
 
+    @staticmethod
+    def keyword_tokens(keywords: str | None) -> tuple[str, ...]:
+        return tuple(
+            token.casefold() for token in TOKEN_PATTERN.findall(keywords or "")
+        )
+
+    @staticmethod
+    def sql_keyword_prefilter_supported(keywords: str | None) -> bool:
+        """Whether the bounded PostgreSQL prefilter is safe to use.
+
+        PostgreSQL ``ILIKE`` is not a universal equivalent of Python
+        ``casefold``. Restricting the prefilter to ASCII tokens avoids making
+        a false Unicode-equivalence claim; Python matching remains authoritative
+        for every result that reaches the bounded inspection window.
+        """
+        tokens = TOKEN_PATTERN.findall(keywords or "")
+        return bool(tokens) and all(
+            token.isascii() and token.casefold() == token.lower() for token in tokens
+        )
+
     async def _load_candidates(self, query: RecommendationQuery) -> list[Product]:
         statement = select(Product)
         if query.min_price is not None:
@@ -102,8 +122,9 @@ class RecommendationService:
         result = await self.session.execute(statement)
         return list(result.scalars().all())
 
-    def _matches_keywords(self, product: Product, keywords: str | None) -> bool:
-        tokens = [token.casefold() for token in TOKEN_PATTERN.findall(keywords or "")]
+    @staticmethod
+    def matches_keywords(product: Product, keywords: str | None) -> bool:
+        tokens = RecommendationService.keyword_tokens(keywords)
         if not tokens:
             return True
         searchable = " ".join(
@@ -111,6 +132,9 @@ class RecommendationService:
             for value in (product.title, product.description, product.category, product.store_name)
         ).casefold()
         return all(token in searchable for token in tokens)
+
+    def _matches_keywords(self, product: Product, keywords: str | None) -> bool:
+        return self.matches_keywords(product, keywords)
 
     def _ranking_key(self, item: _RankedProduct) -> tuple:
         product = item.product

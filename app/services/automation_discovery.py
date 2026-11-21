@@ -63,6 +63,10 @@ class AutomationDiscoveryService:
         # invoking any provider API or changing the policy.
         policy_read = await AutomationPolicyService(self.session).get(user, workspace_id)
         query = self._recommendation_query(policy)
+        keyword_tokens = RecommendationService.keyword_tokens(query.keywords)
+        use_sql_keyword_prefilter = RecommendationService.sql_keyword_prefilter_supported(
+            query.keywords
+        )
         selection_timestamp = datetime.now(UTC)
         candidates_with_probe = await self.products.list_active_recommendation_candidates(
             min_price=query.min_price,
@@ -72,21 +76,27 @@ class AutomationDiscoveryService:
             min_discount=query.min_discount,
             min_commission=query.min_commission,
             max_commission=query.max_commission,
+            keyword_tokens=keyword_tokens if use_sql_keyword_prefilter else (),
             limit=self.PROBE_LIMIT,
         )
         truncated = len(candidates_with_probe) > self.CANDIDATE_CAP
         candidates = candidates_with_probe[: self.CANDIDATE_CAP]
+        keyword_matched = [
+            product
+            for product in candidates
+            if RecommendationService.matches_keywords(product, query.keywords)
+        ]
         history = await self.queues.product_publishing_history(
             workspace_id,
-            [product.id for product in candidates],
+            [product.id for product in keyword_matched],
             now=selection_timestamp,
             recent_window_start=selection_timestamp - self.PUBLISHED_LOOKBACK,
         )
 
-        eligible, excluded = self._exclude_candidates(candidates, history)
+        eligible, excluded = self._exclude_candidates(keyword_matched, history)
+        excluded.keyword_mismatch = len(candidates) - len(keyword_matched)
         recommendation_service = RecommendationService(self.session)
         ranked = recommendation_service.rank_candidates(eligible, query)
-        excluded.keyword_mismatch = len(eligible) - len(ranked)
         selected = ranked[: query.top_n]
 
         warnings = list(policy_read.warnings)
@@ -100,6 +110,18 @@ class AutomationDiscoveryService:
             warnings.append(
                 "Candidate cap reached; ranking covers the inspected catalog slice only"
             )
+        if keyword_tokens and use_sql_keyword_prefilter:
+            warnings.append(
+                "PostgreSQL ILIKE is only a candidate prefilter; exact Python casefold "
+                "matching is authoritative, and Unicode casefold expansions may not "
+                "be discoverable beyond the bounded SQL result"
+            )
+        elif keyword_tokens:
+            warnings.append(
+                "Non-ASCII keywords use exact Python casefold matching within the "
+                "bounded deterministic candidate window; rows beyond the cap are "
+                "not guaranteed discoverable"
+            )
 
         return AutomationDiscoveryPreviewResponse(
             workspace_id=workspace_id,
@@ -109,7 +131,9 @@ class AutomationDiscoveryService:
             configuration_ready=policy_read.configuration_ready,
             selection_timestamp=selection_timestamp,
             truncated=truncated,
+            database_candidates_inspected=len(candidates_with_probe),
             candidates_inspected=len(candidates),
+            keyword_matches=len(keyword_matched),
             eligible_count=len(ranked),
             selected_count=len(selected),
             selected_products=[

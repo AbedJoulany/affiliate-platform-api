@@ -35,13 +35,14 @@ async def _create_product(
     status: ProductStatus = ProductStatus.ACTIVE,
     affiliate_url: str | None = "https://affiliate.example/item",
     price: str = "10.00",
+    aliexpress_product_id: str | None = None,
 ) -> UUID:
     # ``workspace_id`` is intentionally unused: the catalog is global. It is
     # accepted to make test call sites explicit about the owning request.
     del workspace_id
     async with SessionLocal() as session:
         product = Product(
-            aliexpress_product_id=f"test-{uuid4().hex}",
+            aliexpress_product_id=aliexpress_product_id or f"test-{uuid4().hex}",
             title=title,
             price=Decimal(price),
             discount=Decimal("10"),
@@ -81,6 +82,47 @@ async def _create_product_batch(workspace_id: str, marker: str, count: int) -> N
                 )
             )
         await session.commit()
+
+
+async def _create_keyword_tail_catalog(marker: str, count: int = 1000) -> list[UUID]:
+    async with SessionLocal() as session:
+        for index in range(count):
+            session.add(
+                Product(
+                    aliexpress_product_id=f"phase6b-prefix-{index:04d}",
+                    title=f"nonmatching product {index}",
+                    price=Decimal("10.00"),
+                    discount=Decimal("10"),
+                    rating=Decimal("4.5"),
+                    sales=100,
+                    reviews=10,
+                    image_url="https://example.com/image.jpg",
+                    product_url="https://example.com/product",
+                    affiliate_url=f"https://affiliate.example/prefix/{index}",
+                    commission_rate=Decimal("5"),
+                    status=ProductStatus.ACTIVE,
+                )
+            )
+        matches = []
+        for index in range(2):
+            product = Product(
+                aliexpress_product_id=f"phase6b-tail-{index:04d}",
+                title=f"{marker} matching product {index}",
+                price=Decimal("10.00"),
+                discount=Decimal("10"),
+                rating=Decimal("4.5"),
+                sales=100,
+                reviews=10,
+                image_url="https://example.com/image.jpg",
+                product_url="https://example.com/product",
+                affiliate_url=f"https://affiliate.example/tail/{index}",
+                commission_rate=Decimal("5"),
+                status=ProductStatus.ACTIVE,
+            )
+            session.add(product)
+            matches.append(product)
+        await session.commit()
+        return [product.id for product in matches]
 
 
 async def _create_queue_item(
@@ -306,6 +348,51 @@ async def test_preview_applies_policy_boundaries_and_keywords(client):
 
 
 @pytest.mark.asyncio
+async def test_keyword_prefilter_finds_matches_beyond_initial_catalog_slice(client):
+    _, token = await register_and_login(client)
+    headers = await workspace_auth_headers(token)
+    workspace_id = headers[WORKSPACE_ID_HEADER]
+    marker = f"phase6b-tail-{uuid4().hex[:8]}"
+    await _create_policy(workspace_id, keywords=marker, products_per_run=2)
+    matching_ids = await _create_keyword_tail_catalog(marker)
+
+    response = await client.post(PREVIEW, headers=headers)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert [item["product_id"] for item in body["selected_products"]] == [
+        str(product_id) for product_id in matching_ids
+    ]
+    assert body["database_candidates_inspected"] == 2
+    assert body["candidates_inspected"] == 2
+    assert body["keyword_matches"] == 2
+    assert body["eligible_count"] == 2
+    assert body["truncated"] is False
+    assert any("ILIKE" in warning for warning in body["warnings"])
+
+
+@pytest.mark.asyncio
+async def test_non_ascii_keywords_use_exact_casefold_with_bounded_fallback(client):
+    _, token = await register_and_login(client)
+    headers = await workspace_auth_headers(token)
+    workspace_id = headers[WORKSPACE_ID_HEADER]
+    await _create_policy(workspace_id, keywords="straße", products_per_run=1)
+    product_id = await _create_product(
+        workspace_id,
+        title="STRASSE",
+        aliexpress_product_id=f"000-phase6b-unicode-{uuid4().hex}",
+    )
+
+    response = await client.post(PREVIEW, headers=headers)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["selected_products"][0]["product_id"] == str(product_id)
+    assert body["keyword_matches"] == 1
+    assert any("Non-ASCII keywords" in warning for warning in body["warnings"])
+
+
+@pytest.mark.asyncio
 async def test_preview_marks_enabled_incomplete_policy_non_executable(client):
     _, token = await register_and_login(client)
     headers = await workspace_auth_headers(token)
@@ -339,7 +426,9 @@ async def test_preview_reports_candidate_cap_and_top_n(client):
     body = response.json()
     assert body["truncated"] is True
     assert body["candidate_cap"] == 1000
+    assert body["database_candidates_inspected"] == 1001
     assert body["candidates_inspected"] == 1000
+    assert body["keyword_matches"] == 1000
     assert body["ranking_scope"] == "inspected_candidates_only"
     assert body["selected_count"] == 3
     assert len(body["selected_products"]) == 3

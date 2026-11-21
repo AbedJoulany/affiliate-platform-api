@@ -38,7 +38,9 @@ class AutomationDiscoveryPreviewResponse(BaseModel):
     candidate_cap: int = Field(default=1000, gt=0)
     truncated: bool
     ranking_scope: Literal["inspected_candidates_only"] = "inspected_candidates_only"
+    database_candidates_inspected: int = Field(ge=0)
     candidates_inspected: int = Field(ge=0)
+    keyword_matches: int = Field(ge=0)
     eligible_count: int = Field(ge=0)
     selected_count: int = Field(ge=0)
     selected_products: list[AutomationDiscoverySelectedProduct]
