@@ -290,7 +290,7 @@ async def test_openai_retry_exhaustion_raises_ai_provider_error(monkeypatch):
         ],
     )
 
-    with pytest.raises(AIProviderError, match="still down"):
+    with pytest.raises(AIProviderError, match="provider unavailable"):
         await _openai_provider().generate_content("prompt")
 
     assert _total_posts() == 2
@@ -298,8 +298,16 @@ async def test_openai_retry_exhaustion_raises_ai_provider_error(monkeypatch):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("status_code", [400, 401, 403, 404])
-async def test_openai_non_retryable_status(monkeypatch, status_code: int):
+@pytest.mark.parametrize(
+    ("status_code", "expected_message"),
+    [
+        (400, "provider request failed"),
+        (401, "authentication failed"),
+        (403, "authentication failed"),
+        (404, "provider request failed"),
+    ],
+)
+async def test_openai_non_retryable_status(monkeypatch, status_code: int, expected_message: str):
     sleeps: list[float] = []
 
     async def fake_sleep(delay: float) -> None:
@@ -308,9 +316,10 @@ async def test_openai_non_retryable_status(monkeypatch, status_code: int):
     monkeypatch.setattr("app.ai.retry.asyncio.sleep", fake_sleep)
     _install_post_queue(monkeypatch, [_http_status_error(status_code, text="nope")])
 
-    with pytest.raises(AIProviderError, match="nope"):
+    with pytest.raises(AIProviderError, match=expected_message) as error:
         await _openai_provider().generate_content("prompt")
 
+    assert "nope" not in str(error.value)
     assert _total_posts() == 1
     assert sleeps == []
 
@@ -453,7 +462,7 @@ async def test_gemini_retry_exhaustion_raises_ai_provider_error(monkeypatch):
         ],
     )
 
-    with pytest.raises(AIProviderError, match="down"):
+    with pytest.raises(AIProviderError, match="network request failed"):
         await _gemini_provider().generate_content("prompt")
 
     assert _total_posts() == 2
@@ -461,8 +470,16 @@ async def test_gemini_retry_exhaustion_raises_ai_provider_error(monkeypatch):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("status_code", [400, 401, 403, 404])
-async def test_gemini_non_retryable_status(monkeypatch, status_code: int):
+@pytest.mark.parametrize(
+    ("status_code", "expected_message"),
+    [
+        (400, "provider request failed"),
+        (401, "authentication failed"),
+        (403, "authentication failed"),
+        (404, "provider request failed"),
+    ],
+)
+async def test_gemini_non_retryable_status(monkeypatch, status_code: int, expected_message: str):
     """Gemini auth commonly surfaces as 403; 401 is also treated as permanent."""
     sleeps: list[float] = []
 
@@ -472,9 +489,10 @@ async def test_gemini_non_retryable_status(monkeypatch, status_code: int):
     monkeypatch.setattr("app.ai.retry.asyncio.sleep", fake_sleep)
     _install_post_queue(monkeypatch, [_http_status_error(status_code, text="denied")])
 
-    with pytest.raises(AIProviderError, match="denied"):
+    with pytest.raises(AIProviderError, match=expected_message) as error:
         await _gemini_provider().generate_content("prompt")
 
+    assert "denied" not in str(error.value)
     assert _total_posts() == 1
     assert sleeps == []
 

@@ -13,6 +13,7 @@ from app.core.enums import (
     ContentType,
     ToneProfile,
 )
+from app.models.product import Product
 from app.repositories.product import ProductRepository
 from app.schemas.ai_content import GenerateContentResponse
 from app.services.exceptions import NotFoundError
@@ -40,6 +41,49 @@ class AIContentService:
             context = await self._context_from_product_id(product_id)
         else:
             context = await self._context_from_url(str(url))
+
+        return await self._generate_from_context(
+            context,
+            provider=provider,
+            content_type=content_type,
+            tone=tone,
+            language=language,
+            length=length,
+            instruction_modifiers=instruction_modifiers,
+        )
+
+    async def generate_for_product(
+        self,
+        product: Product,
+        *,
+        provider: AIProviderType,
+        content_type: ContentType,
+        tone: ToneProfile,
+        language: ContentLanguage,
+        length: ContentLength,
+    ) -> GenerateContentResponse:
+        """Generate from a server-validated catalog product without URL fetching."""
+        return await self._generate_from_context(
+            ProductContext.from_product(product),
+            provider=provider,
+            content_type=content_type,
+            tone=tone,
+            language=language,
+            length=length,
+            instruction_modifiers=[],
+        )
+
+    async def _generate_from_context(
+        self,
+        context: ProductContext,
+        *,
+        provider: AIProviderType | None,
+        content_type: ContentType,
+        tone: ToneProfile,
+        language: ContentLanguage,
+        length: ContentLength,
+        instruction_modifiers: list[str] | None,
+    ) -> GenerateContentResponse:
 
         ai_provider = get_ai_provider(provider)
         prompt = build_marketing_prompt(

@@ -31,8 +31,14 @@ class ValidationError(ServiceError):
 
 
 class AIProviderError(ServiceError):
-    def __init__(self, message: str) -> None:
+    def __init__(self, message: str, *, category: str = "provider_error") -> None:
         super().__init__(message, status_code=502)
+        self.category = category
+
+
+class ServiceUnavailableError(ServiceError):
+    def __init__(self, message: str) -> None:
+        super().__init__(message, status_code=503)
 
 
 class TelegramPublishError(ServiceError):

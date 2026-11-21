@@ -8,6 +8,11 @@ catalog-first automation discovery preview. It reuses the Recommendation
 Engine, applies workspace publishing-history exclusions, and never creates
 Queue items or invokes providers. See §4.13.
 
+**Phase 7B revision:** Added an explicitly triggered, stateless automation
+content-generation preview. It re-runs the saved discovery policy server-side,
+processes at most two products sequentially, may incur AI provider charges, and
+never creates Queue items or publishes. See §4.14.
+
 **2026-09-06 revision (Product B removal):** The affiliate-network layer is gone. There are no `/affiliates`, `/campaigns`, `/conversions`, `/clicks`, or `/analytics` routes. Registration creates `user` (not `affiliate`). Product A catalog fields `affiliate_url` and `commission_rate` remain. Historical notes below that describe Product B APIs are superseded by this revision.
 
 **2026-09-04 revision (Phase E Task 14):** Editable workspace settings (`GET/PATCH /workspace-settings`) and self-service `PATCH /auth/me`. Secrets stay env-only; responses expose connection booleans. See §4.11.
@@ -38,7 +43,7 @@ Queue items or invokes providers. See §4.13.
 
 OpenAPI: `/docs` · ReDoc: `/redoc` · Health: `GET /health` · Readiness: `GET /ready` · Worker health: `GET /worker/health`
 
-> **Current Product A contract:** The current implementation is a single-operator MVP. PRs through #22 are merged into `main`; Phase 5B automation configuration and Phase 5C frontend configuration are merged. Phase 6B adds a separate read-only catalog preview, while automatic discovery, AI, Queue, Celery, and provider execution remain unavailable. The route and schema tables below are authoritative for the implemented API; older Product B sections are retained only as historical notes and are not available endpoints. Current publish providers are `telegram` and `facebook`; Facebook Page credentials are managed server-side and are never returned.
+> **Current Product A contract:** The current implementation is a single-operator MVP. PRs through #23 are merged into `main`; Phase 5B automation configuration and Phase 5C frontend configuration are merged, and Phase 6B catalog discovery is a bounded read-only preview. Phase 7B adds an explicit, paid, stateless content preview; unattended execution, Queue integration, Celery automation, and provider execution remain unavailable. The route and schema tables below are authoritative for the implemented API; older Product B sections are retained only as historical notes and are not available endpoints. Current publish providers are `telegram` and `facebook`; Facebook Page credentials are managed server-side and are never returned.
 
 ### Current provider-aware routes
 
@@ -52,6 +57,7 @@ OpenAPI: `/docs` · ReDoc: `/redoc` · Health: `GET /health` · Readiness: `GET 
 | Workspace settings | `GET/PATCH /workspace-settings` | Workspace-scoped; `default_discovery_mode` supports `recommended`. |
 | Automation configuration | `GET/PATCH /automation/config` | Workspace-scoped policy configuration; members read, owner/admin write; virtual disabled defaults; no discovery, AI, Queue, Celery, or provider side effects. |
 | Automation discovery preview | `POST /automation/discovery/preview` | Workspace-scoped, authenticated, read-only catalog selection; bounded deterministic ranking; `preview_only: true`, `execution_available: false`; no Queue, Celery, or provider side effects. |
+| Automation content preview | `POST /automation/content/preview` | Explicit cost acknowledgment; saved-policy revision; server-selected catalog products; maximum two sequential AI calls; stateless, human-review-required results; no Queue or publishing side effects. |
 
 Affiliate CTA resolution is `button_url` first, then `Product.affiliate_url`; `Product.product_url` is never substituted. Missing affiliate URLs are represented as missing data and do not invent a marketing destination.
 
@@ -545,6 +551,32 @@ policy revision, selection timestamp, ranking scope, truncation, bounded
 inspection counts, exclusion counts, and readiness warnings. It does not write
 policy, run, Queue, or attempt rows and does not call AliExpress, AI, Celery,
 Telegram, or Facebook.
+
+### 4.14 Safe automation content-generation preview (Phase 7B)
+
+`POST /automation/content/preview` is an explicitly triggered authenticated
+operation, not a read-only catalog request. It requires `X-Workspace-Id`, a
+saved policy revision, an opaque idempotency key, and
+`acknowledge_ai_cost: true`. OpenAI or Gemini calls may incur charges.
+
+The service re-runs the Phase 6B selection server-side and never accepts
+client-supplied product IDs, product metadata, provider overrides, prompts, or
+affiliate URLs. It processes at most two selected products sequentially. Each
+product is revalidated as active with a valid `Product.affiliate_url` immediately
+before generation; `Product.product_url` is never used as a fallback.
+
+Results are stateless and returned directly. They include per-product status,
+validated content, canonical affiliate URL metadata, recommendation rank, safe
+failure categories, and a human-review warning. Generated content containing
+HTTP(S) URLs, credential-like strings, or clearly prohibited sensitive claims is
+rejected. Provider errors are sanitized and no raw provider response body is
+returned.
+
+The endpoint does not create Queue items, schedule posts, publish to Telegram or
+Facebook, invoke Celery, call AliExpress, persist generated content, or change
+`execution_available`, which remains `false`. Redis provides short-lived
+duplicate protection; it is not durable exactly-once generation or billing
+protection. Deliberate retries after the guard expires may incur new charges.
 
 ---
 

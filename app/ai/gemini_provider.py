@@ -64,10 +64,25 @@ class GeminiProvider(AIProvider):
         try:
             data = await execute_with_retries(_request_once, provider=self.name)
         except httpx.HTTPStatusError as exc:
-            detail = exc.response.text
-            raise AIProviderError(f"Gemini request failed: {detail}") from exc
+            status_code = exc.response.status_code
+            if status_code in {401, 403}:
+                category = "provider_authentication_error"
+                detail = "Gemini provider authentication failed"
+            elif status_code == 429:
+                category = "provider_rate_limited"
+                detail = "Gemini provider rate limit exceeded"
+            elif status_code >= 500:
+                category = "provider_unavailable"
+                detail = "Gemini provider unavailable"
+            else:
+                category = "provider_request_error"
+                detail = "Gemini provider request failed"
+            raise AIProviderError(detail, category=category) from exc
         except httpx.HTTPError as exc:
-            raise AIProviderError(f"Gemini request failed: {exc}") from exc
+            raise AIProviderError(
+                "Gemini provider network request failed",
+                category="provider_unavailable",
+            ) from exc
 
         try:
             return data["candidates"][0]["content"]["parts"][0]["text"].strip()
