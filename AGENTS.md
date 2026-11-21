@@ -10,9 +10,9 @@ Later automation reuses existing services: `Discovery → Recommendation → AIC
 
 ## Current baseline and status
 
-- PRs #5, #7, #8, #9, #10, #11, #12, #13, #14, #15, #17, #18, #19, #20, and #21 are merged into `main`; PR #21 is the current baseline (`a76f6a4ddd7bcf340afc887815eaf1d5100e19e4`).
+- PRs #5, #7, #8, #9, #10, #11, #12, #13, #14, #15, #17, #18, #19, #20, #21, and #22 are merged into `main`; PR #22 is the current baseline (`5ef2b488e9f3d046f7fb4df3696f85f941284b55`).
 - **Phase 0 is partially verified:** manual Telegram publishing, image/affiliate-link delivery, and scheduling were operator-verified; controlled live failure/retry verification remains pending.
-- Phase 3A Page connection, Phase 3B Facebook publishing backend, Phase 3C.1 frontend destination selection, Phase 3C.2 Queue Display & Safe Ambiguous Retry, Phase 3C.3 publishing safety/live validation, and Phase 4 Operational Dashboard are implemented and merged. Phase 5B backend Automation Configuration is merged through PR #21; Phase 5C frontend configuration is being implemented on the current feature branch.
+- Phase 3A Page connection, Phase 3B Facebook publishing backend, Phase 3C.1 frontend destination selection, Phase 3C.2 Queue Display & Safe Ambiguous Retry, Phase 3C.3 publishing safety/live validation, Phase 4 Operational Dashboard, and Phase 5C frontend Automation Configuration are implemented and merged. Phase 5B backend Automation Configuration is merged through PR #21; Phase 6B catalog-first discovery is the current feature scope and remains preview-only until separately accepted.
 - Facebook uses manual Page ID + Page Access Token connection for this MVP. OAuth and Facebook Login are deferred.
 - Controlled live Facebook text, image, and scheduled publishing were operator-verified before PR #15; do not treat mocked tests or CI as live provider evidence. Strict exactly-once delivery is not claimed.
 - Current Alembic head is `020`; historical migrations `001–019` are protected unless a later migration is explicitly approved.

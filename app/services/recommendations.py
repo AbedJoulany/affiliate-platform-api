@@ -33,17 +33,33 @@ class RecommendationService:
 
     async def recommend(self, query: RecommendationQuery) -> RecommendationResponse:
         products = await self._load_candidates(query)
+        ranked = self.rank_candidates(products, query)
+        selected = ranked[: query.top_n]
+
+        return RecommendationResponse(
+            items=[self._to_item(index, item) for index, item in enumerate(selected, start=1)],
+            total_candidates=len(ranked),
+            returned=len(selected),
+            top_n=query.top_n,
+        )
+
+    def rank_candidates(
+        self,
+        products: list[Product],
+        query: RecommendationQuery,
+    ) -> list[_RankedProduct]:
+        """Apply the existing recommendation semantics to a bounded candidate set.
+
+        The catalog-first automation preview uses this entry point after its
+        workspace history exclusions.  Keeping keyword filtering and scoring
+        here prevents the preview from drifting from the public recommendation
+        endpoint.
+        """
         products = [
             product for product in products if self._matches_keywords(product, query.keywords)
         ]
-
         if not products:
-            return RecommendationResponse(
-                items=[],
-                total_candidates=0,
-                returned=0,
-                top_n=query.top_n,
-            )
+            return []
 
         prices = [product.price for product in products]
         min_price = min(prices)
@@ -63,13 +79,26 @@ class RecommendationService:
             for product in products
         ]
         ranked.sort(key=self._ranking_key)
-        selected = ranked[: query.top_n]
+        return ranked
 
-        return RecommendationResponse(
-            items=[self._to_item(index, item) for index, item in enumerate(selected, start=1)],
-            total_candidates=len(ranked),
-            returned=len(selected),
-            top_n=query.top_n,
+    @staticmethod
+    def keyword_tokens(keywords: str | None) -> tuple[str, ...]:
+        return tuple(
+            token.casefold() for token in TOKEN_PATTERN.findall(keywords or "")
+        )
+
+    @staticmethod
+    def sql_keyword_prefilter_supported(keywords: str | None) -> bool:
+        """Whether the bounded PostgreSQL prefilter is safe to use.
+
+        PostgreSQL ``ILIKE`` is not a universal equivalent of Python
+        ``casefold``. Restricting the prefilter to ASCII tokens avoids making
+        a false Unicode-equivalence claim; Python matching remains authoritative
+        for every result that reaches the bounded inspection window.
+        """
+        tokens = TOKEN_PATTERN.findall(keywords or "")
+        return bool(tokens) and all(
+            token.isascii() and token.casefold() == token.lower() for token in tokens
         )
 
     async def _load_candidates(self, query: RecommendationQuery) -> list[Product]:
@@ -93,8 +122,9 @@ class RecommendationService:
         result = await self.session.execute(statement)
         return list(result.scalars().all())
 
-    def _matches_keywords(self, product: Product, keywords: str | None) -> bool:
-        tokens = [token.casefold() for token in TOKEN_PATTERN.findall(keywords or "")]
+    @staticmethod
+    def matches_keywords(product: Product, keywords: str | None) -> bool:
+        tokens = RecommendationService.keyword_tokens(keywords)
         if not tokens:
             return True
         searchable = " ".join(
@@ -102,6 +132,9 @@ class RecommendationService:
             for value in (product.title, product.description, product.category, product.store_name)
         ).casefold()
         return all(token in searchable for token in tokens)
+
+    def _matches_keywords(self, product: Product, keywords: str | None) -> bool:
+        return self.matches_keywords(product, keywords)
 
     def _ranking_key(self, item: _RankedProduct) -> tuple:
         product = item.product
@@ -137,8 +170,12 @@ class RecommendationService:
         )
 
     @staticmethod
-    def _has_valid_affiliate_url(value: str | None) -> bool:
+    def has_valid_affiliate_url(value: str | None) -> bool:
         if not value or not value.strip():
             return False
         parsed = urlparse(value.strip())
         return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+    @staticmethod
+    def _has_valid_affiliate_url(value: str | None) -> bool:
+        return RecommendationService.has_valid_affiliate_url(value)

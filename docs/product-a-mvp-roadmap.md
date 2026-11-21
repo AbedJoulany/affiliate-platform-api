@@ -1,10 +1,10 @@
 # Product A MVP — Implementation Roadmap
 
-> **Document status:** Canonical active roadmap. Updated for the merged Phase 5B backend Automation Configuration and the Phase 5C frontend configuration work on the current feature branch; Phase 5C merge and CI evidence are pending.
+> **Document status:** Canonical active roadmap. Updated for the merged Phase 5B backend Automation Configuration and Phase 5C frontend configuration; Phase 6B catalog-first discovery is preview-only and remains unmerged until independently verified.
 > **Repository:** `AbedJoulany/affiliate-platform-api`
-> **Development baseline:** `main` at PR #21 merge commit `a76f6a4ddd7bcf340afc887815eaf1d5100e19e4`.
+> **Development baseline:** `main` at PR #22 merge commit `5ef2b488e9f3d046f7fb4df3696f85f941284b55`.
 > **Verification source:** merged PRs and CI are implementation evidence; Phase 4.5 adds a traceable validation record. Controlled live provider checks remain separate from mocked tests and CI.
-> **Current development phase:** Phase 5C — Frontend Automation Configuration. Automatic execution remains deferred.
+> **Current development phase:** Phase 6B — Catalog-First Automation Discovery preview. Automatic execution remains deferred.
 
 ### Naming convention
 
@@ -14,7 +14,9 @@
 - **Roadmap Phase 2:** implemented and merged via PR #8; public onboarding is deferred.
 - **Roadmap Phase 3:** 3A, 3B, and 3C.1 implemented via PRs #9–#11; Phase 3C.2 implemented and CI-verified via PR #13; Phase 3C.3 implemented and merged via PR #15.
 - **Roadmap Phase 4:** implemented through PRs #17–#19; final validation is documented separately and remains partially verified where local PostgreSQL or staging evidence is unavailable.
-- **Roadmap Phases 5–11:** planned as described below.
+- **Roadmap Phase 5:** implemented and merged through PRs #21–#22; execution remains deferred.
+- **Roadmap Phase 6B:** catalog-first, bounded, read-only discovery preview is implemented on the current feature branch; no execution or persistence is enabled.
+- **Roadmap Phases 6C–11:** planned as described below.
 - A merged PR and green mocked CI do **not** substitute for a live provider test.
 
 ### Current delivery status
@@ -35,7 +37,8 @@
 | Phase 4.4 Dashboard realtime & reliability | Implemented & CI Verified | PR #19, merge commit `75f2003bffb278fc915db33c68dc8223d51bf72b`; shared operational SSE, invalidation, reconnect, fallback polling, and reporting rollover |
 | Phase 4.5 final validation & documentation | Validation documented; partially verified | This closeout records automated evidence and remaining PostgreSQL/staging gaps; it does not claim full production readiness |
 | Phase 5B Automation Configuration backend | Implemented & CI Verified | PR #21, merge commit `a76f6a4ddd7bcf340afc887815eaf1d5100e19e4`; migration `020`; no automation execution |
-| Phase 5C Automation Configuration frontend | In progress on feature branch; CI pending | Arabic RTL workspace-scoped GET/PATCH UI; saved intent only; no automation execution |
+| Phase 5C Automation Configuration frontend | Implemented & CI Verified | PR #22; Arabic RTL workspace-scoped GET/PATCH UI; saved intent only; no automation execution |
+| Phase 6B Catalog-First Automation Discovery | In progress on feature branch; verification pending | Bounded, workspace-scoped, read-only catalog preview; no run persistence, Queue writes, provider calls, or execution authorization |
 | Phase 0 live Telegram verification | Partially verified | Manual publish, image/link delivery, and scheduling verified; failure/retry pending |
 | PR #11 CI | Passed | Backend, frontend, and E2E checks completed successfully |
 | PR #12 documentation synchronization | Completed | Documentation-only roadmap synchronization |
@@ -110,7 +113,7 @@ Retry
 
 ## 3. المراحل المتبقية
 
-> الترقيم التالي يخص **Roadmap** فقط؛ لا تخلطه مع اسم مرحلة Manual Telegram MVP السابقة. حالة Phase 0: partially verified. حالة Phase 1 وPhase 2 وPhase 3C.1 وPhase 3C.2 وPhase 3C.3: implemented؛ Phase 4.2 وPhase 4.3 وPhase 4.4 implemented and CI verified، وPhase 4.5 توثق التحقق النهائي، وPhase 5B مكتملة وPhase 5C قيد التنفيذ.
+> الترقيم التالي يخص **Roadmap** فقط؛ لا تخلطه مع اسم مرحلة Manual Telegram MVP السابقة. حالة Phase 0: partially verified. حالة Phase 1 وPhase 2 وPhase 3C.1 وPhase 3C.2 وPhase 3C.3 وPhase 5B وPhase 5C: implemented؛ Phase 4.2 وPhase 4.3 وPhase 4.4 implemented and CI verified، وPhase 4.5 توثق التحقق النهائي، وPhase 6B قيد التحقق كـ preview للقراءة فقط.
 
 ```text
 Phase 0  — Live Manual Verification
@@ -620,9 +623,9 @@ Failed: 1
 
 # 10. Phase 5 — Automation Configuration
 
-**Status:** Phase 5B backend configuration is implemented, merged, and CI verified
-through PR #21. Phase 5C frontend configuration is in progress on the current
-feature branch; CI and merge evidence are pending.
+**Status:** Phase 5B backend configuration and Phase 5C frontend configuration are
+implemented, merged, and CI verified through PRs #21 and #22. Execution remains
+deferred.
 
 **MVP scope:** enabled state, discovery filters, products per run, posts per day,
 workspace timezone/schedule, provider/destination, and AI content overrides. The
@@ -645,7 +648,8 @@ for discovery filters, daily schedule preferences, one Telegram or Facebook
 destination, and nullable AI content overrides. It displays revision conflicts,
 destination readiness warnings, and the distinction between saved `enabled`
 intent and `execution_available: false`. Saving never starts discovery, AI,
-Queue, Celery, or provider work; Phase 6 remains unimplemented.
+Queue, Celery, or provider work. Phase 6B preview is a separate read-only
+capability and does not make the policy executable.
 
 تبدأ بعد استقرار Manual MVP.
 
@@ -698,11 +702,31 @@ settings; no secrets are stored in the policy.
 
 # 11. Phase 6 — Auto Discovery
 
-**Status:** not implemented. Existing scheduled AliExpress catalog refresh is not
-automation orchestration.
+**Status:** Phase 6B catalog-first discovery preview is implemented on the current
+feature branch; automatic execution is not implemented.
 
-**MVP scope:** reuse Discovery and Recommendation services for filtering,
-deterministic ranking, deduplication, and Top N selection.
+**Phase 6B scope:** authenticated `POST /api/v1/automation/discovery/preview`
+reuses the persisted global catalog and the existing deterministic Recommendation
+Engine. It applies active-product and valid-affiliate-URL eligibility, workspace
+queue/history exclusions, a 1000-candidate inspection cap, deterministic ranking,
+and Top N selection. Numeric filters and an optional PostgreSQL `ILIKE` prefilter
+for ASCII keyword tokens run before the cap; exact all-token Python `casefold()`
+matching across title, description, category, and store name remains authoritative.
+Non-ASCII searches retain the bounded deterministic window because PostgreSQL
+`ILIKE` is not universally equivalent to Python Unicode `casefold()`. A
+truncated response ranks only the inspected slice and does not claim global Top N
+optimality. The response reports the policy revision, UTC selection time,
+truncation, ranking scope, exclusion counts, and preview-only warnings.
+
+The preview is workspace-scoped through `X-Workspace-Id`, is readable by
+authorized members, and returns `execution_available: false`. It does not create
+run records, modify policy revisions, create Queue items, call AliExpress/AI or
+provider APIs, invoke Celery, or activate automation. Products with missing or
+invalid affiliate URLs are excluded; `product_url` is never used as a fallback.
+
+**Remaining Phase 6 scope:** live AliExpress refresh, run persistence, Celery
+execution, AI generation, Queue creation, scheduling, publishing, and later
+observability remain future work.
 
 **Acceptance:** a run produces only eligible, ranked products and records per-run
 selection failures without publishing directly.
@@ -1422,11 +1446,11 @@ as partially verified until the explicitly listed operational gaps are exercised
 
 **Goal:** حفظ سياسة Automation.
 
-**Phase 5B backend:** implemented, merged, and CI verified through PR #21 with migration `020`,
-workspace-scoped `GET/PATCH /api/v1/automation/config`, virtual disabled
-defaults, destination readiness, and revision conflicts. It stores configuration
-intent only; execution remains unavailable and Phase 5C frontend configuration
-is being implemented on the current feature branch.
+**Phase 5B backend and Phase 5C frontend:** implemented, merged, and CI verified
+through PRs #21 and #22 with migration `020`, workspace-scoped
+`GET/PATCH /api/v1/automation/config`, virtual disabled defaults, destination
+readiness, revision conflicts, and the Arabic RTL settings page. It stores
+configuration intent only; execution remains unavailable.
 
 **Completion:** المستخدم يستطيع إعداد:
 
@@ -1448,7 +1472,10 @@ content style
 
 **Goal:** اكتشاف المنتجات تلقائياً.
 
-**Completion:** Automation Run ينتج Top N منتجات صالحة.
+**Phase 6B status:** the catalog-first discovery preview is implemented on the
+current feature branch, with execution and Queue integration deferred. The
+preview returns only bounded, active products with valid affiliate URLs after
+workspace history exclusions and deterministic Recommendation Engine ranking.
 
 ---
 
