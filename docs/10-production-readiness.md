@@ -1,9 +1,9 @@
 # Production Readiness and Release Runbook
 
-**Document Version:** 3.3
-**Last Updated:** 2026-11-16
+**Document Version:** 3.4
+**Last Updated:** 2026-11-21
 
-> **Current baseline:** PRs #7–#15 are merged. The Product A MVP now includes provider-aware Telegram/Facebook Queue publishing, migration 019, server-side encrypted Facebook Page tokens, frontend destination selection, Phase 3C.2 provider-aware Queue display with safe ambiguous retry UX, and Phase 3C.3 publishing safety hardening. Controlled live Facebook text/photo/scheduled publishing was operator-verified separately. Telegram failure/retry and PostgreSQL concurrent row-lock verification remain pending. Use [product-a-mvp-roadmap.md](./product-a-mvp-roadmap.md) for canonical phase status.
+> **Current baseline:** PRs through #20 are merged. The Product A MVP includes the provider-aware Telegram/Facebook Queue, operational Dashboard phases 4.2–4.5, and the protected migration history through 019. The Phase 5B feature branch adds migration 020 and configuration-only automation policy endpoints; it does not add execution. Controlled live Facebook text/photo/scheduled publishing was operator-verified separately. Telegram failure/retry and PostgreSQL concurrent row-lock verification remain pending. Use [product-a-mvp-roadmap.md](./product-a-mvp-roadmap.md) for canonical phase status.
 
 **2026-11-16 revision (Phase 3C.3 closeout):** PR #15 merged the publishing safety
 hardening and regression coverage. Already-published Queue items are rejected inside
@@ -62,6 +62,29 @@ See `.env.example` for the baseline variable list. The Facebook encryption key i
 documented above and must be supplied separately in the server-only environment;
 the pre-existing `.env.example` is intentionally not changed by this documentation
 synchronization.
+
+### Phase 5B automation configuration
+
+The Phase 5B feature branch adds migration `020_add_automation_policies` after
+the verified main baseline at migration `019`. The new table stores one
+workspace-scoped configuration policy with explicit range constraints, nullable
+provider destination foreign keys, and revision-based concurrency control. It
+does not create automation run history or modify Queue/publishing tables.
+
+`GET/PATCH /api/v1/automation/config` is configuration-only. Members may read;
+owners/admins may update. A missing policy returns virtual disabled defaults;
+`enabled` is operator intent, not execution authorization. The API always returns
+`execution_available: false` in Phase 5B and never invokes discovery, AI, Queue,
+Celery, Telegram, or Facebook. The existing Dashboard automation placeholder
+remains `not_configured`.
+
+The policy uses the workspace timezone and nullable AI overrides inherit workspace
+settings. Telegram readiness uses persisted active/posting-permission state;
+Facebook readiness uses persisted active/validated state and does not claim
+verified publishing permission. Destination deletion leaves the policy saved but
+not ready through `ON DELETE SET NULL`. The feature branch requires migration
+upgrade/downgrade and PostgreSQL concurrency verification before release; local
+Windows async test limitations must not be treated as passing evidence.
 
 ---
 

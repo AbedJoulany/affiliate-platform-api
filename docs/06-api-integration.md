@@ -1,7 +1,7 @@
 # API Integration Guide
 
 **Document Version:** 2.15
-**Last Updated:** 2026-11-15
+**Last Updated:** 2026-11-21
 
 **2026-09-06 revision (Product B removal):** The affiliate-network layer is gone. There are no `/affiliates`, `/campaigns`, `/conversions`, `/clicks`, or `/analytics` routes. Registration creates `user` (not `affiliate`). Product A catalog fields `affiliate_url` and `commission_rate` remain. Historical notes below that describe Product B APIs are superseded by this revision.
 
@@ -33,7 +33,7 @@
 
 OpenAPI: `/docs` · ReDoc: `/redoc` · Health: `GET /health` · Readiness: `GET /ready` · Worker health: `GET /worker/health`
 
-> **Current Product A contract:** The current implementation is a single-operator MVP. PRs #7–#11 are merged. The route and schema tables below are authoritative for the implemented API; older Product B sections are retained only as historical notes and are not available endpoints. Current publish providers are `telegram` and `facebook`; Facebook Page credentials are managed server-side and are never returned.
+> **Current Product A contract:** The current implementation is a single-operator MVP. PRs through #20 are merged into `main`; Phase 5B automation configuration is implemented on the feature branch documented here and remains configuration-only until merged and activated in a later phase. The route and schema tables below are authoritative for the implemented API; older Product B sections are retained only as historical notes and are not available endpoints. Current publish providers are `telegram` and `facebook`; Facebook Page credentials are managed server-side and are never returned.
 
 ### Current provider-aware routes
 
@@ -45,6 +45,7 @@ OpenAPI: `/docs` · ReDoc: `/redoc` · Health: `GET /health` · Readiness: `GET 
 | Queue events | `GET /queues/stream` | Authenticated workspace-scoped SSE with polling fallback in the frontend. |
 | Telegram setup | `GET/POST/PUT/DELETE /channels*`, `POST /channels/{id}/refresh-permissions` | Workspace-scoped channel management; refresh checks permissions and never publishes. |
 | Workspace settings | `GET/PATCH /workspace-settings` | Workspace-scoped; `default_discovery_mode` supports `recommended`. |
+| Automation configuration | `GET/PATCH /automation/config` | Workspace-scoped policy configuration; members read, owner/admin write; virtual disabled defaults; no discovery, AI, Queue, Celery, or provider side effects. |
 
 Affiliate CTA resolution is `button_url` first, then `Product.affiliate_url`; `Product.product_url` is never substituted. Missing affiliate URLs are represented as missing data and do not invent a marketing destination.
 
@@ -193,7 +194,7 @@ Status definitions:
 - `publishing`: daily metrics (`published_today` and distinct queue items with a failed attempt today), unresolved latest ambiguous attempts, and current-state published/failed counts by `telegram` and `facebook`.
 - `attention_items`: at most 10 deterministic, workspace-scoped failed or unresolved-ambiguous Queue items. Diagnostic messages are nullable and never contain raw provider payloads.
 - `destination_readiness`: persisted Telegram channel posting-permission readiness and Facebook Page active/validated counts. Facebook validation does not imply verified publishing permission.
-- `automation`: the explicit `not_configured` placeholder with a null `last_run_at` until automation is implemented.
+- `automation`: the explicit `not_configured` placeholder with a null `last_run_at`; a saved Phase 5B policy does not imply that automation is scheduled or running.
 
 The daily metrics `published_today` and `failed_today` use the workspace-local reporting window and exclude its end boundary. Provider breakdowns are current Queue-state snapshots: they use the Queue item's persisted provider and current `published` or `failed` status, with no reporting-day filter and no publish-attempt requirement. Thus, a historical published item and a failed item with no attempts are included in the provider breakdown. `failed_today` remains an event-based distinct-item metric; a failed item may contribute to it even if a later attempt publishes it. An ambiguous item is counted only when its latest attempt remains ambiguous and the queue item is not published. Invalid or absent workspace timezones fall back to UTC.
 
@@ -470,6 +471,34 @@ Migration **`016_add_workspace_settings`** revises **`015`**. Additive table onl
 
 **Profile (user-global):** `PATCH /auth/me` — no workspace header, matching `/affiliates*` (except join-campaign).
 
+### 4.12 Automation configuration (Phase 5B)
+
+`GET/PATCH /automation/config` uses Bearer authentication and `X-Workspace-Id`.
+Members may read; workspace owners and global admins may write. The policy is a
+single row per workspace in `automation_policies` (migration `020`). A missing
+row is returned as a virtual disabled policy with revision `0`; GET never creates
+that row.
+
+PATCH is an allow-list with `extra=forbid`. An existing policy requires its
+current `expected_revision`; a successful update increments the revision once,
+and a stale revision returns **409**. The initial write accepts revision `0` or
+omits it. Destination is a provider-specific object containing either a
+workspace-owned Telegram `channel_id` or Facebook `page_id`; switching providers
+clears the previous destination atomically. Explicit `destination: null` clears
+both destinations.
+
+The response exposes discovery filters, daily scheduling preferences, nullable AI
+overrides, sanitized destination readiness, `configuration_ready`, and the
+server-controlled `execution_available: false`. `enabled` records operator intent
+only. Saving or updating the policy does not call AliExpress, AI, Telegram,
+Facebook, Queue, Celery, or the scheduler. The Dashboard automation field remains
+`not_configured` until a later execution phase.
+
+Nullable AI overrides inherit the corresponding workspace settings. The policy
+uses the workspace timezone, validates daily `HH:MM` preferences, and does not
+precompute UTC execution times. Future execution must define DST handling and an
+explicit activation gate separately.
+
 ---
 
 ## 5. View → Contract Mapping
@@ -486,6 +515,7 @@ Migration **`016_add_workspace_settings`** revises **`015`**. Additive table onl
 | **Schedule dialog** | `PATCH /queues/{id}` | `scheduled_at`, `provider`, and the provider-specific destination; mixed-provider bulk scheduling is guarded |
 | **Channels / Pages** | `GET/POST/PUT /channels`, `GET/POST/PATCH/DELETE /facebook/pages` | Telegram permission status and active state; Facebook Page name, active/validated state, and `has_access_token` only |
 | **Dashboard** | `GET /dashboard` | Product counts remain global (shared catalog); queue/channel aggregates and queue activity are workspace-scoped via `X-Workspace-Id` |
+| **Automation settings** | `GET/PATCH /automation/config` | Policy filters, destination readiness, revision, daily schedule, nullable AI overrides; configuration only, no execution |
 | **Analytics** | `GET /analytics/overview`, `GET /analytics/campaigns/{id}/funnel` | Workspace-scoped click/conversion KPIs and `by_day`; funnel uses `GET /campaigns/active` for the selector |
 | **Settings** | `GET/PATCH /workspace-settings`, `GET /ready` | Workspace prefs + connection booleans; `/ready` is db/redis only |
 | **Profile** | `GET/PATCH /auth/me` | `full_name`, `email`; role/`is_active` read-only |
@@ -499,6 +529,9 @@ Migration **`016_add_workspace_settings`** revises **`015`**. Additive table onl
 - **Queue status:** `draft`, `queued`, `scheduled`, `published`, `failed`
 - **Publish attempt status** (attempt-scoped only): `started`, `succeeded`, `failed`, `ambiguous`
 - **Queue provider:** `telegram`, `facebook`
+- **Automation provider:** `telegram`, `facebook`
+- **Automation frequency:** `daily`
+- **Automation execution state:** `disabled`, `configured_not_ready`, `configured_ready_not_active`
 - **AI provider:** `openai`, `gemini`
 - **Content type:** `social`, `description`, `telegram`, `facebook`, `blog`, `email`
 - **Tone:** `professional`, `friendly`, `luxury`, `technical`, `urgent`, `minimal`, `persuasive`, `funny`

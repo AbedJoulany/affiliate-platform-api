@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api.v1 import (
     ai_content,
     aliexpress,
+    automation,
     channels,
     dashboard,
     facebook,
@@ -28,6 +29,7 @@ api_router.include_router(ai_content.router, prefix="/ai-content", tags=["AI Con
 api_router.include_router(queue_stream.router, prefix="/queues", tags=["Queue"])
 api_router.include_router(queues.router, prefix="/queues", tags=["Queue"])
 api_router.include_router(aliexpress.router, prefix="/aliexpress", tags=["AliExpress"])
+api_router.include_router(automation.router, prefix="/automation", tags=["Automation"])
 api_router.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboard"])
 api_router.include_router(
     workspace_settings.router,

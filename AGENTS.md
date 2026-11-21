@@ -10,12 +10,12 @@ Later automation reuses existing services: `Discovery → Recommendation → AIC
 
 ## Current baseline and status
 
-- PRs #5, #7, #8, #9, #10, #11, #12, #13, #14, and #15 are merged into `main`; PR #15 is the current baseline (`b0593f8a72c8ec2866793e8df2d70d04070272bc`).
+- PRs #5, #7, #8, #9, #10, #11, #12, #13, #14, #15, #17, #18, #19, and #20 are merged into `main`; PR #20 is the current baseline (`53e2e90eb926c52f26b9d700d3e53bad77ad6dbe`).
 - **Phase 0 is partially verified:** manual Telegram publishing, image/affiliate-link delivery, and scheduling were operator-verified; controlled live failure/retry verification remains pending.
-- Phase 3A Page connection, Phase 3B Facebook publishing backend, Phase 3C.1 frontend destination selection, Phase 3C.2 Queue Display & Safe Ambiguous Retry, and Phase 3C.3 publishing safety/live validation are implemented and merged. **Phase 4 — Operational Dashboard is next.**
+- Phase 3A Page connection, Phase 3B Facebook publishing backend, Phase 3C.1 frontend destination selection, Phase 3C.2 Queue Display & Safe Ambiguous Retry, Phase 3C.3 publishing safety/live validation, and Phase 4 Operational Dashboard are implemented and merged. Phase 5B backend Automation Configuration is being implemented on the current feature branch; Phase 5C remains deferred.
 - Facebook uses manual Page ID + Page Access Token connection for this MVP. OAuth and Facebook Login are deferred.
 - Controlled live Facebook text, image, and scheduled publishing were operator-verified before PR #15; do not treat mocked tests or CI as live provider evidence. Strict exactly-once delivery is not claimed.
-- Current Alembic head is `019`; historical migrations `001–019` are protected unless a later migration is explicitly approved.
+- Current Alembic head is `020` on the Phase 5B feature branch; historical migrations `001–019` are protected unless a later migration is explicitly approved.
 - Before beginning work, check the actual branch, HEAD, working tree, migrations, and tests. Do not assume this status note is forever current.
 
 ## Non-negotiable scope
@@ -37,6 +37,7 @@ Later automation reuses existing services: `Discovery → Recommendation → AIC
 - Provider-aware Queue, existing SSE/polling fallback, Celery scheduling, and publish-attempt history must remain compatible.
 - An ambiguous Facebook attempt requires operator inspection and explicit confirmation before retry; it must never be retried automatically.
 - Automation must reuse Discovery, Recommendation, AIContentService, QueueService, the existing Scheduler, and the existing Publisher. Unattended automation must fail closed when a valid affiliate URL is missing.
+- Phase 5B Automation Configuration stores workspace policy intent only. `enabled` is not execution authorization; `execution_available` is server-controlled and remains false until a later explicitly activated execution phase. GET/PATCH policy operations must not invoke discovery, AI, Queue, Celery, or provider APIs.
 
 ## Workflow for every task
 

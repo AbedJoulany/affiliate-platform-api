@@ -1,10 +1,10 @@
 # Product A MVP — Implementation Roadmap
 
-> **Document status:** Canonical active roadmap. Updated 2026-11-21 for Phase 4.5 validation and documentation closeout after PRs #17–#19.
+> **Document status:** Canonical active roadmap. Updated for the Phase 5B backend Automation Configuration implementation on the feature branch; merge and CI evidence are pending.
 > **Repository:** `AbedJoulany/affiliate-platform-api`
-> **Development baseline:** `main` at PR #19 merge commit `75f2003bffb278fc915db33c68dc8223d51bf72b`.
+> **Development baseline:** `main` at PR #20 merge commit `53e2e90eb926c52f26b9d700d3e53bad77ad6dbe`.
 > **Verification source:** merged PRs and CI are implementation evidence; Phase 4.5 adds a traceable validation record. Controlled live provider checks remain separate from mocked tests and CI.
-> **Next phase:** Phase 5 — Automation Configuration.
+> **Current development phase:** Phase 5B — Backend Automation Configuration. Phase 5C frontend configuration remains next after approval and merge.
 
 ### Naming convention
 
@@ -34,6 +34,7 @@
 | Phase 4.3 Dashboard UI | Implemented & CI Verified | PR #18; operational KPIs, attention navigation, loading/error/empty states, and Queue deep linking |
 | Phase 4.4 Dashboard realtime & reliability | Implemented & CI Verified | PR #19, merge commit `75f2003bffb278fc915db33c68dc8223d51bf72b`; shared operational SSE, invalidation, reconnect, fallback polling, and reporting rollover |
 | Phase 4.5 final validation & documentation | Validation documented; partially verified | This closeout records automated evidence and remaining PostgreSQL/staging gaps; it does not claim full production readiness |
+| Phase 5B Automation Configuration backend | Implemented on feature branch; CI pending | Migration `020`; workspace-scoped policy API; no automation execution |
 | Phase 0 live Telegram verification | Partially verified | Manual publish, image/link delivery, and scheduling verified; failure/retry pending |
 | PR #11 CI | Passed | Backend, frontend, and E2E checks completed successfully |
 | PR #12 documentation synchronization | Completed | Documentation-only roadmap synchronization |
@@ -618,19 +619,23 @@ Failed: 1
 
 # 10. Phase 5 — Automation Configuration
 
-**Status:** not implemented.
+**Status:** Phase 5B backend configuration is implemented on the feature branch;
+CI and merge evidence are pending. Phase 5C frontend configuration is not implemented.
 
 **MVP scope:** enabled state, discovery filters, products per run, posts per day,
-timezone/schedule, provider/destination, and content language/tone/type. Reuse
-`workspace_settings` where appropriate.
+workspace timezone/schedule, provider/destination, and AI content overrides. The
+backend uses a dedicated one-to-one `automation_policies` table and reuses
+`workspace_settings` for timezone and inheritance defaults.
 
 **Deferred:** complex rule builders, billing, subscriptions, and SaaS onboarding.
 
 **Dependencies:** Recommendation Engine, validated destinations, daily limits, and
 safe pause/disable behavior.
 
-**Acceptance:** an operator can save, inspect, and safely disable one automation
-policy without changing existing manual Queue behavior.
+**Phase 5B acceptance:** an operator can save, inspect, update, and disable one
+workspace-scoped policy through `GET/PATCH /api/v1/automation/config`, with
+revision conflicts, destination readiness, virtual disabled defaults, and no
+execution side effects. `execution_available` is always false in this phase.
 
 تبدأ بعد استقرار Manual MVP.
 
@@ -662,11 +667,22 @@ content type
 
 ## Storage
 
-الخيار المفضل:
+Phase 5B uses the dedicated `automation_policies` table introduced by migration
+`020`. It has one row per workspace, nullable Telegram/Facebook destination
+foreign keys with `ON DELETE SET NULL`, explicit numeric/range constraints, and
+an integer `revision` for optimistic concurrency. Existing workspaces receive
+virtual disabled defaults until the first PATCH; no policy rows are backfilled.
 
-> Extend `workspace_settings`.
+The policy stores configuration intent only. It does not add an automation worker,
+Celery Beat schedule, Queue creation, AI generation, discovery, or provider call.
+The existing Dashboard automation placeholder remains `not_configured`.
 
-لا ننشئ Automation Settings table إلا إذا كانت بنية settings الحالية غير مناسبة.
+`GET /api/v1/automation/config` is readable by authorized workspace members.
+`PATCH /api/v1/automation/config` is owner/admin-only, requires the current
+revision for existing rows, and validates the complete merged configuration.
+`enabled=true` requires an eligible persisted destination, but still cannot make
+the policy executable during Phase 5B. Nullable AI fields inherit workspace
+settings; no secrets are stored in the policy.
 
 ---
 
@@ -1395,6 +1411,12 @@ as partially verified until the explicitly listed operational gaps are exercised
 ## Phase 5 — Automation Configuration
 
 **Goal:** حفظ سياسة Automation.
+
+**Phase 5B backend:** implemented on the feature branch with migration `020`,
+workspace-scoped `GET/PATCH /api/v1/automation/config`, virtual disabled
+defaults, destination readiness, and revision conflicts. It stores configuration
+intent only; execution remains unavailable and Phase 5C frontend configuration
+has not started.
 
 **Completion:** المستخدم يستطيع إعداد:
 
