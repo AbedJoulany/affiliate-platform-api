@@ -98,6 +98,7 @@ describe("isWorkspaceScopedPath", () => {
     expect(isWorkspaceScopedPath("/channels")).toBe(true);
     expect(isWorkspaceScopedPath("/dashboard")).toBe(true);
     expect(isWorkspaceScopedPath("/workspace-settings")).toBe(true);
+    expect(isWorkspaceScopedPath("/automation/config")).toBe(true);
     expect(isWorkspaceScopedPath("http://localhost:8000/api/v1/queues/stream")).toBe(
       true,
     );
@@ -130,9 +131,13 @@ describe("workspace query keys", () => {
     expect(workspaceScopedQueryKey("workspace-settings", WORKSPACE_A)).not.toEqual(
       workspaceScopedQueryKey("workspace-settings", WORKSPACE_B),
     );
+    expect(workspaceScopedQueryKey("automation", WORKSPACE_A)).not.toEqual(
+      workspaceScopedQueryKey("automation", WORKSPACE_B),
+    );
     expect(isWorkspaceScopedQueryKey(["products"])).toBe(false);
     expect(isWorkspaceScopedQueryKey(["product-image-search", { page: 1 }])).toBe(false);
     expect(isWorkspaceScopedQueryKey(["queue", WORKSPACE_A])).toBe(true);
+    expect(isWorkspaceScopedQueryKey(["automation", WORKSPACE_A])).toBe(true);
   });
 
   it("removes tenant cache without touching global product queries", () => {
