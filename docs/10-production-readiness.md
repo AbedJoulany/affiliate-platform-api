@@ -211,6 +211,8 @@ Queue mutation (API or Celery)
 
 ### 9.2 Background workers & queue execution (Phase B) ✅ COMPLETE
 
+**Phase 4.4 operational freshness:** the Queue SSE stream is shared by the Dashboard and Queue through the authenticated operational layout and is not opened on unrelated pages. Queue events invalidate authoritative workspace Queue and Dashboard snapshots; reconnect refetches because SSE events are not replayed. A bounded 5s→30s TanStack Query fallback is used while the stream is unavailable, and it is disabled after recovery. Dashboard reporting rollover follows the backend `reporting.day_end_utc` boundary and revalidates when a hidden tab returns; it does not assume browser-local midnight or a 24-hour day. This is a freshness signal, not an exactly-once or instantaneous-delivery guarantee.
+
 **Existing Celery business schedules (pre–Phase B; unchanged):** Beat + `process_publish_queue` (default 60s), discovery refresh hot/trending (6h), categories (24h).
 
 **Phase A.1 items already delivered (unchanged by Phase B):**

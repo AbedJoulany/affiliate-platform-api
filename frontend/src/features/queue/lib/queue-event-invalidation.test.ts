@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setActiveWorkspaceId } from "@/lib/workspace";
 import { session } from "@/services/session";
 import { WORKSPACE_A, WORKSPACE_B } from "@/test/workspace";
-import { queueAttemptsKey, queueKey } from "../hooks/useQueue";
+import { queueAttemptsKey, queueItemKey, queueKey } from "../hooks/useQueue";
+import { dashboardKey } from "@/features/dashboard/hooks/useDashboard";
 import { QUEUE_EVENT_NAMES, type QueueEventEnvelope } from "../types/events";
 import {
   QUEUE_EVENT_INVALIDATION_DEBOUNCE_MS,
@@ -41,31 +42,43 @@ describe("getQueryKeysForQueueEvent", () => {
   it("invalidates the queue list for status_changed", () => {
     expect(
       getQueryKeysForQueueEvent(envelope(QUEUE_EVENT_NAMES.STATUS_CHANGED)),
-    ).toEqual([queueKey(WORKSPACE_A)]);
+    ).toEqual([queueKey(WORKSPACE_A), dashboardKey(WORKSPACE_A)]);
   });
 
   it("invalidates the queue list for deleted", () => {
     expect(
       getQueryKeysForQueueEvent(envelope(QUEUE_EVENT_NAMES.DELETED)),
-    ).toEqual([queueKey(WORKSPACE_A)]);
+    ).toEqual([queueKey(WORKSPACE_A), dashboardKey(WORKSPACE_A)]);
   });
 
   it("invalidates queue list + attempts for attempt_started", () => {
     expect(
       getQueryKeysForQueueEvent(envelope(QUEUE_EVENT_NAMES.ATTEMPT_STARTED)),
-    ).toEqual([queueKey(WORKSPACE_A), queueAttemptsKey(WORKSPACE_A, QUEUE_ID)]);
+    ).toEqual([
+      queueKey(WORKSPACE_A),
+      dashboardKey(WORKSPACE_A),
+      queueAttemptsKey(WORKSPACE_A, QUEUE_ID),
+    ]);
   });
 
   it("invalidates queue list + attempts for attempt_succeeded", () => {
     expect(
       getQueryKeysForQueueEvent(envelope(QUEUE_EVENT_NAMES.ATTEMPT_SUCCEEDED)),
-    ).toEqual([queueKey(WORKSPACE_A), queueAttemptsKey(WORKSPACE_A, QUEUE_ID)]);
+    ).toEqual([
+      queueKey(WORKSPACE_A),
+      dashboardKey(WORKSPACE_A),
+      queueAttemptsKey(WORKSPACE_A, QUEUE_ID),
+    ]);
   });
 
   it("invalidates queue list + attempts for attempt_failed", () => {
     expect(
       getQueryKeysForQueueEvent(envelope(QUEUE_EVENT_NAMES.ATTEMPT_FAILED)),
-    ).toEqual([queueKey(WORKSPACE_A), queueAttemptsKey(WORKSPACE_A, QUEUE_ID)]);
+    ).toEqual([
+      queueKey(WORKSPACE_A),
+      dashboardKey(WORKSPACE_A),
+      queueAttemptsKey(WORKSPACE_A, QUEUE_ID),
+    ]);
   });
 
   it("returns no keys for unknown events", () => {
@@ -75,21 +88,23 @@ describe("getQueryKeysForQueueEvent", () => {
   });
 
   it("returns no keys for malformed envelopes", () => {
-    expect(
-      getQueryKeysForQueueEvent({} as QueueEventEnvelope),
-    ).toEqual([]);
+    expect(getQueryKeysForQueueEvent({} as QueueEventEnvelope)).toEqual([]);
   });
 
   it("does not map workspace A events onto workspace B query keys", () => {
     expect(
       getQueryKeysForQueueEvent(
-        envelope(QUEUE_EVENT_NAMES.STATUS_CHANGED, { workspace_id: WORKSPACE_A }),
+        envelope(QUEUE_EVENT_NAMES.STATUS_CHANGED, {
+          workspace_id: WORKSPACE_A,
+        }),
         WORKSPACE_B,
       ),
     ).toEqual([]);
     expect(
       getQueryKeysForQueueEvent(
-        envelope(QUEUE_EVENT_NAMES.ATTEMPT_FAILED, { workspace_id: WORKSPACE_A }),
+        envelope(QUEUE_EVENT_NAMES.ATTEMPT_FAILED, {
+          workspace_id: WORKSPACE_A,
+        }),
         WORKSPACE_B,
       ),
     ).toEqual([]);
@@ -113,8 +128,13 @@ describe("createDebouncedQueueEventInvalidator", () => {
 
     await vi.advanceTimersByTimeAsync(QUEUE_EVENT_INVALIDATION_DEBOUNCE_MS);
 
-    expect(invalidateQueries).toHaveBeenCalledTimes(1);
-    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: queueKey(WORKSPACE_A) });
+    expect(invalidateQueries).toHaveBeenCalledTimes(2);
+    expect(invalidateQueries).toHaveBeenCalledWith({
+      queryKey: queueKey(WORKSPACE_A),
+    });
+    expect(invalidateQueries).toHaveBeenCalledWith({
+      queryKey: dashboardKey(WORKSPACE_A),
+    });
     invalidator.dispose();
   });
 
@@ -127,7 +147,9 @@ describe("createDebouncedQueueEventInvalidator", () => {
     invalidator.handle(envelope(QUEUE_EVENT_NAMES.ATTEMPT_FAILED));
     await vi.advanceTimersByTimeAsync(300);
 
-    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: queueKey(WORKSPACE_A) });
+    expect(invalidateQueries).toHaveBeenCalledWith({
+      queryKey: queueKey(WORKSPACE_A),
+    });
     expect(invalidateQueries).toHaveBeenCalledWith({
       queryKey: queueAttemptsKey(WORKSPACE_A, QUEUE_ID),
     });
@@ -167,6 +189,26 @@ describe("createDebouncedQueueEventInvalidator", () => {
     );
 
     expect(invalidateQueries).not.toHaveBeenCalled();
+    invalidator.dispose();
+  });
+
+  it("removes deleted detail data and pins invalidation to its workspace", () => {
+    const queryClient = new QueryClient();
+    const removeQueries = vi.spyOn(queryClient, "removeQueries");
+    const invalidator = createDebouncedQueueEventInvalidator(
+      queryClient,
+      0,
+      WORKSPACE_A,
+    );
+
+    setActiveWorkspaceId(WORKSPACE_B);
+    invalidator.handle(
+      envelope(QUEUE_EVENT_NAMES.DELETED, { workspace_id: null }),
+    );
+
+    expect(removeQueries).toHaveBeenCalledWith({
+      queryKey: queueItemKey(WORKSPACE_A, QUEUE_ID),
+    });
     invalidator.dispose();
   });
 });

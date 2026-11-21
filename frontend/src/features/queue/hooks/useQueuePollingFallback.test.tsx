@@ -62,7 +62,9 @@ describe("SSE → polling fallback", () => {
     createStreamMock.mockImplementation(async (options) => {
       options.onOpen?.();
       await new Promise<void>((resolve) => {
-        options.signal.addEventListener("abort", () => resolve(), { once: true });
+        options.signal.addEventListener("abort", () => resolve(), {
+          once: true,
+        });
       });
     });
 
@@ -83,7 +85,9 @@ describe("SSE → polling fallback", () => {
       captured = options;
       options.onOpen?.();
       await new Promise<void>((resolve) => {
-        options.signal.addEventListener("abort", () => resolve(), { once: true });
+        options.signal.addEventListener("abort", () => resolve(), {
+          once: true,
+        });
       });
     });
 
@@ -100,13 +104,15 @@ describe("SSE → polling fallback", () => {
     });
     await waitFor(() => expect(result.current.status).toBe("disconnected"));
     expect(result.current.pollingEnabled).toBe(true);
-    expect(createQueuePollIntervalSelector()({
-      state: {
-        data: undefined,
-        dataUpdateCount: 0,
-        fetchStatus: "idle",
-      },
-    } as never)).toBe(QUEUE_POLL_FALLBACK_MIN_MS);
+    expect(
+      createQueuePollIntervalSelector()({
+        state: {
+          data: undefined,
+          dataUpdateCount: 0,
+          fetchStatus: "idle",
+        },
+      } as never),
+    ).toBe(QUEUE_POLL_FALLBACK_MIN_MS);
     unmount();
   });
 
@@ -120,7 +126,9 @@ describe("SSE → polling fallback", () => {
       captured = options;
       options.onOpen?.();
       await new Promise<void>((resolve) => {
-        options.signal.addEventListener("abort", () => resolve(), { once: true });
+        options.signal.addEventListener("abort", () => resolve(), {
+          once: true,
+        });
       });
     });
 
@@ -131,7 +139,9 @@ describe("SSE → polling fallback", () => {
 
     await waitFor(() => expect(result.current.status).toBe("connected"));
     expect(result.current.pollingEnabled).toBe(false);
-    expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: queueKey(WORKSPACE_A) });
+    expect(invalidateQueries).not.toHaveBeenCalledWith({
+      queryKey: queueKey(WORKSPACE_A),
+    });
 
     captured!.onError?.({
       kind: "network",
@@ -150,9 +160,11 @@ describe("SSE → polling fallback", () => {
     await waitFor(() => expect(result.current.status).toBe("connected"));
     expect(result.current.pollingEnabled).toBe(false);
     await waitFor(() =>
-      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: queueKey(WORKSPACE_A) }),
+      expect(invalidateQueries).toHaveBeenCalledWith({
+        queryKey: queueKey(WORKSPACE_A),
+      }),
     );
-    expect(invalidateQueries).toHaveBeenCalledTimes(1);
+    expect(invalidateQueries).toHaveBeenCalledTimes(2);
     unmount();
   });
 
@@ -164,7 +176,9 @@ describe("SSE → polling fallback", () => {
     createStreamMock.mockImplementation(async (options) => {
       options.onOpen?.();
       await new Promise<void>((resolve) => {
-        options.signal.addEventListener("abort", () => resolve(), { once: true });
+        options.signal.addEventListener("abort", () => resolve(), {
+          once: true,
+        });
       });
     });
 
@@ -175,7 +189,9 @@ describe("SSE → polling fallback", () => {
 
     await waitFor(() => expect(result.current.status).toBe("connected"));
     expect(result.current.pollingEnabled).toBe(false);
-    expect(invalidateQueries).not.toHaveBeenCalledWith({ queryKey: queueKey(WORKSPACE_A) });
+    expect(invalidateQueries).not.toHaveBeenCalledWith({
+      queryKey: queueKey(WORKSPACE_A),
+    });
     unmount();
   });
 
@@ -186,7 +202,9 @@ describe("SSE → polling fallback", () => {
       signals.push(options.signal);
       options.onOpen?.();
       await new Promise<void>((resolve) => {
-        options.signal.addEventListener("abort", () => resolve(), { once: true });
+        options.signal.addEventListener("abort", () => resolve(), {
+          once: true,
+        });
       });
     });
 
@@ -238,7 +256,9 @@ describe("SSE → polling fallback", () => {
     session.setAccessToken("poll-token");
     createStreamMock.mockImplementation(async (options) => {
       await new Promise<void>((resolve) => {
-        options.signal.addEventListener("abort", () => resolve(), { once: true });
+        options.signal.addEventListener("abort", () => resolve(), {
+          once: true,
+        });
       });
     });
 
@@ -249,6 +269,35 @@ describe("SSE → polling fallback", () => {
 
     await waitFor(() => expect(result.current.status).toBe("connecting"));
     expect(result.current.pollingEnabled).toBe(false);
+    unmount();
+  });
+
+  it("enables bounded polling after a permanent stream failure", async () => {
+    session.setAccessToken("poll-token");
+    let captured: CreateQueueEventStreamOptions | null = null;
+    createStreamMock.mockImplementation(async (options) => {
+      captured = options;
+      await new Promise<void>((resolve) => {
+        options.signal.addEventListener("abort", () => resolve(), {
+          once: true,
+        });
+      });
+    });
+
+    const { result, unmount } = renderHook(
+      () => useQueueRealtimeInvalidation({ debounceMs: 0 }),
+      { wrapper: realtimeWrapper(new QueryClient()) },
+    );
+
+    await waitFor(() => expect(result.current.status).toBe("connecting"));
+    captured!.onError?.({
+      kind: "auth",
+      message: "stream unauthorized",
+      status: 401,
+      fatal: true,
+    });
+    await waitFor(() => expect(result.current.status).toBe("error"));
+    expect(result.current.pollingEnabled).toBe(true);
     unmount();
   });
 });

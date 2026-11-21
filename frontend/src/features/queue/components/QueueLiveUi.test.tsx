@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setActiveWorkspaceId } from "@/lib/workspace";
 import { session } from "@/services/session";
 import { WORKSPACE_A } from "@/test/workspace";
+import { dashboardKey } from "@/features/dashboard/hooks/useDashboard";
 import {
   queueAttemptsKey,
   queueKey,
@@ -86,7 +87,9 @@ describe("F3 — QueueOperationalStats live updates from queue list data", () =>
       />,
     );
 
-    expect(screen.getByText("في الانتظار").parentElement).toHaveTextContent("1");
+    expect(screen.getByText("في الانتظار").parentElement).toHaveTextContent(
+      "1",
+    );
     expect(screen.getByText("مجدول").parentElement).toHaveTextContent("1");
     expect(screen.getByText("نُشر اليوم").parentElement).toHaveTextContent("0");
 
@@ -108,7 +111,9 @@ describe("F3 — QueueOperationalStats live updates from queue list data", () =>
       />,
     );
 
-    expect(screen.getByText("في الانتظار").parentElement).toHaveTextContent("0");
+    expect(screen.getByText("في الانتظار").parentElement).toHaveTextContent(
+      "0",
+    );
     expect(screen.getByText("مجدول").parentElement).toHaveTextContent("1");
     expect(screen.getByText("نُشر اليوم").parentElement).toHaveTextContent("1");
   });
@@ -152,7 +157,9 @@ describe("F3 — Queue list / selection after status change and deletion", () =>
       result.current.setStatusFilter("queued");
     });
     await waitFor(() => {
-      expect(result.current.filteredItems.map((item) => item.id)).toEqual(["a"]);
+      expect(result.current.filteredItems.map((item) => item.id)).toEqual([
+        "a",
+      ]);
     });
 
     const updated = [
@@ -179,10 +186,9 @@ describe("F3 — Queue list / selection after status change and deletion", () =>
       result.current.setStatusFilter("published");
     });
     await waitFor(() => {
-      expect(result.current.filteredItems.map((item) => item.id).sort()).toEqual([
-        "a",
-        "b",
-      ]);
+      expect(
+        result.current.filteredItems.map((item) => item.id).sort(),
+      ).toEqual(["a", "b"]);
     });
   });
 
@@ -285,7 +291,11 @@ describe("F3 — QueueDetailsDrawer attempt query behavior", () => {
         queue_id: "q-1",
         data: {},
       }),
-    ).toEqual([queueKey(WORKSPACE_A), queueAttemptsKey(WORKSPACE_A, "q-1")]);
+    ).toEqual([
+      queueKey(WORKSPACE_A),
+      dashboardKey(WORKSPACE_A),
+      queueAttemptsKey(WORKSPACE_A, "q-1"),
+    ]);
     invalidator.dispose();
   });
 });
@@ -294,10 +304,9 @@ describe("F3 — deleted open item closes inspector without client store", () =>
   it("clears activePostId when the item disappears from the authoritative list", async () => {
     function Harness({ items }: { items: QueueItem[] }) {
       const [activePostId, setActivePostId] = useState<string | null>("q-1");
-      const activePost =
-        activePostId
-          ? (items.find((item) => item.id === activePostId) ?? null)
-          : null;
+      const activePost = activePostId
+        ? (items.find((item) => item.id === activePostId) ?? null)
+        : null;
 
       useEffect(() => {
         if (activePostId == null) return;
@@ -337,6 +346,9 @@ describe("F3 — mutation invalidation remains compatible with realtime keys", (
       queue_id: "q-1",
       data: {},
     });
-    expect(statusKeys).toEqual([queueKey(WORKSPACE_A)]);
+    expect(statusKeys).toEqual([
+      queueKey(WORKSPACE_A),
+      dashboardKey(WORKSPACE_A),
+    ]);
   });
 });

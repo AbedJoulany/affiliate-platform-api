@@ -33,8 +33,7 @@ import {
   useUpdateQueueItem,
 } from "../hooks/useQueue";
 import type { PublishOptions } from "../hooks/useQueue";
-import { useQueueRealtimeInvalidation } from "../hooks/useQueueRealtimeInvalidation";
-import { QueueRealtimePollingContext } from "../hooks/QueueRealtimePollingContext";
+import { useQueueRealtimeStatus } from "../hooks/QueueRealtimePollingContext";
 import type { QueueEventStreamStatus } from "../hooks/useQueueEventStream";
 import type { QueueItem, QueueStatus } from "../types/api";
 import { QueueDetailsDrawer } from "./QueueDetailsDrawer";
@@ -75,14 +74,8 @@ function isValidQueueItemId(value: string | null): value is string {
 }
 
 export function QueueView() {
-  // Single workspace-scoped SSE → query invalidation (not in child components).
-  const realtime = useQueueRealtimeInvalidation();
-
-  return (
-    <QueueRealtimePollingContext.Provider value={realtime.pollingEnabled}>
-      <QueueViewBody realtimeStatus={realtime.status} />
-    </QueueRealtimePollingContext.Provider>
-  );
+  const realtimeStatus = useQueueRealtimeStatus();
+  return <QueueViewBody realtimeStatus={realtimeStatus} />;
 }
 
 function QueueViewBody({
