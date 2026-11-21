@@ -33,17 +33,33 @@ class RecommendationService:
 
     async def recommend(self, query: RecommendationQuery) -> RecommendationResponse:
         products = await self._load_candidates(query)
+        ranked = self.rank_candidates(products, query)
+        selected = ranked[: query.top_n]
+
+        return RecommendationResponse(
+            items=[self._to_item(index, item) for index, item in enumerate(selected, start=1)],
+            total_candidates=len(ranked),
+            returned=len(selected),
+            top_n=query.top_n,
+        )
+
+    def rank_candidates(
+        self,
+        products: list[Product],
+        query: RecommendationQuery,
+    ) -> list[_RankedProduct]:
+        """Apply the existing recommendation semantics to a bounded candidate set.
+
+        The catalog-first automation preview uses this entry point after its
+        workspace history exclusions.  Keeping keyword filtering and scoring
+        here prevents the preview from drifting from the public recommendation
+        endpoint.
+        """
         products = [
             product for product in products if self._matches_keywords(product, query.keywords)
         ]
-
         if not products:
-            return RecommendationResponse(
-                items=[],
-                total_candidates=0,
-                returned=0,
-                top_n=query.top_n,
-            )
+            return []
 
         prices = [product.price for product in products]
         min_price = min(prices)
@@ -63,14 +79,7 @@ class RecommendationService:
             for product in products
         ]
         ranked.sort(key=self._ranking_key)
-        selected = ranked[: query.top_n]
-
-        return RecommendationResponse(
-            items=[self._to_item(index, item) for index, item in enumerate(selected, start=1)],
-            total_candidates=len(ranked),
-            returned=len(selected),
-            top_n=query.top_n,
-        )
+        return ranked
 
     async def _load_candidates(self, query: RecommendationQuery) -> list[Product]:
         statement = select(Product)
@@ -137,8 +146,12 @@ class RecommendationService:
         )
 
     @staticmethod
-    def _has_valid_affiliate_url(value: str | None) -> bool:
+    def has_valid_affiliate_url(value: str | None) -> bool:
         if not value or not value.strip():
             return False
         parsed = urlparse(value.strip())
         return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+    @staticmethod
+    def _has_valid_affiliate_url(value: str | None) -> bool:
+        return RecommendationService.has_valid_affiliate_url(value)

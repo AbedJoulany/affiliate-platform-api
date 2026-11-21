@@ -1,13 +1,21 @@
+from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import aliased, selectinload
 
 from app.core.enums import QueueStatus
 from app.models.queue import QueueItem, QueuePublishAttempt
 from app.repositories.base import BaseRepository
+
+
+@dataclass(frozen=True, slots=True)
+class ProductPublishingHistory:
+    queued_or_scheduled: frozenset[UUID]
+    recently_published: frozenset[UUID]
+    unresolved_ambiguous: frozenset[UUID]
 
 
 class QueueRepository(BaseRepository[QueueItem]):
@@ -144,6 +152,89 @@ class QueueRepository(BaseRepository[QueueItem]):
             .limit(limit)
         )
         return list(result.scalars().all())
+
+    async def product_publishing_history(
+        self,
+        workspace_id: UUID,
+        product_ids: list[UUID],
+        *,
+        now: datetime,
+        recent_window_start: datetime,
+    ) -> ProductPublishingHistory:
+        """Load bounded, workspace-scoped product exclusion sets.
+
+        A later conclusive attempt resolves an earlier ambiguous attempt. A
+        newer ``started`` attempt does not, so the product remains blocked.
+        The queries operate only on the candidate IDs supplied by the bounded
+        catalog query.
+        """
+        if not product_ids:
+            return ProductPublishingHistory(frozenset(), frozenset(), frozenset())
+
+        queued_result = await self.session.execute(
+            select(QueueItem.product_id)
+            .where(
+                QueueItem.workspace_id == workspace_id,
+                QueueItem.product_id.in_(product_ids),
+                QueueItem.status.in_((QueueStatus.QUEUED, QueueStatus.SCHEDULED)),
+            )
+            .distinct()
+        )
+
+        successful_attempt = exists(
+            select(QueuePublishAttempt.id).where(
+                QueuePublishAttempt.queue_id == QueueItem.id,
+                QueuePublishAttempt.status == "succeeded",
+                QueuePublishAttempt.occurred_at >= recent_window_start,
+                QueuePublishAttempt.occurred_at < now,
+            )
+        )
+        published_result = await self.session.execute(
+            select(QueueItem.product_id)
+            .where(
+                QueueItem.workspace_id == workspace_id,
+                QueueItem.product_id.in_(product_ids),
+                or_(
+                    and_(
+                        QueueItem.published_at.is_not(None),
+                        QueueItem.published_at >= recent_window_start,
+                        QueueItem.published_at < now,
+                    ),
+                    successful_attempt,
+                ),
+            )
+            .distinct()
+        )
+
+        later_conclusive_attempt = aliased(QueuePublishAttempt)
+        no_later_conclusive_attempt = ~exists(
+            select(later_conclusive_attempt.id).where(
+                later_conclusive_attempt.queue_id == QueuePublishAttempt.queue_id,
+                later_conclusive_attempt.attempt_number
+                > QueuePublishAttempt.attempt_number,
+                later_conclusive_attempt.status.in_(("succeeded", "failed")),
+            )
+        )
+        ambiguous_result = await self.session.execute(
+            select(QueueItem.product_id)
+            .join(
+                QueuePublishAttempt,
+                QueuePublishAttempt.queue_id == QueueItem.id,
+            )
+            .where(
+                QueueItem.workspace_id == workspace_id,
+                QueueItem.product_id.in_(product_ids),
+                QueuePublishAttempt.status == "ambiguous",
+                no_later_conclusive_attempt,
+            )
+            .distinct()
+        )
+
+        return ProductPublishingHistory(
+            queued_or_scheduled=frozenset(queued_result.scalars().all()),
+            recently_published=frozenset(published_result.scalars().all()),
+            unresolved_ambiguous=frozenset(ambiguous_result.scalars().all()),
+        )
 
 
 class QueuePublishAttemptRepository(BaseRepository[QueuePublishAttempt]):

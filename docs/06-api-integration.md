@@ -3,6 +3,11 @@
 **Document Version:** 2.15
 **Last Updated:** 2026-11-21
 
+**2026-11-21 revision (Phase 6B):** Added the authenticated, read-only
+catalog-first automation discovery preview. It reuses the Recommendation
+Engine, applies workspace publishing-history exclusions, and never creates
+Queue items or invokes providers. See §4.13.
+
 **2026-09-06 revision (Product B removal):** The affiliate-network layer is gone. There are no `/affiliates`, `/campaigns`, `/conversions`, `/clicks`, or `/analytics` routes. Registration creates `user` (not `affiliate`). Product A catalog fields `affiliate_url` and `commission_rate` remain. Historical notes below that describe Product B APIs are superseded by this revision.
 
 **2026-09-04 revision (Phase E Task 14):** Editable workspace settings (`GET/PATCH /workspace-settings`) and self-service `PATCH /auth/me`. Secrets stay env-only; responses expose connection booleans. See §4.11.
@@ -33,7 +38,7 @@
 
 OpenAPI: `/docs` · ReDoc: `/redoc` · Health: `GET /health` · Readiness: `GET /ready` · Worker health: `GET /worker/health`
 
-> **Current Product A contract:** The current implementation is a single-operator MVP. PRs through #21 are merged into `main`; Phase 5B automation configuration is merged and Phase 5C adds a frontend configuration page on the current feature branch. Both remain configuration-only: no discovery, AI, Queue, Celery, or provider side effects are available. The route and schema tables below are authoritative for the implemented API; older Product B sections are retained only as historical notes and are not available endpoints. Current publish providers are `telegram` and `facebook`; Facebook Page credentials are managed server-side and are never returned.
+> **Current Product A contract:** The current implementation is a single-operator MVP. PRs through #22 are merged into `main`; Phase 5B automation configuration and Phase 5C frontend configuration are merged. Phase 6B adds a separate read-only catalog preview, while automatic discovery, AI, Queue, Celery, and provider execution remain unavailable. The route and schema tables below are authoritative for the implemented API; older Product B sections are retained only as historical notes and are not available endpoints. Current publish providers are `telegram` and `facebook`; Facebook Page credentials are managed server-side and are never returned.
 
 ### Current provider-aware routes
 
@@ -46,6 +51,7 @@ OpenAPI: `/docs` · ReDoc: `/redoc` · Health: `GET /health` · Readiness: `GET 
 | Telegram setup | `GET/POST/PUT/DELETE /channels*`, `POST /channels/{id}/refresh-permissions` | Workspace-scoped channel management; refresh checks permissions and never publishes. |
 | Workspace settings | `GET/PATCH /workspace-settings` | Workspace-scoped; `default_discovery_mode` supports `recommended`. |
 | Automation configuration | `GET/PATCH /automation/config` | Workspace-scoped policy configuration; members read, owner/admin write; virtual disabled defaults; no discovery, AI, Queue, Celery, or provider side effects. |
+| Automation discovery preview | `POST /automation/discovery/preview` | Workspace-scoped, authenticated, read-only catalog selection; bounded deterministic ranking; `preview_only: true`, `execution_available: false`; no Queue, Celery, or provider side effects. |
 
 Affiliate CTA resolution is `button_url` first, then `Product.affiliate_url`; `Product.product_url` is never substituted. Missing affiliate URLs are represented as missing data and do not invent a marketing destination.
 
@@ -507,6 +513,29 @@ Nullable AI overrides inherit the corresponding workspace settings. The policy
 uses the workspace timezone, validates daily `HH:MM` preferences, and does not
 precompute UTC execution times. Future execution must define DST handling and an
 explicit activation gate separately.
+
+### 4.13 Catalog-first automation discovery preview (Phase 6B)
+
+`POST /automation/discovery/preview` uses Bearer authentication and
+`X-Workspace-Id`. Authorized workspace members may preview the saved policy;
+the endpoint does not accept policy overrides or an arbitrary workspace ID in
+the request body. A missing saved policy returns **404** rather than inventing
+virtual defaults.
+
+The response is explicitly `preview_only: true` and
+`execution_available: false`. It reads at most 1000 deterministically ordered
+active catalog candidates (with a one-row truncation probe), applies the saved
+Recommendation Engine filters and weights, and returns Top N selected product
+IDs with recommendation scores. Products without a valid HTTP(S)
+`affiliate_url` are excluded; `product_url` is never substituted.
+
+Candidates are also excluded when the same workspace has them queued or
+scheduled, published within the rolling seven-day UTC window, or associated
+with an unresolved ambiguous publishing attempt. The response reports the
+policy revision, selection timestamp, ranking scope, truncation, bounded
+inspection counts, exclusion counts, and readiness warnings. It does not write
+policy, run, Queue, or attempt rows and does not call AliExpress, AI, Celery,
+Telegram, or Facebook.
 
 ---
 

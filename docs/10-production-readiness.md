@@ -3,7 +3,7 @@
 **Document Version:** 3.4
 **Last Updated:** 2026-11-21
 
-> **Current baseline:** PRs through #21 are merged. The Product A MVP includes the provider-aware Telegram/Facebook Queue, operational Dashboard phases 4.2–4.5, and migration 020. Phase 5B adds configuration-only automation policy endpoints; Phase 5C adds their frontend configuration page on the current feature branch. Neither phase adds execution. Controlled live Facebook text/photo/scheduled publishing was operator-verified separately. Telegram failure/retry and PostgreSQL concurrent row-lock verification remain pending. Use [product-a-mvp-roadmap.md](./product-a-mvp-roadmap.md) for canonical phase status.
+> **Current baseline:** PRs through #22 are merged. The Product A MVP includes the provider-aware Telegram/Facebook Queue, operational Dashboard phases 4.2–4.5, migration 020, and the Phase 5C automation configuration UI. Phase 6B adds a bounded, read-only catalog discovery preview on the current feature branch; it does not add execution. Controlled live Facebook text/photo/scheduled publishing was operator-verified separately. Telegram failure/retry and PostgreSQL concurrent row-lock verification remain pending. Use [product-a-mvp-roadmap.md](./product-a-mvp-roadmap.md) for canonical phase status.
 
 **2026-11-16 revision (Phase 3C.3 closeout):** PR #15 merged the publishing safety
 hardening and regression coverage. Already-published Queue items are rejected inside
@@ -56,7 +56,7 @@ Release gate supplement to documents 01–09. Defines security boundaries, envir
 
 ### Migrations
 
-Run `alembic upgrade head` once before API/worker promotion. Current head is migration **019** and includes Facebook Page connection (`018_add_facebook_pages`) plus provider-aware Queue destinations (`019_add_facebook_queue_destinations`). Migrations `001`–`019` are protected history; no tokens are stored in plaintext database columns.
+Run `alembic upgrade head` once before API/worker promotion. Current head is migration **020** and includes Facebook Page connection (`018_add_facebook_pages`), provider-aware Queue destinations (`019_add_facebook_queue_destinations`), and configuration-only automation policies (`020_add_automation_policies`). Migrations `001`–`020` are protected history; no tokens are stored in plaintext database columns.
 
 See `.env.example` for the baseline variable list. The Facebook encryption key is
 documented above and must be supplied separately in the server-only environment;
@@ -97,6 +97,22 @@ trigger Celery, or call Telegram/Facebook providers. Nullable AI fields retain
 their inheritance meaning, and stale revisions require explicit operator
 reload before another save. This phase does not claim live automation or
 Phase 6 functionality.
+
+### Phase 6B catalog-first discovery preview
+
+The Phase 6B preview endpoint is `POST /api/v1/automation/discovery/preview`.
+It requires authentication and `X-Workspace-Id`, reads the saved policy, and
+evaluates at most 1000 active catalog candidates using the existing deterministic
+Recommendation Engine. It excludes invalid affiliate URLs and products already
+queued/scheduled, recently published in the same workspace, or blocked by an
+unresolved ambiguous attempt. It returns `preview_only: true` and
+`execution_available: false`.
+
+The endpoint is read-only: it does not refresh AliExpress data, create run or
+Queue records, call AI or provider APIs, invoke Celery, or change policy
+revisions. The one-row probe reports truncation without claiming global ranking
+optimality. Automatic discovery, AI generation, Queue creation, scheduling, and
+publishing remain future phases.
 
 ---
 

@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -67,6 +68,52 @@ class ProductRepository(BaseRepository[Product]):
             select(Product).where(Product.aliexpress_product_id == aliexpress_product_id)
         )
         return result.scalar_one_or_none()
+
+    async def list_active_recommendation_candidates(
+        self,
+        *,
+        min_price: Decimal | None = None,
+        max_price: Decimal | None = None,
+        min_rating: Decimal | None = None,
+        min_orders: int | None = None,
+        min_discount: Decimal | None = None,
+        min_commission: Decimal | None = None,
+        max_commission: Decimal | None = None,
+        limit: int = 1001,
+    ) -> list[Product]:
+        """Return a deterministically bounded active catalog slice.
+
+        Numeric recommendation filters are applied in SQL before the limit.
+        Keyword matching and score normalization intentionally remain in the
+        existing RecommendationService so semantics stay identical.
+        """
+        filters = [Product.status == ProductStatus.ACTIVE]
+        if min_price is not None:
+            filters.append(Product.price >= min_price)
+        if max_price is not None:
+            filters.append(Product.price <= max_price)
+        if min_rating is not None:
+            filters.append(Product.rating >= min_rating)
+        if min_orders is not None:
+            filters.append(Product.sales >= min_orders)
+        if min_discount is not None:
+            filters.append(Product.discount >= min_discount)
+        if min_commission is not None:
+            filters.append(Product.commission_rate >= min_commission)
+        if max_commission is not None:
+            filters.append(Product.commission_rate <= max_commission)
+
+        statement = (
+            select(Product)
+            .where(*filters)
+            .order_by(
+                Product.aliexpress_product_id.asc().nulls_last(),
+                Product.id.asc(),
+            )
+            .limit(limit)
+        )
+        result = await self.session.execute(statement)
+        return list(result.scalars().all())
 
 
 class AliExpressCategoryRepository(BaseRepository[AliExpressCategory]):
