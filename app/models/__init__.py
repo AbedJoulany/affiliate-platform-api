@@ -1,4 +1,5 @@
 from app.models.aliexpress_category import AliExpressCategory
+from app.models.automation_policy import AutomationPolicy
 from app.models.channel import TelegramChannel
 from app.models.facebook_page import FacebookPage
 from app.models.product import Product
@@ -10,6 +11,7 @@ from app.models.workspace_settings import WorkspaceSettings
 
 __all__ = [
     "Product",
+    "AutomationPolicy",
     "AliExpressCategory",
     "TelegramChannel",
     "FacebookPage",

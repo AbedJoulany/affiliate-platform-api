@@ -76,3 +76,18 @@ class FacebookPageValidationStatus(StrEnum):
 class WorkspaceMembershipRole(StrEnum):
     OWNER = "owner"
     MEMBER = "member"
+
+
+class AutomationProvider(StrEnum):
+    TELEGRAM = "telegram"
+    FACEBOOK = "facebook"
+
+
+class AutomationFrequency(StrEnum):
+    DAILY = "daily"
+
+
+class AutomationExecutionState(StrEnum):
+    DISABLED = "disabled"
+    CONFIGURED_NOT_READY = "configured_not_ready"
+    CONFIGURED_READY_NOT_ACTIVE = "configured_ready_not_active"
