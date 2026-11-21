@@ -376,6 +376,40 @@ async def test_explicit_null_clears_nullable_fields(client):
 
 
 @pytest.mark.asyncio
+async def test_explicit_null_clears_facebook_destination(client):
+    _, token = await register_and_login(client, role="user")
+    headers = await workspace_auth_headers(token)
+    page_id = await _create_page(headers[WORKSPACE_ID_HEADER])
+
+    created = await client.patch(
+        AUTOMATION,
+        headers=headers,
+        json={"destination": {"provider": "facebook", "page_id": str(page_id)}},
+    )
+    assert created.status_code == 200, created.text
+
+    cleared = await client.patch(
+        AUTOMATION,
+        headers=headers,
+        json={
+            "expected_revision": created.json()["revision"],
+            "destination": None,
+        },
+    )
+
+    assert cleared.status_code == 200, cleared.text
+    body = cleared.json()
+    assert body["destination"] is None
+    assert body["configuration_ready"] is False
+    assert body["warnings"] == ["Select an active, validated Facebook Page"]
+    policy = await _policy_for_workspace(headers[WORKSPACE_ID_HEADER])
+    assert policy is not None
+    assert policy.provider == "facebook"
+    assert policy.telegram_channel_id is None
+    assert policy.facebook_page_id is None
+
+
+@pytest.mark.asyncio
 async def test_database_constraints_protect_policy_ranges(session):
     from app.models.workspace import Workspace
 

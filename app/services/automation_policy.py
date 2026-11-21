@@ -237,11 +237,7 @@ class AutomationPolicyService:
         if provider == AutomationProvider.TELEGRAM:
             if policy.telegram_channel_id is None:
                 return DestinationEvaluation(
-                    response=AutomationDestinationRead(
-                        provider=provider,
-                        ready=False,
-                        status="missing",
-                    ),
+                    response=None,
                     ready=False,
                     warning="Select an active Telegram channel with posting permission",
                 )
@@ -283,11 +279,7 @@ class AutomationPolicyService:
 
         if policy.facebook_page_id is None:
             return DestinationEvaluation(
-                response=AutomationDestinationRead(
-                    provider=provider,
-                    ready=False,
-                    status="missing",
-                ),
+                response=None,
                 ready=False,
                 warning="Select an active, validated Facebook Page",
             )
