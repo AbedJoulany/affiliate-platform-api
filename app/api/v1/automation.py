@@ -12,11 +12,33 @@ from app.schemas.automation_content import (
 )
 from app.schemas.automation_discovery import AutomationDiscoveryPreviewResponse
 from app.schemas.automation_policy import AutomationPolicyPatch, AutomationPolicyRead
+from app.schemas.automation_queue import (
+    AutomationQueuePrepareRequest,
+    AutomationQueuePrepareResponse,
+)
 from app.services.automation_content import AutomationContentGenerationService
 from app.services.automation_discovery import AutomationDiscoveryService
 from app.services.automation_policy import AutomationPolicyService
+from app.services.automation_queue import AutomationQueueService
 
 router = APIRouter()
+
+
+@router.post(
+    "/queue/prepare",
+    response_model=AutomationQueuePrepareResponse,
+)
+async def prepare_automation_queue(
+    payload: AutomationQueuePrepareRequest,
+    current_user: CurrentUser,
+    workspace_id: HttpWorkspaceId,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> AutomationQueuePrepareResponse:
+    return await AutomationQueueService(db).prepare(
+        current_user,
+        workspace_id,
+        payload,
+    )
 
 
 @router.post(

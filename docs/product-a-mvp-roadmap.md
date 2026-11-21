@@ -1,10 +1,10 @@
 # Product A MVP — Implementation Roadmap
 
-> **Document status:** Canonical active roadmap. Updated for the merged Phase 5B backend Automation Configuration, Phase 5C frontend configuration, Phase 6B catalog-first discovery, and the Phase 7B preview implemented and CI verified in PR #24 (merge pending).
+> **Document status:** Canonical active roadmap. Updated through the Phase 8B implementation on the current feature branch; CI and PR verification remain pending.
 > **Repository:** `AbedJoulany/affiliate-platform-api`
-> **Development baseline:** `main` at PR #23 merge commit `8a83e951060a37a3cb10d891eb99d95ee3c1962e`.
+> **Development baseline:** `main` at the Phase 7B merge commit `b06657d91b83fe9ad003a8cb407d1508d6e59bcd`.
 > **Verification source:** merged PRs and CI are implementation evidence; Phase 4.5 adds a traceable validation record. Controlled live provider checks remain separate from mocked tests and CI.
-> **Current development phase:** Phase 7B — Safe Automated Content Generation Preview, implemented and CI verified in PR #24 (merge pending). Unattended execution remains unavailable.
+> **Current development phase:** Phase 8B — Explicit Automation-to-Scheduled-Queue Integration, implemented locally with Linux, PostgreSQL, Redis, and backend verification; PR/CI verification remains pending. Unattended execution remains unavailable.
 
 ### Naming convention
 
@@ -16,8 +16,9 @@
 - **Roadmap Phase 4:** implemented through PRs #17–#19; final validation is documented separately and remains partially verified where local PostgreSQL or staging evidence is unavailable.
 - **Roadmap Phase 5:** implemented and merged through PRs #21–#22; execution remains deferred.
 - **Roadmap Phase 6B:** catalog-first, bounded, read-only discovery preview is implemented and merged via PR #23; no execution or persistence is enabled.
-- **Roadmap Phase 7B:** safe, explicitly triggered content-generation preview is implemented and CI verified in PR #24; merge is pending and no execution or persistence is enabled.
-- **Roadmap Phases 6C, 7C, and 8–11:** planned as described below.
+- **Roadmap Phase 7B:** safe, explicitly triggered content-generation preview is implemented and merged via PR #24; no unattended execution or persistence is enabled.
+- **Roadmap Phase 8B:** explicit, member-authorized preparation of up to two `SCHEDULED` Queue items is implemented on the current feature branch; PR/CI verification is pending and `execution_available` remains false.
+- **Roadmap Phases 6C, 7C, 8C, and 9–11:** planned as described below.
 - A merged PR and green mocked CI do **not** substitute for a live provider test.
 
 ### Current delivery status
@@ -40,7 +41,8 @@
 | Phase 5B Automation Configuration backend | Implemented & CI Verified | PR #21, merge commit `a76f6a4ddd7bcf340afc887815eaf1d5100e19e4`; migration `020`; no automation execution |
 | Phase 5C Automation Configuration frontend | Implemented & CI Verified | PR #22; Arabic RTL workspace-scoped GET/PATCH UI; saved intent only; no automation execution |
 | Phase 6B Catalog-First Automation Discovery | Implemented & merged | PR #23, merge commit `8a83e951060a37a3cb10d891eb99d95ee3c1962e`; bounded, workspace-scoped, read-only preview |
-| Phase 7B Safe Automated Content Generation Preview | Implemented & CI verified in PR #24; merge pending | Explicit paid preview for at most two server-selected products; sequential, stateless, validated, no Queue or publishing |
+| Phase 7B Safe Automated Content Generation Preview | Implemented & CI Verified | PR #24, merge commit `b06657d91b83fe9ad003a8cb407d1508d6e59bcd`; explicit paid preview for at most two server-selected products; sequential, stateless, validated, no Queue or publishing |
+| Phase 8B Automation → Scheduled Queue | Implemented locally; PR/CI pending | Explicit cost/scheduling confirmation; server-side discovery + AI validation; bounded timezone-aware scheduling; existing Queue/Scheduler path; no unattended task |
 | Phase 0 live Telegram verification | Partially verified | Manual publish, image/link delivery, and scheduling verified; failure/retry pending |
 | PR #11 CI | Passed | Backend, frontend, and E2E checks completed successfully |
 | PR #12 documentation synchronization | Completed | Documentation-only roadmap synchronization |
@@ -788,8 +790,8 @@ AutomationService.run(workspace_id)
 
 # 12. Phase 7 — Auto Content Generation
 
-**Phase 7B status:** implemented and CI verified in PR #24; merge and review
-are pending. Phase 7B is an explicitly triggered, paid-AI preview only. It
+**Phase 7B status:** implemented and CI verified in merged PR #24. Phase 7B is
+an explicitly triggered, paid-AI preview only. It
 re-runs Phase 6B selection server-side, processes at most two products
 sequentially, returns stateless structured results, validates canonical affiliate
 URLs and generated output, and keeps `execution_available: false`.
@@ -841,20 +843,43 @@ Product 5 → success
 
 # 13. Phase 8 — Automation → Queue
 
-**Status:** not implemented.
+**Phase 8B status:** implemented locally on the current feature branch; PR and
+CI verification are pending. The implementation is an explicitly triggered,
+member-authorized operation. It does not activate unattended automation and
+always returns `execution_available: false`.
 
-**MVP scope:** create scheduled Queue items through the existing QueueService,
-respect destinations, posting windows, and daily limits.
+`POST /api/v1/automation/queue/prepare` requires the saved policy revision,
+`acknowledge_ai_cost: true`, `confirm_scheduled_publishing: true`, and an
+idempotency key. It server-side reuses Phase 6B discovery and Phase 7B content
+generation, processes at most two products sequentially, revalidates the
+current product and canonical affiliate URL, and creates only `SCHEDULED`
+Queue items through the existing QueueService.
 
-**Acceptance:** Automation prepares Queue items; the existing Scheduler and
-Publisher perform all publishing. No second Queue or publishing task is created.
+Scheduling uses the saved workspace timezone and daily policy limit, persists
+UTC timestamps, handles DST gaps/folds deterministically, counts existing
+scheduled and published items for the selected destination, and rejects stale
+policy or unavailable destination state. Each product has an independent
+result; a duplicate/history conflict or unavailable slot does not roll back
+previously committed successful items.
 
-Automation لا ينشر مباشرة.
+Scheduled items may later be published by the existing Queue scheduler when
+due. This is an explicit side effect of the approved operation, not proof that
+unattended automation is enabled. No automation Celery task, parallel Queue,
+run table, or publishing adapter is introduced. The short-lived Phase 7B
+Redis guard remains bounded protection rather than durable exactly-once Queue
+creation.
+
+**Acceptance evidence so far:** Linux backend verification passed (483 tests
+passed, 13 skipped), focused Phase 8B tests passed, PostgreSQL migration and
+Queue tests passed, real Redis guard tests passed, and Ruff passed. CI and the
+pull request remain the release gate.
 
 ```text
 Automation
  ↓
-QueueService.create()
+POST /automation/queue/prepare
+ ↓
+QueueService.create_automation_scheduled()
  ↓
 Scheduled Queue Item
  ↓
@@ -872,6 +897,10 @@ User → Queue
 Automation:
 AutomationService → Queue
 ```
+
+Phase 8B does not implement `run_due_automations`, Beat registration, or
+automatic discovery/generation. Phase 8C/Phase 9 remain responsible for any
+future unattended activation and stronger durable idempotency requirements.
 
 وبعد Queue يصبح المسار واحداً.
 

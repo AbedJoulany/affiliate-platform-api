@@ -10,7 +10,12 @@ from pydantic import BaseModel
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.enums import BotPermissionStatus, FacebookPageValidationStatus, QueueStatus
+from app.core.enums import (
+    BotPermissionStatus,
+    FacebookPageValidationStatus,
+    ProductStatus,
+    QueueStatus,
+)
 from app.events.publisher import NullEventPublisher
 from app.events.schemas import (
     EVENT_ENVELOPE_VERSION,
@@ -55,6 +60,7 @@ from app.services.exceptions import (
     TelegramPublishError,
     ValidationError,
 )
+from app.services.recommendations import RecommendationService
 from app.telegram.publisher import TelegramPublisher
 from app.telegram.types import InlineUrlButton, TelegramPublishResult
 
@@ -776,6 +782,63 @@ class QueueService:
     async def create(self, payload: QueueCreate, workspace_id: UUID) -> QueueItem:
         self._validate_status_scheduling(payload.status, payload.scheduled_at)
         product = await self._load_product(payload.product_id)
+        return await self._create_with_product(payload, workspace_id, product)
+
+    async def create_automation_scheduled(
+        self,
+        payload: QueueCreate,
+        workspace_id: UUID,
+        *,
+        expected_affiliate_url: str,
+    ) -> QueueItem:
+        """Create one automation-owned scheduled item after final revalidation.
+
+        The product row is locked before the history and affiliate checks. AI
+        generation happens outside this method, so no database lock is held
+        while an external provider is called.
+        """
+        if payload.status != QueueStatus.SCHEDULED:
+            raise ValidationError("Automation Queue items must be scheduled")
+        if payload.product_id is None:
+            raise ValidationError("Automation Queue items require a product")
+        if payload.scheduled_at is None or payload.scheduled_at <= datetime.now(UTC):
+            raise ValidationError("Automation scheduled_at must be in the future")
+        product = await self._load_product(payload.product_id)
+        if product.status != ProductStatus.ACTIVE:
+            raise ValidationError("Product is no longer eligible for automation")
+        if not RecommendationService.has_valid_affiliate_url(product.affiliate_url):
+            raise ValidationError("Product no longer has a valid affiliate URL")
+        if product.affiliate_url != expected_affiliate_url:
+            raise ConflictError("Product affiliate URL changed; regenerate before scheduling")
+
+        now = datetime.now(UTC)
+        history = await self.queue_repo.product_publishing_history(
+            workspace_id,
+            [product.id],
+            now=now,
+            recent_window_start=now - timedelta(days=7),
+        )
+        if (
+            product.id in history.queued_or_scheduled
+            or product.id in history.recently_published
+            or product.id in history.unresolved_ambiguous
+        ):
+            raise ConflictError("Product is already reserved or recently published")
+
+        canonical_payload = payload.model_copy(
+            update={
+                "button_text": payload.button_text or DEFAULT_AFFILIATE_BUTTON_TEXT,
+                "button_url": product.affiliate_url,
+            }
+        )
+        return await self._create_with_product(canonical_payload, workspace_id, product)
+
+    async def _create_with_product(
+        self,
+        payload: QueueCreate,
+        workspace_id: UUID,
+        product: Product | None,
+    ) -> QueueItem:
         channel_id = None
         facebook_page_id = None
         if payload.provider == "telegram":
@@ -789,7 +852,11 @@ class QueueService:
         image_url, button_text, button_url = self._resolve_create_media(payload, product)
 
         item = QueueItem(
-            title=payload.title,
+            title=(
+                payload.title
+                if payload.title is not None
+                else (product.title if product else None)
+            ),
             content=payload.content,
             status=payload.status,
             scheduled_at=payload.scheduled_at,
@@ -1035,7 +1102,7 @@ class QueueService:
     async def _load_product(self, product_id: UUID | None) -> Product | None:
         if product_id is None:
             return None
-        product = await self.product_repo.get_by_id(product_id)
+        product = await self.product_repo.get_by_id_for_update(product_id)
         if not product:
             raise NotFoundError("Product not found")
         return product

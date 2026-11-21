@@ -236,6 +236,48 @@ class QueueRepository(BaseRepository[QueueItem]):
             unresolved_ambiguous=frozenset(ambiguous_result.scalars().all()),
         )
 
+    async def list_destination_publishing_timestamps(
+        self,
+        *,
+        workspace_id: UUID,
+        provider: str,
+        destination_id: UUID,
+        start_utc: datetime,
+        end_utc: datetime,
+    ) -> list[datetime]:
+        """Return bounded scheduled/published timestamps for one destination."""
+        destination_filter = (
+            QueueItem.channel_id == destination_id
+            if provider == "telegram"
+            else QueueItem.facebook_page_id == destination_id
+        )
+        result = await self.session.execute(
+            select(QueueItem.scheduled_at, QueueItem.published_at)
+            .where(
+                QueueItem.workspace_id == workspace_id,
+                QueueItem.provider == provider,
+                destination_filter,
+                or_(
+                    and_(
+                        QueueItem.status == QueueStatus.SCHEDULED,
+                        QueueItem.scheduled_at >= start_utc,
+                        QueueItem.scheduled_at < end_utc,
+                    ),
+                    and_(
+                        QueueItem.status == QueueStatus.PUBLISHED,
+                        QueueItem.published_at >= start_utc,
+                        QueueItem.published_at < end_utc,
+                    ),
+                ),
+            )
+        )
+        timestamps: list[datetime] = []
+        for scheduled_at, published_at in result.all():
+            timestamp = scheduled_at if scheduled_at is not None else published_at
+            if timestamp is not None:
+                timestamps.append(timestamp)
+        return timestamps
+
 
 class QueuePublishAttemptRepository(BaseRepository[QueuePublishAttempt]):
     def __init__(self, session: AsyncSession) -> None:

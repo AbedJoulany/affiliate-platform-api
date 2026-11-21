@@ -133,6 +133,7 @@ not provide public onboarding UI.
 | PATCH/DELETE | `/api/v1/facebook/pages/{id}` | Replace, disable, or remove a Page connection |
 | POST | `/api/v1/ai-content/generate` | Manual AI Studio generation by `product_id` or `url` |
 | POST | `/api/v1/automation/content/preview` | Explicit, paid, stateless generation preview for up to two server-selected products |
+| POST | `/api/v1/automation/queue/prepare` | Explicit, cost-confirmed preparation of up to two validated products as scheduled Queue items; `execution_available` remains false |
 | GET | `/api/v1/products/recommendations` | Authenticated deterministic recommendations |
 | POST | `/api/v1/queues` | Create queue item |
 | GET | `/api/v1/queues` | List queue items (filter by status, paginated) |

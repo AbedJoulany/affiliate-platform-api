@@ -587,6 +587,35 @@ kept for 240 seconds; a provider call that may have started retains that bounded
 guard after timeout, cancellation, or transport uncertainty. Deliberate retries
 after the guard expires may incur new charges.
 
+### 4.15 Explicit automation-to-scheduled-Queue preparation (Phase 8B)
+
+`POST /automation/queue/prepare` is an authenticated, explicitly requested
+workspace operation. Authorized workspace members may invoke it with the saved
+policy revision, `max_products` from 1 to 2,
+`acknowledge_ai_cost: true`, `confirm_scheduled_publishing: true`, and an
+opaque idempotency key. The request does not accept product IDs, generated text,
+provider overrides, destination IDs, or affiliate URLs from the client.
+
+The service reuses Phase 6B discovery and Phase 7B generation, then revalidates
+the current active product, workspace-owned ready destination, policy revision,
+publishing history, and canonical `Product.affiliate_url` before each Queue
+write. `Product.product_url` is never substituted. Successful results create
+`SCHEDULED` items through the existing QueueService; no draft, parallel Queue,
+automation run table, Celery automation task, direct provider call, or
+publishing adapter is added. Queue writes are committed per product so one
+failure does not erase an earlier successful item.
+
+The saved workspace timezone and `posts_per_day` limit determine future UTC
+slots. Existing scheduled and published items for the selected destination
+count against the local-day limit. DST gaps are moved to the first valid wall
+clock minute and ambiguous fall-back times choose the earlier occurrence.
+Invalid timezone, stale policy, missing destination readiness, missing affiliate
+URL, duplicate/history conflict, or no available slot fails closed with a
+typed per-product result. The response always keeps `execution_available: false`
+and warns that due scheduled items may later be published by the existing Queue
+scheduler. The short-lived Redis guard reduces repeated preparation requests;
+it is not a durable exactly-once claim.
+
 ---
 
 ## 5. View → Contract Mapping
@@ -603,7 +632,7 @@ after the guard expires may incur new charges.
 | **Schedule dialog** | `PATCH /queues/{id}` | `scheduled_at`, `provider`, and the provider-specific destination; mixed-provider bulk scheduling is guarded |
 | **Channels / Pages** | `GET/POST/PUT /channels`, `GET/POST/PATCH/DELETE /facebook/pages` | Telegram permission status and active state; Facebook Page name, active/validated state, and `has_access_token` only |
 | **Dashboard** | `GET /dashboard` | Product counts remain global (shared catalog); queue/channel aggregates and queue activity are workspace-scoped via `X-Workspace-Id` |
-| **Automation settings** | `GET/PATCH /automation/config` and frontend `/automation/settings` | Policy filters, destination readiness, revision, daily schedule, nullable AI overrides; saved intent only, `execution_available` remains false, and no execution side effects |
+| **Automation settings / Queue preparation** | `GET/PATCH /automation/config`, `POST /automation/queue/prepare`, and frontend `/automation/settings` | Saved policy and destination readiness; explicit cost-confirmed preparation creates up to two scheduled Queue items; `execution_available` remains false |
 | **Analytics** | `GET /analytics/overview`, `GET /analytics/campaigns/{id}/funnel` | Workspace-scoped click/conversion KPIs and `by_day`; funnel uses `GET /campaigns/active` for the selector |
 | **Settings** | `GET/PATCH /workspace-settings`, `GET /ready` | Workspace prefs + connection booleans; `/ready` is db/redis only |
 | **Profile** | `GET/PATCH /auth/me` | `full_name`, `email`; role/`is_active` read-only |
