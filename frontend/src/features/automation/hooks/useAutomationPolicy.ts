@@ -15,7 +15,7 @@ export function useAutomationPolicy() {
     queryKey: workspaceId
       ? automationPolicyKey(workspaceId)
       : (["automation", "none"] as const),
-    queryFn: getAutomationPolicy,
+    queryFn: ({ queryKey }) => getAutomationPolicy(queryKey[1] as string),
     enabled: Boolean(workspaceId),
     retry: false,
   });
@@ -23,12 +23,16 @@ export function useAutomationPolicy() {
 
 export function usePatchAutomationPolicy() {
   const client = useQueryClient();
-  const workspaceId = useActiveWorkspaceId();
-  return useMutation<AutomationPolicy, ApiError, AutomationPolicyPatch>({
-    mutationFn: patchAutomationPolicy,
-    onSuccess: (data) => {
-      if (workspaceId) {
-        client.setQueryData(automationPolicyKey(workspaceId), data);
+  return useMutation<
+    AutomationPolicy,
+    ApiError,
+    { workspaceId: string; patch: AutomationPolicyPatch }
+  >({
+    mutationFn: ({ workspaceId: targetWorkspaceId, patch }) =>
+      patchAutomationPolicy(targetWorkspaceId, patch),
+    onSuccess: (data, variables) => {
+      if (data.workspace_id === variables.workspaceId) {
+        client.setQueryData(automationPolicyKey(variables.workspaceId), data);
       }
     },
   });

@@ -8,7 +8,7 @@ import {
 } from "@/lib/workspace";
 import { apiClient, MISSING_WORKSPACE_ERROR } from "./api-client";
 import { session } from "./session";
-import { WORKSPACE_A } from "@/test/workspace";
+import { WORKSPACE_A, WORKSPACE_B } from "@/test/workspace";
 
 type MockResult = { status: number; data?: unknown };
 
@@ -82,6 +82,21 @@ describe("apiClient workspace header", () => {
       "/workspace-settings": WORKSPACE_A,
       "/automation/config": WORKSPACE_A,
     });
+  });
+
+  it("honors an explicit workspace binding when the active workspace changes before dispatch", async () => {
+    setActiveWorkspaceId(WORKSPACE_A);
+    let seen: string | undefined;
+    installAdapter((config) => {
+      seen = headerValue(config, WORKSPACE_HEADER);
+      return { status: 200, data: {} };
+    });
+
+    const pending = apiClient.get("/automation/config", { workspaceId: WORKSPACE_A });
+    setActiveWorkspaceId(WORKSPACE_B);
+    await pending;
+
+    expect(seen).toBe(WORKSPACE_A);
   });
 
   it("blocks workspace-scoped requests when no workspace is active and does not send a header", async () => {

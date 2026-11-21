@@ -57,11 +57,11 @@ export const automationFormSchema = z
     length: z.enum(["", "short", "medium", "long"]),
   })
   .superRefine((values, context) => {
-    if (values.destination_provider && !values.destination_id) {
+    if (values.enabled && (!values.destination_provider || !values.destination_id)) {
       context.addIssue({
         code: "custom",
         path: ["destination_id"],
-        message: "اختر وجهة نشر صالحة",
+        message: "اختر وجهة نشر صالحة قبل تفعيل الرغبة في الأتمتة",
       });
     }
     if (

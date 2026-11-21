@@ -4,7 +4,7 @@ import { createElement, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setActiveWorkspaceId } from "@/lib/workspace";
 import { session } from "@/services/session";
-import { WORKSPACE_A } from "@/test/workspace";
+import { WORKSPACE_A, WORKSPACE_B } from "@/test/workspace";
 import { AutomationSettingsView } from "./AutomationSettingsView";
 import type { AutomationPolicy } from "../types/api";
 
@@ -77,8 +77,11 @@ describe("AutomationSettingsView", () => {
     fireEvent.click(screen.getByRole("button", { name: "حفظ التغييرات" }));
     await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
     expect(mutate.mock.calls[0][0]).toMatchObject({
-      expected_revision: 0,
-      discovery: { keywords: "سماعات" },
+      workspaceId: WORKSPACE_A,
+      patch: {
+        expected_revision: 0,
+        discovery: { keywords: "سماعات" },
+      },
     });
     expect(screen.queryByRole("button", { name: /تشغيل|نشر/ })).not.toBeInTheDocument();
   });
@@ -93,6 +96,74 @@ describe("AutomationSettingsView", () => {
     fireEvent.click(screen.getByRole("button", { name: "حفظ التغييرات" }));
     await waitFor(() => expect(screen.getByText(/تغيّرت الإعدادات/)).toBeInTheDocument());
     expect(screen.getByDisplayValue("تغيير محلي")).toBeInTheDocument();
+    expect(mutate).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows saving a disabled provider-only draft as an incomplete configuration", async () => {
+    setActiveWorkspaceId(WORKSPACE_A);
+    renderView();
+    fireEvent.change(screen.getByLabelText("منصة النشر"), { target: { value: "facebook" } });
+    fireEvent.click(screen.getByRole("button", { name: "حفظ التغييرات" }));
+
+    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
+    expect(mutate.mock.calls[0][0]).toMatchObject({
+      workspaceId: WORKSPACE_A,
+      patch: { destination: null },
+    });
+  });
+
+  it("rejects enabling without a destination before calling PATCH", async () => {
+    setActiveWorkspaceId(WORKSPACE_A);
+    renderView();
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "حفظ التغييرات" }));
+
+    await waitFor(() => expect(screen.getByText(/اختر وجهة نشر صالحة/)).toBeInTheDocument());
+    expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it("remounts workspace-specific form state after switching workspaces", async () => {
+    setActiveWorkspaceId(WORKSPACE_A);
+    renderView();
+    fireEvent.change(screen.getByLabelText("الكلمات المفتاحية"), { target: { value: "مسودة المساحة الأولى" } });
+    setActiveWorkspaceId(WORKSPACE_B);
+
+    await waitFor(() => expect(screen.getByLabelText("الكلمات المفتاحية")).toHaveValue(""));
+    expect(screen.queryByDisplayValue("مسودة المساحة الأولى")).not.toBeInTheDocument();
+  });
+
+  it("does not retain workspace A edits when a pending save is followed by a switch", async () => {
+    setActiveWorkspaceId(WORKSPACE_A);
+    mutate.mockImplementation(() => undefined);
+    renderView();
+    fireEvent.change(screen.getByLabelText("الكلمات المفتاحية"), { target: { value: "حفظ معلق" } });
+    fireEvent.click(screen.getByRole("button", { name: "حفظ التغييرات" }));
+    await waitFor(() => expect(mutate).toHaveBeenCalledTimes(1));
+
+    setActiveWorkspaceId(WORKSPACE_B);
+    await waitFor(() => expect(screen.getByLabelText("الكلمات المفتاحية")).toHaveValue(""));
+    expect(screen.queryByDisplayValue("حفظ معلق")).not.toBeInTheDocument();
+  });
+
+  it("preserves unsaved edits during a same-workspace background rerender", async () => {
+    setActiveWorkspaceId(WORKSPACE_A);
+    const view = renderView();
+    fireEvent.change(screen.getByLabelText("الكلمات المفتاحية"), { target: { value: "تعديل محفوظ محلياً" } });
+    view.rerender(createElement(AutomationSettingsView));
+
+    await waitFor(() => expect(screen.getByLabelText("الكلمات المفتاحية")).toHaveValue("تعديل محفوظ محلياً"));
+  });
+
+  it("keeps backend validation errors authoritative", async () => {
+    setActiveWorkspaceId(WORKSPACE_A);
+    mutate.mockImplementation((_payload: unknown, options: { onError: (error: unknown) => void }) => {
+      options.onError({ status: 422, message: "الوجهة غير جاهزة" });
+    });
+    renderView();
+    fireEvent.change(screen.getByLabelText("الكلمات المفتاحية"), { target: { value: "اختبار" } });
+    fireEvent.click(screen.getByRole("button", { name: "حفظ التغييرات" }));
+
+    await waitFor(() => expect(screen.getByText("الوجهة غير جاهزة")).toBeInTheDocument());
     expect(mutate).toHaveBeenCalledTimes(1);
   });
 });

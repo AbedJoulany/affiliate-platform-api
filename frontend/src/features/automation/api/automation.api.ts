@@ -26,17 +26,21 @@ function parseAutomationPolicy(data: unknown): AutomationPolicy {
   return data as AutomationPolicy;
 }
 
-export async function getAutomationPolicy(): Promise<AutomationPolicy> {
-  const { data } = await apiClient.get<AutomationPolicy>("/automation/config");
+export async function getAutomationPolicy(workspaceId: string): Promise<AutomationPolicy> {
+  const { data } = await apiClient.get<AutomationPolicy>("/automation/config", {
+    workspaceId,
+  });
   return parseAutomationPolicy(data);
 }
 
 export async function patchAutomationPolicy(
+  workspaceId: string,
   input: AutomationPolicyPatch,
 ): Promise<AutomationPolicy> {
   const { data } = await apiClient.patch<AutomationPolicy>(
     "/automation/config",
     input,
+    { workspaceId },
   );
   return parseAutomationPolicy(data);
 }

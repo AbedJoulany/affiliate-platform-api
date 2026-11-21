@@ -87,4 +87,12 @@ describe("automation policy form mappers", () => {
     values.destination_id = "";
     expect(buildAutomationPatch(values, selected).destination).toBeNull();
   });
+
+  it("serializes a disabled provider-only draft as a cleared destination", () => {
+    const values = toAutomationFormValues({ ...policy, destination: null });
+    values.destination_provider = "facebook";
+    values.destination_id = "";
+
+    expect(buildAutomationPatch(values, policy).destination).toBeNull();
+  });
 });

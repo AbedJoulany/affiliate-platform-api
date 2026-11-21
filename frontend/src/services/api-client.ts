@@ -13,6 +13,8 @@ declare module "axios" {
     skipAuthRefresh?: boolean;
     /** Marks a request that has already been retried after one refresh. */
     _authRetried?: boolean;
+    /** Binds a tenant-scoped request to the workspace captured by its caller. */
+    workspaceId?: string;
   }
 }
 
@@ -116,7 +118,7 @@ function applyWorkspaceHeader(config: InternalAxiosRequestConfig): void {
     deleteHeader(config, WORKSPACE_HEADER);
     return;
   }
-  const workspaceId = getActiveWorkspaceId();
+  const workspaceId = config.workspaceId ?? getActiveWorkspaceId();
   if (!workspaceId) {
     deleteHeader(config, WORKSPACE_HEADER);
     throw MISSING_WORKSPACE_ERROR;

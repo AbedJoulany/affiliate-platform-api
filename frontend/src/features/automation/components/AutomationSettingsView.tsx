@@ -68,7 +68,9 @@ export function AutomationSettingsView() {
 
   return (
     <AutomationForm
+      key={workspaceId}
       data={policy.data}
+      workspaceId={workspaceId}
       canEdit={settings.data?.can_edit === true}
       channels={channels.data?.items ?? []}
       pages={pages.data?.items ?? []}
@@ -84,6 +86,7 @@ export function AutomationSettingsView() {
 
 function AutomationForm({
   data,
+  workspaceId,
   canEdit,
   channels,
   pages,
@@ -91,6 +94,7 @@ function AutomationForm({
   onReload,
 }: {
   data: AutomationPolicy;
+  workspaceId: string;
   canEdit: boolean;
   channels: Channel[];
   pages: FacebookPage[];
@@ -151,8 +155,9 @@ function AutomationForm({
 
   function submit(values: AutomationFormValues) {
     setConflict(false);
-    patch.mutate(buildAutomationPatch(values, data), {
+    patch.mutate({ workspaceId, patch: buildAutomationPatch(values, data) }, {
       onSuccess: (next) => {
+        if (next.workspace_id !== workspaceId) return;
         form.reset(toAutomationFormValues(next));
         setToast({ message: "تم حفظ إعدادات الأتمتة.", tone: "success" });
       },
@@ -274,6 +279,9 @@ function AutomationForm({
           {destinationsError && <p className="mt-3 text-sm text-amber-700 dark:text-amber-300">تعذر تحميل بعض الوجهات. لا تغيّر الوجهة المحفوظة دون التحقق من صفحة القنوات.</p>}
           {currentDestination && <DestinationStatus destination={currentDestination} />}
           {!currentDestination && !provider && <p className="mt-3 text-sm text-muted-foreground">لا توجد وجهة محفوظة حالياً.</p>}
+          <p className="mt-3 text-sm text-muted-foreground">
+            يجب اختيار وجهة صالحة قبل حفظ الرغبة في التفعيل. يمكنك حفظ مسودة غير مكتملة مع إبقاء التفعيل متوقفاً.
+          </p>
           {data.warnings.length > 0 && (
             <ul className="mt-4 space-y-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm" aria-label="تحذيرات الإعدادات">
               {data.warnings.map((warning) => <li key={warning}>⚠ {warning}</li>)}
