@@ -3,7 +3,7 @@
 **Document Version:** 3.4
 **Last Updated:** 2026-11-21
 
-> **Current baseline:** PRs through #23 are merged. The Product A MVP includes the provider-aware Telegram/Facebook Queue, operational Dashboard phases 4.2–4.5, migration 020, the Phase 5C automation configuration UI, and the merged Phase 6B bounded read-only catalog preview. Phase 7B adds an explicit stateless content-generation preview on the current feature branch; it does not add unattended execution. Controlled live Facebook text/photo/scheduled publishing was operator-verified separately. Telegram failure/retry and PostgreSQL concurrent row-lock verification remain pending. Use [product-a-mvp-roadmap.md](./product-a-mvp-roadmap.md) for canonical phase status.
+> **Current baseline:** PRs through #23 are merged. The Product A MVP includes the provider-aware Telegram/Facebook Queue, operational Dashboard phases 4.2–4.5, migration 020, the Phase 5C automation configuration UI, and the merged Phase 6B bounded read-only catalog preview. Phase 7B adds an explicit stateless content-generation preview implemented and CI verified in PR #24 (merge pending); it does not add unattended execution. Controlled live Facebook text/photo/scheduled publishing was operator-verified separately. Telegram failure/retry and PostgreSQL concurrent row-lock verification remain pending. Use [product-a-mvp-roadmap.md](./product-a-mvp-roadmap.md) for canonical phase status.
 
 **2026-11-16 revision (Phase 3C.3 closeout):** PR #15 merged the publishing safety
 hardening and regression coverage. Already-published Queue items are rejected inside

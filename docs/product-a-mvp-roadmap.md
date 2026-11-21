@@ -1,10 +1,10 @@
 # Product A MVP — Implementation Roadmap
 
-> **Document status:** Canonical active roadmap. Updated for the merged Phase 5B backend Automation Configuration, Phase 5C frontend configuration, Phase 6B catalog-first discovery, and the Phase 7B preview implementation on its feature branch.
+> **Document status:** Canonical active roadmap. Updated for the merged Phase 5B backend Automation Configuration, Phase 5C frontend configuration, Phase 6B catalog-first discovery, and the Phase 7B preview implemented and CI verified in PR #24 (merge pending).
 > **Repository:** `AbedJoulany/affiliate-platform-api`
 > **Development baseline:** `main` at PR #23 merge commit `8a83e951060a37a3cb10d891eb99d95ee3c1962e`.
 > **Verification source:** merged PRs and CI are implementation evidence; Phase 4.5 adds a traceable validation record. Controlled live provider checks remain separate from mocked tests and CI.
-> **Current development phase:** Phase 7B — Safe Automated Content Generation Preview. Unattended execution remains unavailable.
+> **Current development phase:** Phase 7B — Safe Automated Content Generation Preview, implemented and CI verified in PR #24 (merge pending). Unattended execution remains unavailable.
 
 ### Naming convention
 
@@ -16,7 +16,7 @@
 - **Roadmap Phase 4:** implemented through PRs #17–#19; final validation is documented separately and remains partially verified where local PostgreSQL or staging evidence is unavailable.
 - **Roadmap Phase 5:** implemented and merged through PRs #21–#22; execution remains deferred.
 - **Roadmap Phase 6B:** catalog-first, bounded, read-only discovery preview is implemented and merged via PR #23; no execution or persistence is enabled.
-- **Roadmap Phase 7B:** safe, explicitly triggered content-generation preview is implemented on the current feature branch; verification is pending and no execution or persistence is enabled.
+- **Roadmap Phase 7B:** safe, explicitly triggered content-generation preview is implemented and CI verified in PR #24; merge is pending and no execution or persistence is enabled.
 - **Roadmap Phases 6C, 7C, and 8–11:** planned as described below.
 - A merged PR and green mocked CI do **not** substitute for a live provider test.
 
@@ -40,7 +40,7 @@
 | Phase 5B Automation Configuration backend | Implemented & CI Verified | PR #21, merge commit `a76f6a4ddd7bcf340afc887815eaf1d5100e19e4`; migration `020`; no automation execution |
 | Phase 5C Automation Configuration frontend | Implemented & CI Verified | PR #22; Arabic RTL workspace-scoped GET/PATCH UI; saved intent only; no automation execution |
 | Phase 6B Catalog-First Automation Discovery | Implemented & merged | PR #23, merge commit `8a83e951060a37a3cb10d891eb99d95ee3c1962e`; bounded, workspace-scoped, read-only preview |
-| Phase 7B Safe Automated Content Generation Preview | In progress on feature branch; verification pending | Explicit paid preview for at most two server-selected products; sequential, stateless, validated, no Queue or publishing |
+| Phase 7B Safe Automated Content Generation Preview | Implemented & CI verified in PR #24; merge pending | Explicit paid preview for at most two server-selected products; sequential, stateless, validated, no Queue or publishing |
 | Phase 0 live Telegram verification | Partially verified | Manual publish, image/link delivery, and scheduling verified; failure/retry pending |
 | PR #11 CI | Passed | Backend, frontend, and E2E checks completed successfully |
 | PR #12 documentation synchronization | Completed | Documentation-only roadmap synchronization |
@@ -788,7 +788,7 @@ AutomationService.run(workspace_id)
 
 # 12. Phase 7 — Auto Content Generation
 
-**Phase 7B status:** implemented on the feature branch; verification and review
+**Phase 7B status:** implemented and CI verified in PR #24; merge and review
 are pending. Phase 7B is an explicitly triggered, paid-AI preview only. It
 re-runs Phase 6B selection server-side, processes at most two products
 sequentially, returns stateless structured results, validates canonical affiliate
