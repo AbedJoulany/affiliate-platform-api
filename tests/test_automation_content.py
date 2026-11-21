@@ -584,6 +584,54 @@ async def test_content_preview_provider_failure_stops_remaining_paid_calls(clien
 
 
 @pytest.mark.asyncio
+async def test_deadline_during_discovery_releases_guard_without_provider_call(
+    client,
+    monkeypatch,
+):
+    redis_client = FakeRedis()
+
+    async def get_redis():
+        return redis_client
+
+    async def slow_discovery(self, user, workspace_id):
+        del self, user, workspace_id
+        await asyncio.sleep(1)
+
+    monkeypatch.setattr(
+        "app.services.automation_content.get_automation_generation_redis",
+        get_redis,
+    )
+    monkeypatch.setattr(
+        "app.services.automation_content.REQUEST_DEADLINE_SECONDS",
+        0.05,
+    )
+    monkeypatch.setattr(
+        "app.services.automation_content.AutomationDiscoveryService.preview",
+        slow_discovery,
+    )
+    calls = _provider(monkeypatch)
+    _, token = await register_and_login(client, role="user")
+    headers = await workspace_auth_headers(token)
+    workspace_id = headers[WORKSPACE_ID_HEADER]
+    await _create_policy(workspace_id, products_per_run=1)
+
+    response = await client.post(
+        PREVIEW,
+        headers=headers,
+        json={
+            "expected_policy_revision": 1,
+            "max_products": 1,
+            "acknowledge_ai_cost": True,
+            "idempotency_key": "slow-discovery-deadline",
+        },
+    )
+
+    assert response.status_code == 503
+    assert calls == []
+    assert redis_client.values == {}
+
+
+@pytest.mark.asyncio
 async def test_timeout_after_provider_invocation_retains_guard(client, monkeypatch):
     redis_client = FakeRedis()
 
@@ -617,15 +665,16 @@ async def test_timeout_after_provider_invocation_retains_guard(client, monkeypat
     _, token = await register_and_login(client, role="user")
     headers = await workspace_auth_headers(token)
     workspace_id = headers[WORKSPACE_ID_HEADER]
-    await _create_policy(workspace_id, products_per_run=1)
-    await _create_product(title="uncertain provider product")
+    await _create_policy(workspace_id, products_per_run=2)
+    await _create_product(title="uncertain provider product one")
+    await _create_product(title="uncertain provider product two")
 
     first = await client.post(
         PREVIEW,
         headers=headers,
         json={
             "expected_policy_revision": 1,
-            "max_products": 1,
+            "max_products": 2,
             "acknowledge_ai_cost": True,
             "idempotency_key": "uncertain-timeout-1",
         },
@@ -635,7 +684,7 @@ async def test_timeout_after_provider_invocation_retains_guard(client, monkeypat
         headers=headers,
         json={
             "expected_policy_revision": 1,
-            "max_products": 1,
+            "max_products": 2,
             "acknowledge_ai_cost": True,
             "idempotency_key": "uncertain-timeout-2",
         },
@@ -643,6 +692,7 @@ async def test_timeout_after_provider_invocation_retains_guard(client, monkeypat
 
     assert first.status_code == 200
     assert first.json()["results"][0]["status"] == "failed_timeout"
+    assert first.json()["results"][1]["status"] == "skipped_after_global_failure"
     assert second.status_code == 409
     assert calls == 1
     assert len(redis_client.values) == 2

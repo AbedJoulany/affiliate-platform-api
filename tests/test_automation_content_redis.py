@@ -47,6 +47,8 @@ def _preferences() -> EffectiveContentPreferences:
 async def isolated_redis():
     url = os.getenv("PHASE7B_REDIS_URL")
     if not url:
+        if os.getenv("PHASE7B_REDIS_REQUIRED") == "1":
+            pytest.fail("PHASE7B_REDIS_URL is required for this verification job")
         pytest.skip("PHASE7B_REDIS_URL is not configured")
     client = Redis.from_url(url, decode_responses=True)
     try:

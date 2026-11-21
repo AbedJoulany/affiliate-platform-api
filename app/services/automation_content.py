@@ -100,6 +100,10 @@ class _GuardClaim:
     started_at: float
 
 
+class _GenerationDeadlineExceeded(Exception):
+    """Internal signal for the total protected execution deadline."""
+
+
 class AutomationContentGenerationService:
     """Explicit, stateless, non-publishing automation content preview."""
 
@@ -139,8 +143,14 @@ class AutomationContentGenerationService:
         )
         provider_call_started = False
         try:
-            discovery = await AutomationDiscoveryService(self.session).preview(user, workspace_id)
-            current_policy = await self.policies.get_by_workspace_id(workspace_id)
+            discovery = await self._await_with_deadline(
+                AutomationDiscoveryService(self.session).preview(user, workspace_id),
+                claim,
+            )
+            current_policy = await self._await_with_deadline(
+                self.policies.get_by_workspace_id(workspace_id),
+                claim,
+            )
             if (
                 current_policy is None
                 or current_policy.revision != payload.expected_policy_revision
@@ -169,8 +179,14 @@ class AutomationContentGenerationService:
                     )
                     continue
 
-                product = await self.products.get_by_id(selection.product_id)
-                eligibility = await self._revalidate_product(product, workspace_id)
+                product = await self._await_with_deadline(
+                    self.products.get_by_id(selection.product_id),
+                    claim,
+                )
+                eligibility = await self._await_with_deadline(
+                    self._revalidate_product(product, workspace_id),
+                    claim,
+                )
                 if eligibility is not None:
                     results.append(
                         self._result(
@@ -184,11 +200,7 @@ class AutomationContentGenerationService:
                     continue
 
                 try:
-                    remaining = REQUEST_DEADLINE_SECONDS - (
-                        asyncio.get_running_loop().time() - claim.started_at
-                    )
-                    if remaining <= 0:
-                        raise TimeoutError
+                    remaining = self._remaining_seconds(claim)
                     # From this point onward the provider may have received a
                     # billable request even if the caller later times out or
                     # loses the connection.  Keep the bounded guard in that
@@ -307,6 +319,12 @@ class AutomationContentGenerationService:
             if not provider_call_started:
                 await self._release_guard(claim)
             return response
+        except _GenerationDeadlineExceeded as exc:
+            if not provider_call_started:
+                await self._release_guard(claim)
+            raise ServiceUnavailableError(
+                "Content generation deadline exceeded before completion"
+            ) from exc
         except asyncio.CancelledError:
             if not provider_call_started:
                 await self._release_guard(claim)
@@ -315,6 +333,32 @@ class AutomationContentGenerationService:
             if not provider_call_started:
                 await self._release_guard(claim)
             raise
+
+    @staticmethod
+    def _remaining_seconds(claim: _GuardClaim) -> float:
+        remaining = REQUEST_DEADLINE_SECONDS - (
+            asyncio.get_running_loop().time() - claim.started_at
+        )
+        if remaining <= 0:
+            raise _GenerationDeadlineExceeded
+        return remaining
+
+    async def _await_with_deadline(self, awaitable: Any, claim: _GuardClaim) -> Any:
+        """Await one protected operation without exceeding the total budget."""
+        try:
+            remaining = self._remaining_seconds(claim)
+        except _GenerationDeadlineExceeded:
+            close = getattr(awaitable, "close", None)
+            if close is not None:
+                close()
+            raise
+        try:
+            return await asyncio.wait_for(
+                awaitable,
+                timeout=remaining,
+            )
+        except TimeoutError as exc:
+            raise _GenerationDeadlineExceeded from exc
 
     async def _revalidate_product(
         self,
