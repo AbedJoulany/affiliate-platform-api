@@ -15,12 +15,11 @@ from alembic.config import Config
 from sqlalchemy import inspect, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.core.enums import AutomationProvider, UserRole
 from app.models.automation_policy import AutomationPolicy
 from app.models.channel import TelegramChannel
 from app.models.facebook_page import FacebookPage
 from app.models.workspace import Workspace
-from app.core.enums import BotPermissionStatus, FacebookPageValidationStatus
+from app.core.enums import BotPermissionStatus, FacebookPageValidationStatus, UserRole
 from app.schemas.automation_policy import AutomationPolicyPatch
 from app.services.automation_policy import AutomationPolicyService
 from app.services.exceptions import ConflictError, ValidationError
@@ -116,8 +115,14 @@ async def test_postgres_migration_constraints_and_indexes(pg_db):
             )
         columns, checks, foreign_keys, uniques, indexes = await conn.run_sync(inspect_schema)
 
-    assert {"id", "workspace_id", "revision", "enabled", "telegram_channel_id", "facebook_page_id"} <= columns
-    assert {"ck_automation_policies_provider", "ck_automation_policies_products_per_run"} <= checks
+    assert {
+        "id", "workspace_id", "revision", "enabled",
+        "telegram_channel_id", "facebook_page_id",
+    } <= columns
+    assert {
+        "ck_automation_policies_provider",
+        "ck_automation_policies_products_per_run",
+    } <= checks
     assert any("workspace_id" in c["column_names"] for c in uniques)
     for column in ("telegram_channel_id", "facebook_page_id"):
         assert any(
@@ -141,10 +146,16 @@ async def test_postgres_concurrent_first_write_is_singleton(pg_db):
     gate = asyncio.Event()
 
     first = asyncio.create_task(
-        _attempt_patch(sessions, workspace_id, {"expected_revision": 0, "discovery": {"products_per_run": 7}}, gate)
+        _attempt_patch(
+            sessions, workspace_id,
+            {"expected_revision": 0, "discovery": {"products_per_run": 7}}, gate,
+        )
     )
     second = asyncio.create_task(
-        _attempt_patch(sessions, workspace_id, {"expected_revision": 0, "discovery": {"products_per_run": 9}}, gate)
+        _attempt_patch(
+            sessions, workspace_id,
+            {"expected_revision": 0, "discovery": {"products_per_run": 9}}, gate,
+        )
     )
     gate.set()
     results = await asyncio.wait_for(asyncio.gather(first, second), timeout=20)
@@ -170,10 +181,16 @@ async def test_postgres_concurrent_stale_revision_is_rejected(pg_db):
 
     gate = asyncio.Event()
     first = asyncio.create_task(
-        _attempt_patch(sessions, workspace_id, {"expected_revision": 1, "schedule": {"posts_per_day": 2}}, gate)
+        _attempt_patch(
+            sessions, workspace_id,
+            {"expected_revision": 1, "schedule": {"posts_per_day": 2}}, gate,
+        )
     )
     second = asyncio.create_task(
-        _attempt_patch(sessions, workspace_id, {"expected_revision": 1, "schedule": {"posts_per_day": 3}}, gate)
+        _attempt_patch(
+            sessions, workspace_id,
+            {"expected_revision": 1, "schedule": {"posts_per_day": 3}}, gate,
+        )
     )
     gate.set()
     results = await asyncio.wait_for(asyncio.gather(first, second), timeout=20)
@@ -193,14 +210,18 @@ async def test_postgres_validation_rollback_keeps_revision_and_filters(pg_db):
     async with sessions() as session:
         await AutomationPolicyService(session).patch(
             _Admin(), workspace_id,
-            AutomationPolicyPatch.model_validate({"expected_revision": 0, "discovery": {"min_price": "2.00", "max_price": "10.00"}}),
+            AutomationPolicyPatch.model_validate(
+                {"expected_revision": 0, "discovery": {"min_price": "2.00", "max_price": "10.00"}}
+            ),
         )
         await session.commit()
     async with sessions() as session:
         with pytest.raises(ValidationError):
             await AutomationPolicyService(session).patch(
                 _Admin(), workspace_id,
-                AutomationPolicyPatch.model_validate({"expected_revision": 1, "discovery": {"min_price": "20.00"}}),
+                AutomationPolicyPatch.model_validate(
+                    {"expected_revision": 1, "discovery": {"min_price": "20.00"}}
+                ),
             )
         await session.rollback()
     async with sessions() as session:
