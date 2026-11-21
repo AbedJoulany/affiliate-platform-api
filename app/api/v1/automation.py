@@ -6,12 +6,34 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import HttpWorkspaceId
 from app.auth.dependencies import CurrentUser
 from app.core.database import get_db
+from app.schemas.automation_content import (
+    AutomationContentPreviewRequest,
+    AutomationContentPreviewResponse,
+)
 from app.schemas.automation_discovery import AutomationDiscoveryPreviewResponse
 from app.schemas.automation_policy import AutomationPolicyPatch, AutomationPolicyRead
+from app.services.automation_content import AutomationContentGenerationService
 from app.services.automation_discovery import AutomationDiscoveryService
 from app.services.automation_policy import AutomationPolicyService
 
 router = APIRouter()
+
+
+@router.post(
+    "/content/preview",
+    response_model=AutomationContentPreviewResponse,
+)
+async def preview_automation_content(
+    payload: AutomationContentPreviewRequest,
+    current_user: CurrentUser,
+    workspace_id: HttpWorkspaceId,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> AutomationContentPreviewResponse:
+    return await AutomationContentGenerationService(db).preview(
+        current_user,
+        workspace_id,
+        payload,
+    )
 
 
 @router.post(

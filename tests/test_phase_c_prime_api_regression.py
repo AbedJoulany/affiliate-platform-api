@@ -319,7 +319,8 @@ async def test_ai_generate_non_retryable_preserves_error_contract(
     )
 
     assert response.status_code == 502
-    assert f"permanent-{status_code}" in response.json()["detail"]
+    assert f"permanent-{status_code}" not in response.json()["detail"]
+    assert "provider" in response.json()["detail"]
     assert _total_httpx_posts() == 1
     assert sleeps == []
 

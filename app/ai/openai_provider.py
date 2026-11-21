@@ -64,10 +64,25 @@ class OpenAIProvider(AIProvider):
         try:
             data = await execute_with_retries(_request_once, provider=self.name)
         except httpx.HTTPStatusError as exc:
-            detail = exc.response.text
-            raise AIProviderError(f"OpenAI request failed: {detail}") from exc
+            status_code = exc.response.status_code
+            if status_code in {401, 403}:
+                category = "provider_authentication_error"
+                detail = "OpenAI provider authentication failed"
+            elif status_code == 429:
+                category = "provider_rate_limited"
+                detail = "OpenAI provider rate limit exceeded"
+            elif status_code >= 500:
+                category = "provider_unavailable"
+                detail = "OpenAI provider unavailable"
+            else:
+                category = "provider_request_error"
+                detail = "OpenAI provider request failed"
+            raise AIProviderError(detail, category=category) from exc
         except httpx.HTTPError as exc:
-            raise AIProviderError(f"OpenAI request failed: {exc}") from exc
+            raise AIProviderError(
+                "OpenAI provider network request failed",
+                category="provider_unavailable",
+            ) from exc
 
         try:
             return data["choices"][0]["message"]["content"].strip()

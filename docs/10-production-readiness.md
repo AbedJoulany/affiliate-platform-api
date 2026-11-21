@@ -3,7 +3,7 @@
 **Document Version:** 3.4
 **Last Updated:** 2026-11-21
 
-> **Current baseline:** PRs through #22 are merged. The Product A MVP includes the provider-aware Telegram/Facebook Queue, operational Dashboard phases 4.2–4.5, migration 020, and the Phase 5C automation configuration UI. Phase 6B adds a bounded, read-only catalog discovery preview on the current feature branch; it does not add execution. Controlled live Facebook text/photo/scheduled publishing was operator-verified separately. Telegram failure/retry and PostgreSQL concurrent row-lock verification remain pending. Use [product-a-mvp-roadmap.md](./product-a-mvp-roadmap.md) for canonical phase status.
+> **Current baseline:** PRs through #23 are merged. The Product A MVP includes the provider-aware Telegram/Facebook Queue, operational Dashboard phases 4.2–4.5, migration 020, the Phase 5C automation configuration UI, and the merged Phase 6B bounded read-only catalog preview. Phase 7B adds an explicit stateless content-generation preview implemented and CI verified in PR #24 (merge pending); it does not add unattended execution. Controlled live Facebook text/photo/scheduled publishing was operator-verified separately. Telegram failure/retry and PostgreSQL concurrent row-lock verification remain pending. Use [product-a-mvp-roadmap.md](./product-a-mvp-roadmap.md) for canonical phase status.
 
 **2026-11-16 revision (Phase 3C.3 closeout):** PR #15 merged the publishing safety
 hardening and regression coverage. Already-published Queue items are rejected inside
@@ -113,6 +113,23 @@ Queue records, call AI or provider APIs, invoke Celery, or change policy
 revisions. The one-row probe reports truncation without claiming global ranking
 optimality. Automatic discovery, AI generation, Queue creation, scheduling, and
 publishing remain future phases.
+
+### Phase 7B content-generation preview
+
+The authenticated `POST /api/v1/automation/content/preview` endpoint is an
+explicit paid-AI preview, separate from unattended execution. It requires a
+saved policy revision, workspace authorization, an opaque idempotency key, and
+an explicit cost acknowledgment. It re-evaluates Phase 6B selection on the
+server, processes at most two products sequentially, validates the current
+active product and canonical affiliate URL, and returns stateless per-product
+results requiring human review.
+
+Provider errors are sanitized; raw provider response bodies and credentials are
+not returned. Redis duplicate protection is short-lived and does not claim
+exactly-once generation or billing. The endpoint does not create Queue items,
+schedule or publish posts, register Celery automation, persist generated drafts,
+or change `execution_available: false`. Phase 8 Queue integration and later
+automation execution remain deferred.
 
 ---
 

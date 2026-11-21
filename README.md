@@ -131,7 +131,8 @@ not provide public onboarding UI.
 | GET/POST | `/api/v1/facebook/pages` | List or connect Facebook Pages |
 | POST | `/api/v1/facebook/pages/{id}/validate` | Revalidate a Page token |
 | PATCH/DELETE | `/api/v1/facebook/pages/{id}` | Replace, disable, or remove a Page connection |
-| POST | `/api/v1/ai-content/generate` | Generate Arabic marketing content by `product_id` or `url` |
+| POST | `/api/v1/ai-content/generate` | Manual AI Studio generation by `product_id` or `url` |
+| POST | `/api/v1/automation/content/preview` | Explicit, paid, stateless generation preview for up to two server-selected products |
 | GET | `/api/v1/products/recommendations` | Authenticated deterministic recommendations |
 | POST | `/api/v1/queues` | Create queue item |
 | GET | `/api/v1/queues` | List queue items (filter by status, paginated) |
@@ -222,7 +223,7 @@ alembic revision --autogenerate -m "description"
 alembic upgrade head
 ```
 
-The current migration head is `019`. Historical migrations `001–019` must not be edited;
+The current migration head is `020`. Historical migrations `001–020` must not be edited;
 new schema changes require a later additive migration and verified downgrade path.
 
 ## Tests

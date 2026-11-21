@@ -11,6 +11,19 @@ permissions:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      PHASE7B_REDIS_URL: redis://127.0.0.1:6379/15
+      PHASE7B_REDIS_REQUIRED: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -21,6 +34,8 @@ jobs:
       - name: Lint first-party Python
         run: python -m ruff check .
       - run: python -m pytest -q
+      - name: Verify Phase 7B Redis integration
+        run: python -m pytest -q tests/test_automation_content_redis.py
 
   backend-postgres:
     runs-on: ubuntu-latest

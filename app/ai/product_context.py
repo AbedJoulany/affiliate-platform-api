@@ -26,6 +26,7 @@ class ProductContext:
             title=product.title,
             product_url=product.product_url,
             affiliate_url=product.affiliate_url,
+            description=product.description,
             price=product.price,
             discount=product.discount,
             rating=product.rating,
