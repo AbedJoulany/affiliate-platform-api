@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -51,9 +52,18 @@ from app.services.workspace_settings import WorkspaceSettingsService
 logger = logging.getLogger(__name__)
 
 MAX_PRODUCTS = 2
-GUARD_TTL_SECONDS = 180
 REQUEST_DEADLINE_SECONDS = 180
+# Keep the duplicate/uncertain-outcome guard alive beyond the maximum active
+# request window.  This is bounded protection, not durable exactly-once billing.
+GUARD_TTL_SECONDS = REQUEST_DEADLINE_SECONDS + 60
 PUBLISHED_LOOKBACK = timedelta(days=7)
+
+_COMPARE_AND_DELETE_SCRIPT = """
+if redis.call('get', KEYS[1]) == ARGV[1] then
+    return redis.call('del', KEYS[1])
+end
+return 0
+"""
 
 _generation_redis: Any | None = None
 
@@ -84,8 +94,9 @@ class EffectiveContentPreferences:
 class _GuardClaim:
     client: Any
     idempotency_key: str
+    idempotency_record: str
     fingerprint_key: str
-    fingerprint: str
+    fingerprint_owner: str
     started_at: float
 
 
@@ -126,6 +137,7 @@ class AutomationContentGenerationService:
             payload=payload,
             preferences=preferences,
         )
+        provider_call_started = False
         try:
             discovery = await AutomationDiscoveryService(self.session).preview(user, workspace_id)
             current_policy = await self.policies.get_by_workspace_id(workspace_id)
@@ -177,6 +189,11 @@ class AutomationContentGenerationService:
                     )
                     if remaining <= 0:
                         raise TimeoutError
+                    # From this point onward the provider may have received a
+                    # billable request even if the caller later times out or
+                    # loses the connection.  Keep the bounded guard in that
+                    # case rather than permitting an immediate duplicate.
+                    provider_call_started = True
                     generated = await asyncio.wait_for(
                         self.ai.generate_for_product(
                             product,
@@ -274,7 +291,7 @@ class AutomationContentGenerationService:
                 )
 
             generated_count = sum(item.status == "generated" for item in results)
-            return AutomationContentPreviewResponse(
+            response = AutomationContentPreviewResponse(
                 workspace_id=workspace_id,
                 policy_id=policy.id,
                 policy_revision=payload.expected_policy_revision,
@@ -287,11 +304,16 @@ class AutomationContentGenerationService:
                 results=results,
                 warnings=warnings,
             )
+            if not provider_call_started:
+                await self._release_guard(claim)
+            return response
         except asyncio.CancelledError:
-            await self._release_guard(claim)
+            if not provider_call_started:
+                await self._release_guard(claim)
             raise
         except Exception:
-            await self._release_guard(claim)
+            if not provider_call_started:
+                await self._release_guard(claim)
             raise
 
     async def _revalidate_product(
@@ -376,15 +398,24 @@ class AutomationContentGenerationService:
         payload: AutomationContentPreviewRequest,
         preferences: EffectiveContentPreferences,
     ) -> _GuardClaim:
+        # The fingerprint deliberately excludes the client idempotency key.
+        # It represents the effective generation request, so equivalent
+        # requests made with different keys still share the short-lived lock.
         canonical = json.dumps(
             {
+                "version": 1,
                 "workspace_id": str(workspace_id),
                 "user_id": str(user_id),
                 "policy_revision": policy.revision,
                 "max_products": payload.max_products,
                 "provider": preferences.provider.value,
-                "idempotency_key": payload.idempotency_key,
+                "language": preferences.language.value,
+                "tone": preferences.tone.value,
+                "content_type": preferences.content_type.value,
+                "length": preferences.length.value,
+                "acknowledge_ai_cost": payload.acknowledge_ai_cost,
             },
+            separators=(",", ":"),
             sort_keys=True,
         )
         fingerprint = hashlib.sha256(canonical.encode()).hexdigest()
@@ -393,54 +424,104 @@ class AutomationContentGenerationService:
         ).hexdigest()
         idempotency_key = f"automation:content:idempotency:{key_hash}"
         fingerprint_key = f"automation:content:fingerprint:{fingerprint}"
+        fingerprint_owner = secrets.token_hex(16)
+        idempotency_record = json.dumps(
+            {"fingerprint": fingerprint, "owner": fingerprint_owner},
+            separators=(",", ":"),
+            sort_keys=True,
+        )
         claimed_idempotency = False
+        client: Any | None = None
         try:
             client = await get_automation_generation_redis()
             existing = await client.get(idempotency_key)
-            if existing is not None and existing != fingerprint:
-                raise ConflictError("Idempotency key was used with different request parameters")
             if existing is not None:
-                raise ConflictError("Duplicate content generation request")
+                self._raise_idempotency_conflict(existing, fingerprint)
             if not await client.set(
                 idempotency_key,
-                fingerprint,
+                idempotency_record,
                 nx=True,
                 ex=GUARD_TTL_SECONDS,
             ):
-                raise ConflictError("Duplicate content generation request")
+                existing = await client.get(idempotency_key)
+                if existing is None:
+                    raise ServiceUnavailableError(
+                        "Content generation duplicate protection is unavailable"
+                    )
+                self._raise_idempotency_conflict(existing, fingerprint)
             claimed_idempotency = True
             if not await client.set(
                 fingerprint_key,
-                fingerprint,
+                fingerprint_owner,
                 nx=True,
                 ex=GUARD_TTL_SECONDS,
             ):
-                await client.delete(idempotency_key)
-                raise ConflictError("Duplicate content generation request")
+                await self._compare_and_delete(
+                    client,
+                    idempotency_key,
+                    idempotency_record,
+                )
+                raise ConflictError(
+                    "Equivalent content generation request is already protected"
+                )
             return _GuardClaim(
                 client,
                 idempotency_key,
+                idempotency_record,
                 fingerprint_key,
-                fingerprint,
+                fingerprint_owner,
                 asyncio.get_running_loop().time(),
             )
         except ConflictError:
             raise
+        except ServiceUnavailableError:
+            raise
+        except asyncio.CancelledError:
+            if claimed_idempotency and client is not None:
+                await self._compare_and_delete(
+                    client,
+                    idempotency_key,
+                    idempotency_record,
+                )
+            raise
         except (RedisError, TimeoutError, OSError, ConnectionError) as exc:
-            if claimed_idempotency:
+            if claimed_idempotency and client is not None:
                 try:
-                    await client.delete(idempotency_key)
+                    await self._compare_and_delete(
+                        client,
+                        idempotency_key,
+                        idempotency_record,
+                    )
                 except Exception:
                     logger.warning("Failed to clean up content generation guard")
             raise ServiceUnavailableError(
                 "Content generation duplicate protection is unavailable"
             ) from exc
 
-    async def _release_guard(self, claim: _GuardClaim) -> None:
+    @staticmethod
+    async def _compare_and_delete(client: Any, key: str, owner: str) -> bool:
+        """Delete a Redis key only when it still belongs to this claim."""
+        result = await client.eval(_COMPARE_AND_DELETE_SCRIPT, 1, key, owner)
+        return bool(result)
+
+    @staticmethod
+    def _raise_idempotency_conflict(existing: str, fingerprint: str) -> None:
         try:
-            if await claim.client.get(claim.idempotency_key) == claim.fingerprint:
-                await claim.client.delete(claim.idempotency_key)
-            if await claim.client.get(claim.fingerprint_key) == claim.fingerprint:
-                await claim.client.delete(claim.fingerprint_key)
-        except Exception:
-            logger.warning("Failed to release content generation duplicate guard")
+            record = json.loads(existing)
+        except (TypeError, ValueError):
+            record = None
+        if not isinstance(record, dict) or record.get("fingerprint") != fingerprint:
+            raise ConflictError("Idempotency key was used with different request parameters")
+        raise ConflictError("Duplicate content generation request")
+
+    async def _release_guard(self, claim: _GuardClaim) -> None:
+        for key, owner in (
+            (claim.idempotency_key, claim.idempotency_record),
+            (claim.fingerprint_key, claim.fingerprint_owner),
+        ):
+            try:
+                await self._compare_and_delete(claim.client, key, owner)
+            except Exception:
+                # Leaving a bounded guard in place is safer than risking
+                # deletion of a newer request's ownership record.
+                logger.warning("Failed to release content generation duplicate guard")

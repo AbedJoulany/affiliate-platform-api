@@ -576,7 +576,16 @@ The endpoint does not create Queue items, schedule posts, publish to Telegram or
 Facebook, invoke Celery, call AliExpress, persist generated content, or change
 `execution_available`, which remains `false`. Redis provides short-lived
 duplicate protection; it is not durable exactly-once generation or billing
-protection. Deliberate retries after the guard expires may incur new charges.
+protection. The client idempotency identity is scoped to the authenticated user,
+workspace, and supplied key. Separately, the generation fingerprint covers the
+authenticated user and workspace, effective policy revision and AI preferences,
+the selected product limit, and the cost acknowledgement, but deliberately
+excludes the client key. Thus the same key with different parameters conflicts,
+while equivalent requests with different keys are suppressed during the same
+protection window. The request deadline is 180 seconds and the Redis guard is
+kept for 240 seconds; a provider call that may have started retains that bounded
+guard after timeout, cancellation, or transport uncertainty. Deliberate retries
+after the guard expires may incur new charges.
 
 ---
 
