@@ -14,12 +14,12 @@ from alembic.config import Config
 from sqlalchemy import inspect, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from alembic import command
+from app.core.enums import BotPermissionStatus, FacebookPageValidationStatus, UserRole
 from app.models.automation_policy import AutomationPolicy
 from app.models.channel import TelegramChannel
 from app.models.facebook_page import FacebookPage
 from app.models.workspace import Workspace
-from alembic import command
-from app.core.enums import BotPermissionStatus, FacebookPageValidationStatus, UserRole
 from app.schemas.automation_policy import AutomationPolicyPatch
 from app.services.automation_policy import AutomationPolicyService
 from app.services.exceptions import ConflictError, ValidationError
