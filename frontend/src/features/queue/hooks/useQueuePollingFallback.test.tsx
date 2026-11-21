@@ -300,4 +300,33 @@ describe("SSE → polling fallback", () => {
     expect(result.current.pollingEnabled).toBe(true);
     unmount();
   });
+
+  it("does not enable disconnected fallback polling without an access token", async () => {
+    session.setAccessToken("poll-token");
+    let captured: CreateQueueEventStreamOptions | null = null;
+    createStreamMock.mockImplementation(async (options) => {
+      captured = options;
+      await new Promise<void>((resolve) => {
+        options.signal.addEventListener("abort", () => resolve(), {
+          once: true,
+        });
+      });
+    });
+
+    const { result, unmount } = renderHook(
+      () => useQueueRealtimeInvalidation({ debounceMs: 0 }),
+      { wrapper: realtimeWrapper(new QueryClient()) },
+    );
+
+    await waitFor(() => expect(result.current.status).toBe("connecting"));
+    session.clear();
+    captured!.onError?.({
+      kind: "network",
+      message: "stream interrupted",
+      fatal: false,
+    });
+    await waitFor(() => expect(result.current.status).toBe("disconnected"));
+    expect(result.current.pollingEnabled).toBe(false);
+    unmount();
+  });
 });

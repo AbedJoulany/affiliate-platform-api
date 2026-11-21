@@ -126,7 +126,7 @@ export function useQueueRealtimeInvalidation(
     }
 
     if (status === "disconnected") {
-      setPollingEnabled(true);
+      setPollingEnabled(Boolean(session.getAccessToken()));
       return;
     }
 

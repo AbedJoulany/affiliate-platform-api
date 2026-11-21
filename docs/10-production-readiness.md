@@ -203,7 +203,7 @@ Queue mutation (API or Celery)
 - SSE endpoint `GET /api/v1/queues/stream` (Bearer JWT via `CurrentUser`; `text/event-stream`; `X-Accel-Buffering: no`; idle heartbeat comment every 30s; per-client queue bound 64)
 - Canonical events: `queue.status_changed`, `queue.deleted`, `queue.attempt_started`, `queue.attempt_succeeded`, `queue.attempt_failed` (including provider-specific attempt outcomes) — **no** `dashboard.stats_updated`
 - Frontend: `useQueueEventStream` / `useQueueRealtimeInvalidation`; invalidate-never-patch; `QueueRealtimeStatusBadge`
-- Fallback: TanStack Query `refetchInterval` while SSE unavailable (5s → 30s adaptive); reconnect disables polling and performs one authoritative `["queue"]` refresh
+- Fallback: TanStack Query `refetchInterval` while SSE unavailable (5s → 30s adaptive); reconnect disables polling and performs authoritative Queue and Dashboard refreshes
 - Streaming-safe security headers middleware (pure ASGI; does not buffer SSE bodies)
 - Redis publish failure does not roll back committed domain mutations (logged only)
 
@@ -212,6 +212,17 @@ Queue mutation (API or Celery)
 ### 9.2 Background workers & queue execution (Phase B) ✅ COMPLETE
 
 **Phase 4.4 operational freshness:** the Queue SSE stream is shared by the Dashboard and Queue through the authenticated operational layout and is not opened on unrelated pages. Queue events invalidate authoritative workspace Queue and Dashboard snapshots; reconnect refetches because SSE events are not replayed. A bounded 5s→30s TanStack Query fallback is used while the stream is unavailable, and it is disabled after recovery. Dashboard reporting rollover follows the backend `reporting.day_end_utc` boundary and revalidates when a hidden tab returns; it does not assume browser-local midnight or a 24-hour day. This is a freshness signal, not an exactly-once or instantaneous-delivery guarantee.
+
+**Phase 4.5 validation closeout:** merged CI is evidence for the Phase 4.2–4.4 implementation and regression suites. A final operator or staging check should confirm, with a non-production workspace, that Dashboard attention links resolve Queue items outside the first page, workspace changes do not retain stale details or events, reporting boundaries match the workspace timezone across DST transitions, and stream interruption falls back to bounded polling. PostgreSQL aggregation behavior and reverse-proxy buffering require their own environment evidence; SQLite fixtures and a green frontend suite do not prove them. No live Telegram/Facebook publishing is required for this Dashboard closeout.
+
+**Staging operator checklist:**
+
+- Sign in with a test workspace and confirm the Dashboard and Queue show only that workspace’s data.
+- Open a known attention item, including one outside the first 200 Queue rows, and confirm the drawer resolves and closes without publishing.
+- Change workspace context or sign out while the Dashboard/Queue is open; confirm stale details, SSE events, and fallback polling stop.
+- Verify a non-UTC timezone and a DST transition using controlled test data or a clock-safe staging fixture; compare the Dashboard reporting window with the server response.
+- Temporarily make the Queue stream unavailable in staging and confirm the UI shows fallback freshness, then returns to live status after reconnection.
+- Treat Facebook Page validation and Telegram permission readiness as configuration signals, not proof of a successful live publish.
 
 **Existing Celery business schedules (pre–Phase B; unchanged):** Beat + `process_publish_queue` (default 60s), discovery refresh hot/trending (6h), categories (24h).
 

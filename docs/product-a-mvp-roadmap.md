@@ -1,10 +1,10 @@
 # Product A MVP — Implementation Roadmap
 
-> **Document status:** Canonical active roadmap. Updated 2026-11-16 after Phase 3C.3 merged via PR #15; documentation synchronization proposed in PR #16.
+> **Document status:** Canonical active roadmap. Updated 2026-11-21 for Phase 4.5 validation and documentation closeout after PRs #17–#19.
 > **Repository:** `AbedJoulany/affiliate-platform-api`
-> **Development baseline:** `main` at PR #15 merge commit `b0593f8a72c8ec2866793e8df2d70d04070272bc`.
-> **Verification source:** merged PRs and CI are implementation evidence; controlled live Facebook publishing was operator-verified separately, while Telegram failure/retry and PostgreSQL concurrency remain open verification items.
-> **Next phase:** Phase 4 — Operational Dashboard.
+> **Development baseline:** `main` at PR #19 merge commit `75f2003bffb278fc915db33c68dc8223d51bf72b`.
+> **Verification source:** merged PRs and CI are implementation evidence; Phase 4.5 adds a traceable validation record. Controlled live provider checks remain separate from mocked tests and CI.
+> **Next phase:** Phase 5 — Automation Configuration.
 
 ### Naming convention
 
@@ -13,7 +13,8 @@
 - **Roadmap Phase 1:** implemented and merged via PR #7.
 - **Roadmap Phase 2:** implemented and merged via PR #8; public onboarding is deferred.
 - **Roadmap Phase 3:** 3A, 3B, and 3C.1 implemented via PRs #9–#11; Phase 3C.2 implemented and CI-verified via PR #13; Phase 3C.3 implemented and merged via PR #15.
-- **Roadmap Phases 4–11:** planned or partially founded as described below.
+- **Roadmap Phase 4:** implemented through PRs #17–#19; final validation is documented separately and remains partially verified where local PostgreSQL or staging evidence is unavailable.
+- **Roadmap Phases 5–11:** planned as described below.
 - A merged PR and green mocked CI do **not** substitute for a live provider test.
 
 ### Current delivery status
@@ -29,11 +30,18 @@
 | Facebook Destination Selection | Implemented | PR #11; provider-aware AI Studio and Queue frontend |
 | Queue Display & Safe Ambiguous Retry | Implemented & CI Verified | PR #13; provider-aware destination/attempt display, explicit ambiguous retry confirmation, and duplicate-click protection |
 | Phase 3C.3 publishing safety and controlled live validation | Implemented & CI Verified | PR #15, merge commit `b0593f8a72c8ec2866793e8df2d70d04070272bc`; live text/photo/scheduled Facebook publishing was operator-verified separately |
+| Phase 4.2 Dashboard backend snapshot | Implemented & CI Verified | PR #17; workspace-scoped operational metrics, reporting windows, readiness, and attention items |
+| Phase 4.3 Dashboard UI | Implemented & CI Verified | PR #18; operational KPIs, attention navigation, loading/error/empty states, and Queue deep linking |
+| Phase 4.4 Dashboard realtime & reliability | Implemented & CI Verified | PR #19, merge commit `75f2003bffb278fc915db33c68dc8223d51bf72b`; shared operational SSE, invalidation, reconnect, fallback polling, and reporting rollover |
+| Phase 4.5 final validation & documentation | Validation documented; partially verified | This closeout records automated evidence and remaining PostgreSQL/staging gaps; it does not claim full production readiness |
 | Phase 0 live Telegram verification | Partially verified | Manual publish, image/link delivery, and scheduling verified; failure/retry pending |
 | PR #11 CI | Passed | Backend, frontend, and E2E checks completed successfully |
 | PR #12 documentation synchronization | Completed | Documentation-only roadmap synchronization |
 | PR #13 CI | Passed | Backend 423, frontend 220 Vitest, Playwright 13; TypeScript, lint, production build, and Ruff passed |
 | PR #15 CI | Passed | Backend, frontend, and E2E jobs passed; Phase 3C.3 regression coverage merged |
+| PR #17 CI | Passed | Dashboard backend snapshot checks completed successfully |
+| PR #18 CI | Passed | Dashboard UI checks completed successfully |
+| PR #19 CI | Passed | Backend, frontend, and E2E jobs passed for realtime/reliability changes |
 
 ---
 
@@ -100,7 +108,7 @@ Retry
 
 ## 3. المراحل المتبقية
 
-> الترقيم التالي يخص **Roadmap** فقط؛ لا تخلطه مع اسم مرحلة Manual Telegram MVP السابقة. حالة Phase 0: partially verified. حالة Phase 1 وPhase 2 وPhase 3C.1 وPhase 3C.2 وPhase 3C.3: implemented؛ Phase 3C.3 CI verified، وPhase 4 هو التالي.
+> الترقيم التالي يخص **Roadmap** فقط؛ لا تخلطه مع اسم مرحلة Manual Telegram MVP السابقة. حالة Phase 0: partially verified. حالة Phase 1 وPhase 2 وPhase 3C.1 وPhase 3C.2 وPhase 3C.3: implemented؛ Phase 4.2 وPhase 4.3 وPhase 4.4 implemented and CI verified، وPhase 4.5 توثق التحقق النهائي، وPhase 5 هو التالي.
 
 ```text
 Phase 0  — Live Manual Verification
@@ -534,8 +542,10 @@ Publisher
 
 # 9. Phase 4 — Operational Dashboard
 
-**Status:** partial foundation exists. Provider-aware and automation-specific
-operational visibility is not complete.
+**Status:** Phase 4.2, Phase 4.3, and Phase 4.4 are implemented and CI verified
+through PRs #17, #18, and #19. Phase 4.5 is the final validation and documentation
+closeout; it records what is proven and what still requires PostgreSQL or staging
+verification. Phase 4 is not claimed to be fully production-ready.
 
 **MVP scope:** products, recommendations, Queue status, provider/destination,
 scheduled/published/failed/ambiguous attempts, channel/Page readiness, and the
@@ -543,6 +553,20 @@ current automation state once automation exists.
 
 **Dependencies:** existing Dashboard, Queue attempt history, SSE/polling, and
 workspace authorization. No advanced click/conversion analytics.
+
+**Implemented evidence:** the backend snapshot preserves the existing response
+fields and adds workspace-local reporting boundaries, current Queue/provider
+publishing metrics, distinct daily failure metrics, unresolved ambiguous attempts,
+bounded attention items, destination readiness, and an explicit automation
+placeholder. The UI consumes the authoritative snapshot, deep-links to Queue
+details (including items outside the first list page), and shares one authenticated
+operational Queue SSE subscription with bounded polling fallback.
+
+**Validation limits:** automated CI covers the merged backend, frontend, and E2E
+changes. Local Windows validation in Phase 4.5 may be limited by the available
+Python/Docker runtime and Next.js native tooling. PostgreSQL aggregation queries,
+reverse-proxy SSE behavior, and staging workspace/timezone checks must be reported
+separately when not executed. No live provider publishing is part of this closeout.
 
 **Acceptance:** the operator can identify what is queued, scheduled, published,
 failed, ambiguous, and whether automation is enabled, without exposing tokens.
@@ -1345,16 +1369,26 @@ verification. OAuth and Facebook Login remain out of scope.
 
 ## Phase 4 — Dashboard
 
-**Goal:** operational visibility.
+**Goal:** operational visibility without introducing a separate analytics or
+publishing pipeline.
 
-**Work:**
-- failed count
-- publishing state
-- recent failures
-- recommendation summary
-- channel status
+**Phase 4.2 — Backend snapshot:** implemented and CI verified via PR #17.
 
-**Completion:** المستخدم يعرف حالة النظام بسهولة.
+**Phase 4.3 — Dashboard UI:** implemented and CI verified via PR #18. The UI
+shows authoritative KPIs, recent activity, attention items, readiness states,
+and safe Queue deep links.
+
+**Phase 4.4 — Realtime & reliability:** implemented and CI verified via PR #19.
+Dashboard and Queue share the authenticated operational SSE lifecycle, use
+workspace-scoped invalidation and bounded polling fallback, and revalidate at
+the server-provided reporting-day boundary.
+
+**Phase 4.5 — Final validation:** the closeout documents the acceptance matrix,
+automated evidence, and remaining PostgreSQL/staging limitations. It does not
+claim live publishing, exactly-once delivery, or full production readiness.
+
+**Completion status:** implementation is complete; final validation is recorded
+as partially verified until the explicitly listed operational gaps are exercised.
 
 ---
 
