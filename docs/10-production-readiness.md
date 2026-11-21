@@ -3,7 +3,7 @@
 **Document Version:** 3.4
 **Last Updated:** 2026-11-21
 
-> **Current baseline:** PRs through #20 are merged. The Product A MVP includes the provider-aware Telegram/Facebook Queue, operational Dashboard phases 4.2–4.5, and the protected migration history through 019. The Phase 5B feature branch adds migration 020 and configuration-only automation policy endpoints; it does not add execution. Controlled live Facebook text/photo/scheduled publishing was operator-verified separately. Telegram failure/retry and PostgreSQL concurrent row-lock verification remain pending. Use [product-a-mvp-roadmap.md](./product-a-mvp-roadmap.md) for canonical phase status.
+> **Current baseline:** PRs through #21 are merged. The Product A MVP includes the provider-aware Telegram/Facebook Queue, operational Dashboard phases 4.2–4.5, and migration 020. Phase 5B adds configuration-only automation policy endpoints; Phase 5C adds their frontend configuration page on the current feature branch. Neither phase adds execution. Controlled live Facebook text/photo/scheduled publishing was operator-verified separately. Telegram failure/retry and PostgreSQL concurrent row-lock verification remain pending. Use [product-a-mvp-roadmap.md](./product-a-mvp-roadmap.md) for canonical phase status.
 
 **2026-11-16 revision (Phase 3C.3 closeout):** PR #15 merged the publishing safety
 hardening and regression coverage. Already-published Queue items are rejected inside
@@ -65,8 +65,8 @@ synchronization.
 
 ### Phase 5B automation configuration
 
-The Phase 5B feature branch adds migration `020_add_automation_policies` after
-the verified main baseline at migration `019`. The new table stores one
+PR #21 merged migration `020_add_automation_policies` after the verified main
+baseline at migration `019`. The new table stores one
 workspace-scoped configuration policy with explicit range constraints, nullable
 provider destination foreign keys, and revision-based concurrency control. It
 does not create automation run history or modify Queue/publishing tables.
@@ -85,6 +85,18 @@ verified publishing permission. Destination deletion leaves the policy saved but
 not ready through `ON DELETE SET NULL`. The feature branch requires migration
 upgrade/downgrade and PostgreSQL concurrency verification before release; local
 Windows async test limitations must not be treated as passing evidence.
+
+### Phase 5C frontend automation configuration
+
+The Phase 5C frontend page is configuration-only. It calls the existing
+workspace-scoped `GET/PATCH /api/v1/automation/config` contract, displays saved
+intent separately from `execution_available: false`, and restricts editing to
+the permissions reported by the existing workspace settings context. It does
+not run discovery, generate AI content, create Queue items, schedule posts,
+trigger Celery, or call Telegram/Facebook providers. Nullable AI fields retain
+their inheritance meaning, and stale revisions require explicit operator
+reload before another save. This phase does not claim live automation or
+Phase 6 functionality.
 
 ---
 

@@ -32,6 +32,7 @@ const navigation = [
   { label: "محتوى التسويق", href: "/ai", icon: BrainCircuit },
   { label: "قائمة النشر", href: "/queue", icon: Radio },
   { label: "القنوات", href: "/channels", icon: Bot },
+  { label: "إعدادات الأتمتة", href: "/automation/settings", icon: Settings },
   { label: "الإعدادات", href: "/settings", icon: Settings },
 ] as const;
 

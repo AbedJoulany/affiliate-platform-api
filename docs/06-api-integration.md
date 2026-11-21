@@ -33,7 +33,7 @@
 
 OpenAPI: `/docs` · ReDoc: `/redoc` · Health: `GET /health` · Readiness: `GET /ready` · Worker health: `GET /worker/health`
 
-> **Current Product A contract:** The current implementation is a single-operator MVP. PRs through #20 are merged into `main`; Phase 5B automation configuration is implemented on the feature branch documented here and remains configuration-only until merged and activated in a later phase. The route and schema tables below are authoritative for the implemented API; older Product B sections are retained only as historical notes and are not available endpoints. Current publish providers are `telegram` and `facebook`; Facebook Page credentials are managed server-side and are never returned.
+> **Current Product A contract:** The current implementation is a single-operator MVP. PRs through #21 are merged into `main`; Phase 5B automation configuration is merged and Phase 5C adds a frontend configuration page on the current feature branch. Both remain configuration-only: no discovery, AI, Queue, Celery, or provider side effects are available. The route and schema tables below are authoritative for the implemented API; older Product B sections are retained only as historical notes and are not available endpoints. Current publish providers are `telegram` and `facebook`; Facebook Page credentials are managed server-side and are never returned.
 
 ### Current provider-aware routes
 
@@ -479,6 +479,15 @@ single row per workspace in `automation_policies` (migration `020`). A missing
 row is returned as a virtual disabled policy with revision `0`; GET never creates
 that row.
 
+The Phase 5C frontend route `/automation/settings` is an authenticated Arabic
+RTL client of this contract. It uses workspace-scoped query keys and the same
+workspace header, sends `expected_revision` on every PATCH, submits only changed
+sections, preserves explicit nullable inheritance, and does not retry stale
+revision writes automatically. A `409` keeps local edits visible until the
+operator explicitly reloads the latest policy. Destination selection is one
+active/eligible Telegram channel or validated Facebook Page; an unavailable
+saved destination is shown with a warning and is never silently replaced.
+
 PATCH is an allow-list with `extra=forbid`. An existing policy requires its
 current `expected_revision`; a successful update increments the revision once,
 and a stale revision returns **409**. The initial write accepts revision `0` or
@@ -515,7 +524,7 @@ explicit activation gate separately.
 | **Schedule dialog** | `PATCH /queues/{id}` | `scheduled_at`, `provider`, and the provider-specific destination; mixed-provider bulk scheduling is guarded |
 | **Channels / Pages** | `GET/POST/PUT /channels`, `GET/POST/PATCH/DELETE /facebook/pages` | Telegram permission status and active state; Facebook Page name, active/validated state, and `has_access_token` only |
 | **Dashboard** | `GET /dashboard` | Product counts remain global (shared catalog); queue/channel aggregates and queue activity are workspace-scoped via `X-Workspace-Id` |
-| **Automation settings** | `GET/PATCH /automation/config` | Policy filters, destination readiness, revision, daily schedule, nullable AI overrides; configuration only, no execution |
+| **Automation settings** | `GET/PATCH /automation/config` and frontend `/automation/settings` | Policy filters, destination readiness, revision, daily schedule, nullable AI overrides; saved intent only, `execution_available` remains false, and no execution side effects |
 | **Analytics** | `GET /analytics/overview`, `GET /analytics/campaigns/{id}/funnel` | Workspace-scoped click/conversion KPIs and `by_day`; funnel uses `GET /campaigns/active` for the selector |
 | **Settings** | `GET/PATCH /workspace-settings`, `GET /ready` | Workspace prefs + connection booleans; `/ready` is db/redis only |
 | **Profile** | `GET/PATCH /auth/me` | `full_name`, `email`; role/`is_active` read-only |

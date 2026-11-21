@@ -10,6 +10,7 @@ export const WORKSPACE_SCOPED_QUERY_ROOTS = [
   "facebook",
   "dashboard",
   "workspace-settings",
+  "automation",
 ] as const;
 
 export type WorkspaceScopedQueryRoot =
@@ -24,6 +25,7 @@ const WORKSPACE_SCOPED_PREFIXES = [
   "/facebook",
   "/dashboard",
   "/workspace-settings",
+  "/automation",
 ] as const;
 
 export function isUsableWorkspaceId(value: unknown): value is string {

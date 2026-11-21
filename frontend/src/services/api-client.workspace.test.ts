@@ -73,12 +73,14 @@ describe("apiClient workspace header", () => {
     await apiClient.get("/channels");
     await apiClient.get("/dashboard");
     await apiClient.get("/workspace-settings");
+    await apiClient.get("/automation/config");
 
     expect(seen).toEqual({
       "/queues": WORKSPACE_A,
       "/channels": WORKSPACE_A,
       "/dashboard": WORKSPACE_A,
       "/workspace-settings": WORKSPACE_A,
+      "/automation/config": WORKSPACE_A,
     });
   });
 
