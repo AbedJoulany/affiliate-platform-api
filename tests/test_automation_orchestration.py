@@ -204,6 +204,54 @@ async def test_orchestration_exception_after_generation_start_requires_review(se
     assert item.status == "uncertain"
 
 
+@pytest.mark.parametrize(
+    "persisted_status",
+    ["completed", "completed_with_errors", "needs_operator_review"],
+    ids=["normal-completion", "partial-failure", "uncertain-generation"],
+)
+async def test_execute_claimed_run_returns_persisted_pipeline_status(
+    session, monkeypatch, persisted_status
+):
+    # Bypass only the internal gate for this isolated orchestration unit test.
+    monkeypatch.setattr(
+        "app.services.automation_orchestration.automation_execution_available",
+        lambda *_args, **_kwargs: True,
+    )
+    workspace, policy = await _workspace_policy(session)
+    policy.enabled = True
+    now = datetime.now(UTC).replace(microsecond=0)
+    run = AutomationRun(
+        workspace_id=workspace.id,
+        policy_id=policy.id,
+        policy_revision=policy.revision,
+        local_date=date(2026, 11, 23),
+        scheduled_for=now,
+        status="claimed",
+        lease_owner="test-worker",
+        lease_expires_at=now + timedelta(minutes=10),
+    )
+    session.add(run)
+    await session.commit()
+
+    service = AutomationOrchestrationService(session)
+
+    async def fake_preflight(*_args, **_kwargs):
+        return policy, None, "UTC"
+
+    async def persist_pipeline_status(claimed_run, *_args):
+        claimed_run.status = persisted_status
+        await session.commit()
+
+    monkeypatch.setattr(service.queue, "_preflight", fake_preflight)
+    monkeypatch.setattr(service, "_execute_pipeline", persist_pipeline_status)
+
+    result = await service.execute_claimed_run(run.id)
+
+    await session.refresh(run, attribute_names=["status"])
+    assert result["status"] == persisted_status
+    assert run.status == persisted_status
+
+
 async def test_expired_run_before_generation_can_be_claimed_again(session):
     workspace, policy = await _workspace_policy(session)
     now = datetime.now(UTC).replace(microsecond=0)

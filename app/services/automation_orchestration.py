@@ -145,6 +145,7 @@ class AutomationOrchestrationService:
                 require_enabled=True,
             )
             await self._execute_pipeline(run, policy, destination, timezone_name)
+            await self.session.refresh(run, attribute_names=["status"])
         except Exception:
             await self.session.rollback()
             failed_run = await self.runs.get(run_id, for_update=True)
@@ -179,7 +180,7 @@ class AutomationOrchestrationService:
                 await self.session.commit()
                 return {"status": failed_run.status}
             return {"status": "failed"}
-        return {"status": "completed"}
+        return {"status": run.status}
 
     async def _execute_pipeline(
         self,
