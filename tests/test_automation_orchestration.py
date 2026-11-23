@@ -150,6 +150,12 @@ async def test_expired_started_generation_is_marked_uncertain_and_never_resumed(
 
 
 async def test_orchestration_exception_after_generation_start_requires_review(session, monkeypatch):
+    # Exercise the protected post-generation failure path in isolation. The
+    # production execution gates remain hardcoded closed in Phase 8C.3.
+    monkeypatch.setattr(
+        "app.services.automation_orchestration.automation_execution_available",
+        lambda *_args, **_kwargs: True,
+    )
     workspace, policy = await _workspace_policy(session)
     policy.enabled = True
     now = datetime.now(UTC).replace(microsecond=0)
