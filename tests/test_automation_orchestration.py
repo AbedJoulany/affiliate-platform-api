@@ -649,6 +649,7 @@ async def test_ownership_loss_after_generation_prevents_queue_creation(session, 
     )
     session.add(run)
     await session.commit()
+    run_id = run.id
     service = AutomationOrchestrationService(session)
     queue_calls = 0
 
@@ -693,14 +694,15 @@ async def test_ownership_loss_after_generation_prevents_queue_creation(session, 
         fake_preview,
     )
 
-    result = await service.execute_claimed_run(run.id, lease_owner="old-owner")
+    result = await service.execute_claimed_run(run_id, lease_owner="old-owner")
 
-    items = await service.runs.items_for_run(run.id)
+    items = await service.runs.items_for_run(run_id)
+    persisted_run = await service.runs.get(run_id)
     assert result == {"status": "ownership_lost"}
     assert queue_calls == 0
     assert items[0].generation_state == "succeeded"
     assert items[0].queue_item_id is None
-    assert run.lease_owner == "new-owner"
+    assert persisted_run.lease_owner == "new-owner"
 
 
 async def test_execution_disabled_returns_before_run_repository_access(session, monkeypatch):
