@@ -39,6 +39,10 @@ from app.schemas.automation_content import (
 )
 from app.services.ai_content import AIContentService
 from app.services.automation_discovery import AutomationDiscoveryService
+from app.services.automation_execution_gate import (
+    AutomationExecutionStopped,
+    AutomationRunOwnershipLost,
+)
 from app.services.automation_policy import AutomationPolicyService
 from app.services.exceptions import (
     AIProviderError,
@@ -319,6 +323,8 @@ class AutomationContentGenerationService:
                         "provider_unavailable",
                     }
                     continue
+                except (AutomationExecutionStopped, AutomationRunOwnershipLost):
+                    raise
                 except ValidationError:
                     results.append(
                         self._result(

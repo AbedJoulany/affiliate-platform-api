@@ -14,8 +14,14 @@ from app.repositories.workspace_settings import WorkspaceSettingsRepository
 from app.schemas.automation_content import AutomationContentPreviewRequest
 from app.schemas.automation_policy import AutomationDestinationRead
 from app.services.automation_content import AutomationContentGenerationService
+from app.services.automation_execution_gate import (
+    AutomationExecutionStopped,
+    AutomationRunOwnershipLost,
+    automation_execution_permitted,
+)
 from app.services.automation_queue import AutomationQueueService
 from app.services.automation_scheduling import SchedulingError, resolve_local_time, resolve_timezone
+from app.services.exceptions import ServiceError
 
 # These implementation gates intentionally remain closed in Phase 8C.3. A later
 # approved phase must add workspace owner/admin activation and budget enforcement.
@@ -63,7 +69,7 @@ class AutomationOrchestrationService:
 
     async def dispatch_due(self, *, now_utc: datetime | None = None) -> dict[str, int | str]:
         # This is deliberately before any repository access or transaction.
-        if not automation_execution_available():
+        if not await automation_execution_permitted(automation_execution_available()):
             return {"status": "disabled", "claimed": 0, "missed": 0}
         return await self._dispatch_enabled(now_utc=now_utc or datetime.now(UTC))
 
@@ -79,7 +85,7 @@ class AutomationOrchestrationService:
                 lease_expires_at=now_utc + RUN_LEASE,
             ):
                 await self.session.commit()
-                await self.execute_claimed_run(run_id)
+                await self.execute_claimed_run(run_id, lease_owner=owner)
         policies = await self.policies.list_enabled(limit=100)
         claimed = missed = 0
         for policy in policies:
@@ -116,39 +122,70 @@ class AutomationOrchestrationService:
                 continue
             claimed += 1
             await self.session.commit()
-            await self.execute_claimed_run(run.id)
+            await self.execute_claimed_run(run.id, lease_owner=owner)
         return {"status": "dispatched", "claimed": claimed, "missed": missed}
 
-    async def execute_claimed_run(self, run_id: UUID) -> dict[str, str]:
+    async def execute_claimed_run(
+        self,
+        run_id: UUID,
+        *,
+        lease_owner: str,
+    ) -> dict[str, str]:
         # A second gate protects direct/internal callers as well as Celery.
-        if not automation_execution_available():
+        if not await automation_execution_permitted(automation_execution_available()):
             return {"status": "disabled"}
-        run = await self.runs.get(run_id, for_update=True)
+        run = await self.runs.start_owned_run(
+            run_id,
+            lease_owner=lease_owner,
+            now=datetime.now(UTC),
+            lease_duration=RUN_LEASE,
+        )
         if run is None:
-            return {"status": "not_found"}
-        if run.status not in {"claimed", "running"}:
-            return {"status": run.status}
-
-        policy = await self.policies.get_by_workspace_id(run.workspace_id, for_update=True)
-        if policy is None or not policy.enabled or policy.revision != run.policy_revision:
-            run.status = "cancelled"
-            run.completed_at = datetime.now(UTC)
-            run.error_category = "policy_changed"
-            run.error_summary = "Policy is missing, disabled, or changed since this run was claimed"
-            await self.session.commit()
-            return {"status": run.status}
+            await self.session.rollback()
+            existing = await self.runs.get(run_id)
+            if existing is None:
+                return {"status": "not_found"}
+            if existing.status == "running":
+                return {"status": "already_running"}
+            if existing.status in {"claimed", "running"}:
+                return {"status": "ownership_lost"}
+            return {"status": existing.status}
 
         try:
-            policy, destination, timezone_name = await self.queue._preflight(
-                run.workspace_id,
-                run.policy_revision,
-                require_enabled=True,
+            await self._assert_execution_permitted()
+            policy, destination, timezone_name = await self._preflight_for_run(
+                run,
+                for_update=True,
             )
-            await self._execute_pipeline(run, policy, destination, timezone_name)
+            await self.session.commit()
+            await self._execute_pipeline(
+                run,
+                policy,
+                destination,
+                timezone_name,
+                lease_owner,
+            )
             await self.session.refresh(run, attribute_names=["status"])
+        except AutomationRunOwnershipLost:
+            await self.session.rollback()
+            return {"status": "ownership_lost"}
+        except AutomationExecutionStopped as exc:
+            await self.session.rollback()
+            current = await self._lock_owned_run(run_id, lease_owner)
+            if current is None:
+                await self.session.rollback()
+                return {"status": "ownership_lost"}
+            current.status = "cancelled"
+            current.completed_at = datetime.now(UTC)
+            current.lease_owner = None
+            current.lease_expires_at = None
+            current.error_category = "execution_stopped"
+            current.error_summary = str(exc)[:240]
+            await self.session.commit()
+            return {"status": "cancelled"}
         except Exception:
             await self.session.rollback()
-            failed_run = await self.runs.get(run_id, for_update=True)
+            failed_run = await self._lock_owned_run(run_id, lease_owner)
             if failed_run is not None:
                 items = await self.runs.items_for_run(run_id)
                 has_uncertain_generation = any(
@@ -179,8 +216,49 @@ class AutomationOrchestrationService:
                             )
                 await self.session.commit()
                 return {"status": failed_run.status}
-            return {"status": "failed"}
+            await self.session.rollback()
+            return {"status": "ownership_lost"}
         return {"status": run.status}
+
+    async def _lock_owned_run(
+        self,
+        run_id: UUID,
+        lease_owner: str,
+    ) -> AutomationRun | None:
+        return await self.runs.lock_and_renew_owned_run(
+            run_id,
+            lease_owner=lease_owner,
+            now=datetime.now(UTC),
+            lease_duration=RUN_LEASE,
+        )
+
+    async def _require_owned_run(self, run_id: UUID, lease_owner: str) -> AutomationRun:
+        run = await self._lock_owned_run(run_id, lease_owner)
+        if run is None:
+            raise AutomationRunOwnershipLost("Automation run lease is no longer owned")
+        return run
+
+    async def _assert_execution_permitted(self) -> None:
+        if not await automation_execution_permitted(automation_execution_available()):
+            raise AutomationExecutionStopped("Automation execution is stopped")
+
+    async def _preflight_for_run(
+        self,
+        run: AutomationRun,
+        *,
+        for_update: bool,
+    ):
+        try:
+            return await self.queue._preflight(
+                run.workspace_id,
+                run.policy_revision,
+                require_enabled=True,
+                for_update=for_update,
+            )
+        except (ServiceError, SchedulingError) as exc:
+            raise AutomationExecutionStopped(
+                "Saved automation policy or destination is no longer eligible"
+            ) from exc
 
     async def _execute_pipeline(
         self,
@@ -188,17 +266,17 @@ class AutomationOrchestrationService:
         policy: AutomationPolicy,
         destination: AutomationDestinationRead,
         timezone_name: str,
+        lease_owner: str,
     ) -> None:
+        run = await self._require_owned_run(run.id, lease_owner)
         now = datetime.now(UTC)
         run.status = "running"
         run.started_at = run.started_at or now
         run.heartbeat_at = now
-        run.lease_expires_at = now + RUN_LEASE
-        if not run.lease_owner:
-            run.lease_owner = f"worker:{uuid4()}"
         await self.session.commit()
 
         async def record_selection(selections: list) -> None:
+            owned_run = await self._require_owned_run(run.id, lease_owner)
             for selection in selections:
                 existing = await self.runs.get_item(run.id, selection.product_id)
                 if existing is None:
@@ -207,22 +285,25 @@ class AutomationOrchestrationService:
                         product_id=selection.product_id,
                         selection_rank=selection.rank,
                     )
-            run.selected_count = len(selections)
-            run.heartbeat_at = datetime.now(UTC)
+            owned_run.selected_count = len(selections)
+            owned_run.heartbeat_at = datetime.now(UTC)
             await self.session.commit()
 
         async def record_generation_started(product_id: UUID) -> None:
+            owned_run = await self._require_owned_run(run.id, lease_owner)
+            await self._preflight_for_run(owned_run, for_update=True)
+            await self._assert_execution_permitted()
             item = await self.runs.get_item(run.id, product_id)
             if item is None:
                 raise RuntimeError("Selected product checkpoint is missing")
             item.status = "generating"
             item.generation_state = "started"
             item.generation_started_at = datetime.now(UTC)
-            run.heartbeat_at = datetime.now(UTC)
-            run.lease_expires_at = datetime.now(UTC) + RUN_LEASE
+            owned_run.heartbeat_at = datetime.now(UTC)
             await self.session.commit()
 
         async def record_generation_succeeded(generated) -> None:
+            owned_run = await self._require_owned_run(run.id, lease_owner)
             item = await self.runs.get_item(run.id, generated.product_id)
             if item is None:
                 raise RuntimeError("Selected product checkpoint is missing")
@@ -231,11 +312,12 @@ class AutomationOrchestrationService:
             item.generation_completed_at = datetime.now(UTC)
             item.generated_content = generated.content
             item.affiliate_url_snapshot = generated.affiliate_url
-            run.heartbeat_at = datetime.now(UTC)
+            owned_run.heartbeat_at = datetime.now(UTC)
             await self.session.commit()
 
         existing_items = await self.runs.items_for_run(run.id)
         if any(item.generation_state in {"started", "uncertain"} for item in existing_items):
+            run = await self._require_owned_run(run.id, lease_owner)
             run.status = "needs_operator_review"
             run.completed_at = datetime.now(UTC)
             run.lease_owner = None
@@ -267,6 +349,7 @@ class AutomationOrchestrationService:
                 on_generation_started=record_generation_started,
                 on_generation_succeeded=record_generation_succeeded,
             )
+            run = await self._require_owned_run(run.id, lease_owner)
             for generated in content.results:
                 item = await self.runs.get_item(run.id, generated.product_id)
                 if item is None:
@@ -296,6 +379,7 @@ class AutomationOrchestrationService:
         elif generation_already_attempted:
             # A crash after a completed product must not replay the discovery
             # batch and spend on products whose generation had not started.
+            run = await self._require_owned_run(run.id, lease_owner)
             for item in existing_items:
                 if item.status == "selected" and item.generation_state == "not_started":
                     item.status = "skipped"
@@ -312,6 +396,7 @@ class AutomationOrchestrationService:
             if run_item.status != "generated" or not run_item.generated_content:
                 continue
             if run_item.product_id is None:
+                run = await self._require_owned_run(run.id, lease_owner)
                 run_item.status = "skipped"
                 run_item.failure_category = "product_deleted"
                 run_item.failure_summary = "Product was removed before Queue creation"
@@ -320,13 +405,16 @@ class AutomationOrchestrationService:
             result = self._content_result(run_item)
 
             # Re-read policy/destination immediately before every Queue write.
-            policy, destination, timezone_name = await self.queue._preflight(
-                run.workspace_id,
-                run.policy_revision,
-                require_enabled=True,
+            run = await self._require_owned_run(run.id, lease_owner)
+            policy, destination, timezone_name = await self._preflight_for_run(
+                run,
+                for_update=True,
             )
+            await self._assert_execution_permitted()
 
             async def persist_queue(queue_item, target=run_item) -> None:
+                await self._assert_execution_permitted()
+                await self._require_owned_run(run.id, lease_owner)
                 target.status = "queued"
                 target.queue_item_id = queue_item.id
                 target.queue_created_at = datetime.now(UTC)
@@ -343,6 +431,10 @@ class AutomationOrchestrationService:
                 before_commit=persist_queue,
             )
             if queue_result.status != "scheduled":
+                run = await self._require_owned_run(run.id, lease_owner)
+                run_item = await self.runs.get_item(run.id, run_item.product_id)
+                if run_item is None:
+                    continue
                 run_item.status = (
                     "skipped"
                     if queue_result.status.startswith("skipped")
@@ -352,7 +444,14 @@ class AutomationOrchestrationService:
                 run_item.failure_summary = "Queue scheduling did not complete"
                 await self.session.commit()
 
+        run = await self._require_owned_run(run.id, lease_owner)
         items = await self.runs.items_for_run(run.id)
+        # Stop checks apply before any remaining automation work. If a provider
+        # outcome is uncertain, preserve the operator-review state regardless
+        # of a later policy/stop change; no further AI or Queue work follows.
+        if not any(item.generation_state == "uncertain" for item in items):
+            await self._preflight_for_run(run, for_update=True)
+            await self._assert_execution_permitted()
         run.generated_count = sum(item.generation_state == "succeeded" for item in items)
         run.queued_count = sum(item.status == "queued" for item in items)
         run.skipped_count = sum(item.status == "skipped" for item in items)

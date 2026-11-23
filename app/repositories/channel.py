@@ -15,13 +15,16 @@ class ChannelRepository(BaseRepository[TelegramChannel]):
         self,
         channel_id: UUID,
         workspace_id: UUID,
+        *,
+        for_update: bool = False,
     ) -> TelegramChannel | None:
-        result = await self.session.execute(
-            select(TelegramChannel).where(
-                TelegramChannel.id == channel_id,
-                TelegramChannel.workspace_id == workspace_id,
-            )
+        statement = select(TelegramChannel).where(
+            TelegramChannel.id == channel_id,
+            TelegramChannel.workspace_id == workspace_id,
         )
+        if for_update:
+            statement = statement.with_for_update()
+        result = await self.session.execute(statement)
         return result.scalar_one_or_none()
 
     async def get_by_telegram_channel_id(

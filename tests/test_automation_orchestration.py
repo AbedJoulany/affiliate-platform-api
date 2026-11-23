@@ -12,11 +12,16 @@ from app.models.automation_run import AutomationRun, AutomationRunItem
 from app.models.product import Product
 from app.models.workspace import Workspace
 from app.repositories.automation_run import AutomationRunRepository
+from app.services.automation_execution_gate import (
+    AUTOMATION_EXECUTION_LATCH_VALUE,
+    automation_execution_permitted,
+)
 from app.services.automation_orchestration import (
     AutomationOrchestrationService,
     automation_execution_available,
     daily_slot,
 )
+from app.services.exceptions import ConflictError, ValidationError
 from app.worker.tasks.automation import dispatch_due_automations
 
 pytestmark = pytest.mark.asyncio
@@ -30,6 +35,21 @@ async def _workspace_policy(session) -> tuple[Workspace, AutomationPolicy]:
     session.add(policy)
     await session.flush()
     return workspace, policy
+
+
+async def _allow_runtime_execution(*_args, **_kwargs) -> bool:
+    return True
+
+
+def _enable_orchestration_for_test(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.services.automation_orchestration.automation_execution_available",
+        lambda *_args, **_kwargs: True,
+    )
+    monkeypatch.setattr(
+        "app.services.automation_orchestration.automation_execution_permitted",
+        _allow_runtime_execution,
+    )
 
 
 async def test_execution_gate_remains_closed_even_if_global_flag_is_set():
@@ -152,10 +172,7 @@ async def test_expired_started_generation_is_marked_uncertain_and_never_resumed(
 async def test_orchestration_exception_after_generation_start_requires_review(session, monkeypatch):
     # Exercise the protected post-generation failure path in isolation. The
     # production execution gates remain hardcoded closed in Phase 8C.3.
-    monkeypatch.setattr(
-        "app.services.automation_orchestration.automation_execution_available",
-        lambda *_args, **_kwargs: True,
-    )
+    _enable_orchestration_for_test(monkeypatch)
     workspace, policy = await _workspace_policy(session)
     policy.enabled = True
     now = datetime.now(UTC).replace(microsecond=0)
@@ -196,7 +213,7 @@ async def test_orchestration_exception_after_generation_start_requires_review(se
     monkeypatch.setattr(service.queue, "_preflight", fake_preflight)
     monkeypatch.setattr(service, "_execute_pipeline", fail_after_provider_may_have_started)
 
-    result = await service.execute_claimed_run(run.id)
+    result = await service.execute_claimed_run(run.id, lease_owner="test-worker")
 
     assert result["status"] == "needs_operator_review"
     assert run.status == "needs_operator_review"
@@ -213,10 +230,7 @@ async def test_execute_claimed_run_returns_persisted_pipeline_status(
     session, monkeypatch, persisted_status
 ):
     # Bypass only the internal gate for this isolated orchestration unit test.
-    monkeypatch.setattr(
-        "app.services.automation_orchestration.automation_execution_available",
-        lambda *_args, **_kwargs: True,
-    )
+    _enable_orchestration_for_test(monkeypatch)
     workspace, policy = await _workspace_policy(session)
     policy.enabled = True
     now = datetime.now(UTC).replace(microsecond=0)
@@ -240,12 +254,14 @@ async def test_execute_claimed_run_returns_persisted_pipeline_status(
 
     async def persist_pipeline_status(claimed_run, *_args):
         claimed_run.status = persisted_status
+        claimed_run.lease_owner = None
+        claimed_run.lease_expires_at = None
         await session.commit()
 
     monkeypatch.setattr(service.queue, "_preflight", fake_preflight)
     monkeypatch.setattr(service, "_execute_pipeline", persist_pipeline_status)
 
-    result = await service.execute_claimed_run(run.id)
+    result = await service.execute_claimed_run(run.id, lease_owner="test-worker")
 
     await session.refresh(run, attribute_names=["status"])
     assert result["status"] == persisted_status
@@ -373,7 +389,11 @@ async def test_partial_generation_recovery_does_not_repeat_ai_batch(session, mon
 
     monkeypatch.setattr(service.queue, "_preflight", fake_preflight)
     monkeypatch.setattr(service.queue, "_create_one", fake_create_one)
-    await service._execute_pipeline(run, policy, None, "UTC")
+    _enable_orchestration_for_test(monkeypatch)
+    run.lease_owner = "test-worker"
+    run.lease_expires_at = datetime.now(UTC) + timedelta(minutes=10)
+    await session.commit()
+    await service._execute_pipeline(run, policy, None, "UTC", "test-worker")
 
     assert completed.generated_content == "persisted content"
     assert completed.status == "generated"
@@ -381,3 +401,349 @@ async def test_partial_generation_recovery_does_not_repeat_ai_batch(session, mon
     assert pending.status == "skipped"
     assert pending.failure_category == "recovery_generation_not_repeated"
     assert run.status == "completed_with_errors"
+
+
+async def test_stale_worker_cannot_execute_or_change_superseded_run(session, monkeypatch):
+    _enable_orchestration_for_test(monkeypatch)
+    workspace, policy = await _workspace_policy(session)
+    now = datetime.now(UTC)
+    run = AutomationRun(
+        workspace_id=workspace.id,
+        policy_id=policy.id,
+        policy_revision=policy.revision,
+        local_date=now.date(),
+        scheduled_for=now,
+        status="claimed",
+        lease_owner="current-worker",
+        lease_expires_at=now + timedelta(minutes=5),
+    )
+    session.add(run)
+    await session.commit()
+    service = AutomationOrchestrationService(session)
+
+    async def fail_if_pipeline_runs(*_args, **_kwargs):
+        raise AssertionError("superseded worker must not enter the pipeline")
+
+    monkeypatch.setattr(service, "_execute_pipeline", fail_if_pipeline_runs)
+    result = await service.execute_claimed_run(run.id, lease_owner="stale-worker")
+
+    await session.refresh(run)
+    assert result == {"status": "ownership_lost"}
+    assert run.status == "claimed"
+    assert run.lease_owner == "current-worker"
+
+
+async def test_policy_disable_between_ai_requests_stops_before_second_call(
+    session, monkeypatch
+):
+    _enable_orchestration_for_test(monkeypatch)
+    workspace, policy = await _workspace_policy(session)
+    policy.enabled = True
+    products = [
+        Product(
+            aliexpress_product_id=f"phase9b2-policy-{uuid4().hex}",
+            title=f"Product {index}",
+            price=Decimal("10.00"),
+            image_url="https://example.com/image.jpg",
+            product_url="https://example.com/product",
+            affiliate_url=f"https://affiliate.example/{index}",
+            status=ProductStatus.ACTIVE,
+        )
+        for index in (1, 2)
+    ]
+    session.add_all(products)
+    await session.flush()
+    now = datetime.now(UTC)
+    run = AutomationRun(
+        workspace_id=workspace.id,
+        policy_id=policy.id,
+        policy_revision=policy.revision,
+        local_date=now.date(),
+        scheduled_for=now,
+        status="claimed",
+        lease_owner="policy-worker",
+        lease_expires_at=now + timedelta(minutes=5),
+    )
+    session.add(run)
+    await session.commit()
+    service = AutomationOrchestrationService(session)
+    provider_calls = 0
+    queue_calls = 0
+
+    async def fake_preflight(_workspace_id, expected_revision, *, require_enabled=False, **_kwargs):
+        if policy.revision != expected_revision:
+            raise ConflictError("policy revision changed")
+        if require_enabled and not policy.enabled:
+            raise ConflictError("policy disabled")
+        return policy, None, "UTC"
+
+    async def fake_preview(
+        _content_service,
+        _workspace_id,
+        _payload,
+        _run_id,
+        *,
+        on_selected,
+        on_generation_started,
+        on_generation_succeeded,
+    ):
+        nonlocal provider_calls
+        selections = [
+            SimpleNamespace(product_id=product.id, rank=index, recommendation_score=90.0)
+            for index, product in enumerate(products, start=1)
+        ]
+        await on_selected(selections)
+        for index, product in enumerate(products, start=1):
+            await on_generation_started(product.id)
+            provider_calls += 1  # Mock provider submission happens after the guard callback.
+            generated = SimpleNamespace(
+                product_id=product.id,
+                content=f"content {index}",
+                affiliate_url=product.affiliate_url,
+            )
+            await on_generation_succeeded(generated)
+            if index == 1:
+                policy.enabled = False
+                policy.revision += 1
+                await session.commit()
+        return SimpleNamespace(results=[])
+
+    async def fail_if_queued(*_args, **_kwargs):
+        nonlocal queue_calls
+        queue_calls += 1
+        raise AssertionError("disabled policy must not create Queue items")
+
+    monkeypatch.setattr(service.queue, "_preflight", fake_preflight)
+    monkeypatch.setattr(service.queue, "_create_one", fail_if_queued)
+    monkeypatch.setattr(
+        "app.services.automation_orchestration.AutomationContentGenerationService.preview_for_run",
+        fake_preview,
+    )
+
+    result = await service.execute_claimed_run(run.id, lease_owner="policy-worker")
+
+    items = await service.runs.items_for_run(run.id)
+    assert result == {"status": "cancelled"}
+    assert provider_calls == 1
+    assert queue_calls == 0
+    assert len(items) == 2
+    assert items[0].generation_state == "succeeded"
+    assert items[0].generated_content == "content 1"
+    assert items[1].generation_state == "not_started"
+    assert run.status == "cancelled"
+
+
+async def test_destination_change_before_queue_insert_creates_no_queue_item(
+    session, monkeypatch
+):
+    _enable_orchestration_for_test(monkeypatch)
+    workspace, policy = await _workspace_policy(session)
+    policy.enabled = True
+    product = Product(
+        aliexpress_product_id=f"phase9b2-destination-{uuid4().hex}",
+        title="Product",
+        price=Decimal("10.00"),
+        image_url="https://example.com/image.jpg",
+        product_url="https://example.com/product",
+        affiliate_url="https://affiliate.example/item",
+        status=ProductStatus.ACTIVE,
+    )
+    session.add(product)
+    await session.flush()
+    now = datetime.now(UTC)
+    run = AutomationRun(
+        workspace_id=workspace.id,
+        policy_id=policy.id,
+        policy_revision=policy.revision,
+        local_date=now.date(),
+        scheduled_for=now,
+        status="claimed",
+        lease_owner="destination-worker",
+        lease_expires_at=now + timedelta(minutes=5),
+    )
+    session.add(run)
+    await session.commit()
+    service = AutomationOrchestrationService(session)
+    destination_ready = True
+    queue_calls = 0
+
+    async def fake_preflight(_workspace_id, expected_revision, *, require_enabled=False, **_kwargs):
+        if policy.revision != expected_revision or (require_enabled and not policy.enabled):
+            raise ConflictError("policy is no longer eligible")
+        if not destination_ready:
+            raise ValidationError("destination is no longer eligible")
+        return policy, None, "UTC"
+
+    async def fake_preview(
+        _content_service,
+        _workspace_id,
+        _payload,
+        _run_id,
+        *,
+        on_selected,
+        on_generation_started,
+        on_generation_succeeded,
+    ):
+        nonlocal destination_ready
+        await on_selected([SimpleNamespace(product_id=product.id, rank=1)])
+        await on_generation_started(product.id)
+        await on_generation_succeeded(
+            SimpleNamespace(
+                product_id=product.id,
+                content="generated content",
+                affiliate_url=product.affiliate_url,
+            )
+        )
+        # Simulate the saved Page becoming inactive after generation succeeds.
+        destination_ready = False
+        return SimpleNamespace(results=[])
+
+    async def fail_if_queued(*_args, **_kwargs):
+        nonlocal queue_calls
+        queue_calls += 1
+        raise AssertionError("invalid destination must block Queue creation")
+
+    monkeypatch.setattr(service.queue, "_preflight", fake_preflight)
+    monkeypatch.setattr(service.queue, "_create_one", fail_if_queued)
+    monkeypatch.setattr(
+        "app.services.automation_orchestration.AutomationContentGenerationService.preview_for_run",
+        fake_preview,
+    )
+
+    result = await service.execute_claimed_run(run.id, lease_owner="destination-worker")
+
+    items = await service.runs.items_for_run(run.id)
+    assert result == {"status": "cancelled"}
+    assert queue_calls == 0
+    assert len(items) == 1
+    assert items[0].generation_state == "succeeded"
+    assert items[0].queue_item_id is None
+    assert run.status == "cancelled"
+
+
+async def test_ownership_loss_after_generation_prevents_queue_creation(session, monkeypatch):
+    _enable_orchestration_for_test(monkeypatch)
+    workspace, policy = await _workspace_policy(session)
+    policy.enabled = True
+    product = Product(
+        aliexpress_product_id=f"phase9b2-stale-queue-{uuid4().hex}",
+        title="Product",
+        price=Decimal("10.00"),
+        image_url="https://example.com/image.jpg",
+        product_url="https://example.com/product",
+        affiliate_url="https://affiliate.example/item",
+        status=ProductStatus.ACTIVE,
+    )
+    session.add(product)
+    await session.flush()
+    now = datetime.now(UTC)
+    run = AutomationRun(
+        workspace_id=workspace.id,
+        policy_id=policy.id,
+        policy_revision=policy.revision,
+        local_date=now.date(),
+        scheduled_for=now,
+        status="claimed",
+        lease_owner="old-owner",
+        lease_expires_at=now + timedelta(minutes=5),
+    )
+    session.add(run)
+    await session.commit()
+    service = AutomationOrchestrationService(session)
+    queue_calls = 0
+
+    async def fake_preflight(_workspace_id, expected_revision, *, require_enabled=False, **_kwargs):
+        if policy.revision != expected_revision or (require_enabled and not policy.enabled):
+            raise ConflictError("policy is no longer eligible")
+        return policy, None, "UTC"
+
+    async def fake_preview(
+        _content_service,
+        _workspace_id,
+        _payload,
+        _run_id,
+        *,
+        on_selected,
+        on_generation_started,
+        on_generation_succeeded,
+    ):
+        await on_selected([SimpleNamespace(product_id=product.id, rank=1)])
+        await on_generation_started(product.id)
+        await on_generation_succeeded(
+            SimpleNamespace(
+                product_id=product.id,
+                content="generated content",
+                affiliate_url=product.affiliate_url,
+            )
+        )
+        run.lease_owner = "new-owner"
+        run.lease_expires_at = datetime.now(UTC) + timedelta(minutes=5)
+        await session.commit()
+        return SimpleNamespace(results=[])
+
+    async def fail_if_queued(*_args, **_kwargs):
+        nonlocal queue_calls
+        queue_calls += 1
+        raise AssertionError("a worker that lost ownership must not queue content")
+
+    monkeypatch.setattr(service.queue, "_preflight", fake_preflight)
+    monkeypatch.setattr(service.queue, "_create_one", fail_if_queued)
+    monkeypatch.setattr(
+        "app.services.automation_orchestration.AutomationContentGenerationService.preview_for_run",
+        fake_preview,
+    )
+
+    result = await service.execute_claimed_run(run.id, lease_owner="old-owner")
+
+    items = await service.runs.items_for_run(run.id)
+    assert result == {"status": "ownership_lost"}
+    assert queue_calls == 0
+    assert items[0].generation_state == "succeeded"
+    assert items[0].queue_item_id is None
+    assert run.lease_owner == "new-owner"
+
+
+async def test_execution_disabled_returns_before_run_repository_access(session, monkeypatch):
+    async def stop(*_args, **_kwargs) -> bool:
+        return False
+
+    monkeypatch.setattr(
+        "app.services.automation_orchestration.automation_execution_permitted",
+        stop,
+    )
+    service = AutomationOrchestrationService(session)
+
+    async def fail_if_database_is_touched(*_args, **_kwargs):
+        raise AssertionError("disabled execution must not access run records")
+
+    monkeypatch.setattr(service.runs, "start_owned_run", fail_if_database_is_touched)
+    result = await service.execute_claimed_run(uuid4(), lease_owner="disabled-worker")
+    assert result == {"status": "disabled"}
+
+
+async def test_runtime_latch_is_fail_closed_and_requires_exact_enabled_value(monkeypatch):
+    class FakeRedis:
+        value = None
+        error = None
+
+        async def get(self, _key):
+            if self.error is not None:
+                raise self.error
+            return self.value
+
+    fake_redis = FakeRedis()
+    monkeypatch.setattr(
+        "app.services.automation_execution_gate._runtime_redis",
+        fake_redis,
+    )
+    assert await automation_execution_permitted(False) is False
+    assert await automation_execution_permitted(True) is False
+
+    fake_redis.value = AUTOMATION_EXECUTION_LATCH_VALUE
+    assert await automation_execution_permitted(True) is True
+
+    fake_redis.value = "unexpected"
+    assert await automation_execution_permitted(True) is False
+
+    fake_redis.error = ConnectionError("redis unavailable")
+    assert await automation_execution_permitted(True) is False

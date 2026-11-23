@@ -11,13 +11,20 @@ class FacebookPageRepository(BaseRepository[FacebookPage]):
     def __init__(self, session: AsyncSession) -> None:
         super().__init__(session, FacebookPage)
 
-    async def get_in_workspace(self, page_id: UUID, workspace_id: UUID) -> FacebookPage | None:
-        result = await self.session.execute(
-            select(FacebookPage).where(
-                FacebookPage.id == page_id,
-                FacebookPage.workspace_id == workspace_id,
-            )
+    async def get_in_workspace(
+        self,
+        page_id: UUID,
+        workspace_id: UUID,
+        *,
+        for_update: bool = False,
+    ) -> FacebookPage | None:
+        statement = select(FacebookPage).where(
+            FacebookPage.id == page_id,
+            FacebookPage.workspace_id == workspace_id,
         )
+        if for_update:
+            statement = statement.with_for_update()
+        result = await self.session.execute(statement)
         return result.scalar_one_or_none()
 
     async def get_by_facebook_page_id(
