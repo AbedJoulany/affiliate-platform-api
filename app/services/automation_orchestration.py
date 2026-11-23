@@ -177,6 +177,7 @@ class AutomationOrchestrationService:
                                 "AI request may have started; operator review is required"
                             )
                 await self.session.commit()
+                return {"status": failed_run.status}
             return {"status": "failed"}
         return {"status": "completed"}
 
