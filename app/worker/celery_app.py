@@ -12,6 +12,7 @@ celery_app = Celery(
         "app.worker.tasks.publishing",
         "app.worker.tasks.discovery",
         "app.worker.tasks.health",
+        "app.worker.tasks.automation",
     ],
 )
 
@@ -47,6 +48,10 @@ celery_app.conf.update(
         "worker-heartbeat": {
             "task": "app.worker.tasks.health.worker_heartbeat",
             "schedule": float(settings.celery_heartbeat_interval_seconds),
+        },
+        "dispatch-due-automations": {
+            "task": "app.worker.tasks.automation.dispatch_due_automations",
+            "schedule": float(settings.celery_automation_dispatch_interval_seconds),
         },
     },
 )

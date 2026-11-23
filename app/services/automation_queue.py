@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -8,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.models import User
 from app.core.enums import AutomationFrequency, AutomationProvider, UserRole
 from app.models.automation_policy import AutomationPolicy
+from app.models.queue import QueueItem
 from app.repositories.automation_policy import AutomationPolicyRepository
 from app.repositories.workspace import WorkspaceMembershipRepository, WorkspaceRepository
 from app.repositories.workspace_settings import WorkspaceSettingsRepository
@@ -102,12 +104,16 @@ class AutomationQueueService:
         self,
         workspace_id: UUID,
         expected_revision: int,
+        *,
+        require_enabled: bool = False,
     ) -> tuple[AutomationPolicy, AutomationDestinationRead, str]:
         policy = await self.policies.get_by_workspace_id(workspace_id)
         if policy is None:
             raise NotFoundError("Automation policy not found; save an automation policy first")
         if policy.revision != expected_revision:
             raise ConflictError("Automation policy changed; reload before scheduling")
+        if require_enabled and not policy.enabled:
+            raise ConflictError("Automation policy is disabled")
         if AutomationFrequency(policy.frequency) != AutomationFrequency.DAILY:
             raise ValidationError("Only daily automation scheduling is supported")
 
@@ -179,6 +185,7 @@ class AutomationQueueService:
         destination: AutomationDestinationRead,
         item: AutomationContentProductResult,
         timezone_name: str,
+        before_commit: Callable[[QueueItem], Awaitable[None]] | None = None,
     ) -> AutomationQueueProductResult:
         if not item.content or not item.affiliate_url:
             return self._queue_result(
@@ -210,6 +217,8 @@ class AutomationQueueService:
                 preferred_time_local=policy.preferred_time_local,
                 daily_limit=policy.posts_per_day,
             )
+            if before_commit is not None:
+                await before_commit(queue_item)
             await self.session.commit()
         except SchedulingError:
             await self.session.rollback()

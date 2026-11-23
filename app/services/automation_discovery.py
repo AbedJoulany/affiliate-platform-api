@@ -53,6 +53,19 @@ class AutomationDiscoveryService:
         workspace_id: UUID,
     ) -> AutomationDiscoveryPreviewResponse:
         await self._authorize(user, workspace_id)
+        return await self._preview_workspace(workspace_id)
+
+    async def preview_for_orchestration(
+        self,
+        workspace_id: UUID,
+    ) -> AutomationDiscoveryPreviewResponse:
+        """Internal read path for a persisted, workspace-scoped automation run."""
+        return await self._preview_workspace(workspace_id)
+
+    async def _preview_workspace(
+        self,
+        workspace_id: UUID,
+    ) -> AutomationDiscoveryPreviewResponse:
         policy = await self.policies.get_by_workspace_id(workspace_id)
         if policy is None:
             raise NotFoundError(
@@ -61,7 +74,10 @@ class AutomationDiscoveryService:
 
         # Reuse the policy service's destination-readiness semantics without
         # invoking any provider API or changing the policy.
-        policy_read = await AutomationPolicyService(self.session).get(user, workspace_id)
+        policy_read = await AutomationPolicyService(self.session)._to_read(
+            workspace_id,
+            policy,
+        )
         query = self._recommendation_query(policy)
         keyword_tokens = RecommendationService.keyword_tokens(query.keywords)
         use_sql_keyword_prefilter = RecommendationService.sql_keyword_prefilter_supported(

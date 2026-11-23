@@ -536,6 +536,70 @@ async def test_content_preview_isolates_product_failure_and_does_not_fallback_to
 
 
 @pytest.mark.asyncio
+async def test_internal_preview_checkpoints_success_before_next_provider_call(client, monkeypatch):
+    redis_client = FakeRedis()
+
+    async def get_redis():
+        return redis_client
+
+    monkeypatch.setattr(
+        "app.services.automation_content.get_automation_generation_redis",
+        get_redis,
+    )
+    monkeypatch.setattr(
+        "app.services.automation_content.get_ai_provider",
+        lambda _provider: SimpleNamespace(is_configured=True),
+    )
+    _, token = await register_and_login(client, role="user")
+    headers = await workspace_auth_headers(token)
+    workspace_id = headers[WORKSPACE_ID_HEADER]
+    await _create_policy(workspace_id, products_per_run=2)
+    await _create_product(title="checkpoint product one")
+    await _create_product(title="checkpoint product two")
+
+    checkpoints: list[tuple[UUID, str]] = []
+    provider_calls = 0
+
+    async def on_selected(_selected) -> None:
+        return None
+
+    async def on_generation_started(_product_id: UUID) -> None:
+        return None
+
+    async def on_generation_succeeded(result) -> None:
+        checkpoints.append((result.product_id, result.content))
+
+    async with SessionLocal() as session:
+        service = AutomationContentGenerationService(session)
+
+        async def generate_for_product(_product, **_kwargs):
+            nonlocal provider_calls
+            provider_calls += 1
+            if provider_calls == 2:
+                assert len(checkpoints) == 1
+            return SimpleNamespace(content="محتوى تسويقي آمن")
+
+        monkeypatch.setattr(service.ai, "generate_for_product", generate_for_product)
+        response = await service.preview_for_run(
+            UUID(workspace_id),
+            AutomationContentPreviewRequest(
+                expected_policy_revision=1,
+                max_products=2,
+                acknowledge_ai_cost=True,
+                idempotency_key="run-checkpoint-test",
+            ),
+            uuid4(),
+            on_selected=on_selected,
+            on_generation_started=on_generation_started,
+            on_generation_succeeded=on_generation_succeeded,
+        )
+
+    assert provider_calls == 2
+    assert len(checkpoints) == 2
+    assert response.generated_count == 2
+
+
+@pytest.mark.asyncio
 async def test_content_preview_provider_failure_stops_remaining_paid_calls(client, monkeypatch):
     redis_client = FakeRedis()
 

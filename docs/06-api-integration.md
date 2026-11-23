@@ -1,7 +1,13 @@
 # API Integration Guide
 
-**Document Version:** 2.15
-**Last Updated:** 2026-11-21
+**Document Version:** 2.16
+**Last Updated:** 2026-11-23
+
+**2026-11-23 revision (Phase 8C.3):** Documented migration `021`, durable
+workspace/policy/local-day run claims, per-product checkpoints, and the disabled
+global Celery dispatcher. Workspace activation and budget enforcement are not
+implemented; `execution_available` remains false and the dispatcher exits before
+database access. See §4.16.
 
 **2026-11-21 revision (Phase 6B):** Added the authenticated, read-only
 catalog-first automation discovery preview. It reuses the Recommendation
@@ -626,6 +632,34 @@ exactly-once claim. Manual Queue creation does not consume this automation
 capacity lock or claim the same daily-limit policy, so a manual operator action
 can still exceed the automation quota; this remains an explicit scope
 limitation.
+
+### 4.16 Disabled automation orchestration foundation (Phase 8C.3)
+
+Migration `021` adds durable `automation_runs` and `automation_run_items`.
+Exactly one logical run is allowed per `(workspace_id, policy_id, local_date)`;
+the saved policy revision is recorded as a snapshot but is not part of the
+uniqueness key. Product checkpoints preserve selected/generation/Queue states,
+sanitized failures, and timestamps. Each successful product's generated text
+and canonical affiliate URL are committed before the next provider call, so a
+later failure can resume Queue creation without another AI call.
+
+Celery Beat registers one global `dispatch_due_automations` task. The global
+execution flag defaults off, emergency stop defaults on, and the workspace
+activation and AI budget gates are not implemented in this phase. Therefore the
+task returns before opening a database session and creates no run claims. It does
+not invoke discovery, AI, Queue, Celery publishing, or provider APIs. The public
+policy contract continues to return `execution_available: false`; `enabled`
+remains saved operator intent only.
+
+The internal orchestration boundary reuses Phase 6B discovery, Phase 7B content
+generation, and Phase 8B Queue scheduling. It creates no alternate Queue or
+publisher. A non-uncertain expired run can recover for at most five minutes
+after lease expiry; an older incomplete run is marked missed instead of caught
+up. Expired work with a durably started AI request becomes
+`needs_operator_review`; uncertain generation is not automatically retried.
+Activation, reliable AI budget enforcement, operator run-history controls, and
+live unattended validation remain future work. The existing manual
+`POST /automation/queue/prepare` path remains available and unchanged.
 
 ---
 
