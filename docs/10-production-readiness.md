@@ -144,13 +144,18 @@ publishing path.
 
 Scheduling is workspace-timezone aware, persists UTC timestamps, handles DST
 gaps/folds deterministically, and counts scheduled/published destination items
-against the daily limit. The response keeps `execution_available: false` and
-warns that the existing Queue scheduler may publish due items. There is no
-automation Celery task, durable automation-run table, or exactly-once guarantee;
-the bounded Redis guard and product-row/history checks provide conservative
-duplicate protection until later safety hardening. CI verification remains the
-release gate for this feature, and no live provider calls are part of the
-automated tests.
+against the daily limit. Final allocation uses a PostgreSQL transaction-scoped
+advisory lock keyed by workspace/provider/destination, re-reads occupancy, and
+inserts the scheduled Queue row before commit. Scheduled rows use
+`scheduled_at`; published rows use authoritative `published_at`, including
+delayed publications crossing a local midnight. The response keeps
+`execution_available: false` and warns that the existing Queue scheduler may
+publish due items. There is no automation Celery task, durable automation-run
+table, or exactly-once guarantee; the bounded Redis guard and product-row/history
+checks provide conservative duplicate protection. Manual Queue creation does
+not participate in the automation daily-limit lock and may therefore exceed the
+automation quota. CI verification remains the release gate for this feature,
+and no live provider calls are part of the automated tests.
 
 ---
 

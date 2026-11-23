@@ -9,7 +9,6 @@ from app.auth.models import User
 from app.core.enums import AutomationFrequency, AutomationProvider, UserRole
 from app.models.automation_policy import AutomationPolicy
 from app.repositories.automation_policy import AutomationPolicyRepository
-from app.repositories.queue import QueueRepository
 from app.repositories.workspace import WorkspaceMembershipRepository, WorkspaceRepository
 from app.repositories.workspace_settings import WorkspaceSettingsRepository
 from app.schemas.automation_content import (
@@ -28,9 +27,7 @@ from app.services.automation_content import AutomationContentGenerationService
 from app.services.automation_policy import AutomationPolicyService
 from app.services.automation_scheduling import (
     SchedulingError,
-    candidate_schedule_slots,
     resolve_timezone,
-    select_schedule_slots,
 )
 from app.services.exceptions import (
     ConflictError,
@@ -51,7 +48,6 @@ class AutomationQueueService:
         self.settings = WorkspaceSettingsRepository(session)
         self.memberships = WorkspaceMembershipRepository(session)
         self.workspaces = WorkspaceRepository(session)
-        self.queues = QueueRepository(session)
         self.queue_service = QueueService(session)
 
     async def prepare(
@@ -137,57 +133,17 @@ class AutomationQueueService:
         content: AutomationContentPreviewResponse,
     ) -> AutomationQueuePrepareResponse:
         generated = [item for item in content.results if item.status == "generated"]
-        now_utc = datetime.now(UTC)
-        candidates = candidate_schedule_slots(
-            now_utc=now_utc,
-            timezone_name=timezone_name,
-            preferred_time_local=policy.preferred_time_local,
-            posts_per_day=policy.posts_per_day,
-        )
-        existing: list[datetime] = []
-        if candidates and generated:
-            existing = await self.queues.list_destination_publishing_timestamps(
-                workspace_id=workspace_id,
-                provider=policy.provider,
-                destination_id=self._destination_id(destination),
-                start_utc=now_utc,
-                end_utc=candidates[-1].scheduled_at + timedelta(seconds=1),
-            )
-        try:
-            slots = select_schedule_slots(
-                candidates=candidates,
-                existing_timestamps=existing,
-                timezone_name=timezone_name,
-                daily_limit=policy.posts_per_day,
-                count=len(generated),
-            )
-        except SchedulingError:
-            slots = []
-
         results: list[AutomationQueueProductResult] = []
-        generated_index = 0
         for item in content.results:
             if item.status != "generated":
                 results.append(self._map_non_generated(item))
                 continue
-            if generated_index >= len(slots):
-                results.append(
-                    self._queue_result(
-                        item,
-                        status="skipped_no_available_slot",
-                        error_category="no_available_slot",
-                    )
-                )
-                generated_index += 1
-                continue
-            slot = slots[generated_index]
-            generated_index += 1
             result = await self._create_one(
                 workspace_id=workspace_id,
                 policy=policy,
                 destination=destination,
                 item=item,
-                scheduled_at=slot.scheduled_at,
+                timezone_name=timezone_name,
             )
             results.append(result)
 
@@ -222,7 +178,7 @@ class AutomationQueueService:
         policy: AutomationPolicy,
         destination: AutomationDestinationRead,
         item: AutomationContentProductResult,
-        scheduled_at: datetime,
+        timezone_name: str,
     ) -> AutomationQueueProductResult:
         if not item.content or not item.affiliate_url:
             return self._queue_result(
@@ -234,7 +190,10 @@ class AutomationQueueService:
             title=None,
             content=item.content,
             status="scheduled",
-            scheduled_at=scheduled_at,
+            # QueueCreate requires a provisional future value. QueueService
+            # replaces it with the authoritative slot after locking and
+            # re-reading destination occupancy.
+            scheduled_at=datetime.now(UTC) + timedelta(days=1),
             provider=policy.provider,
             channel_id=destination.channel_id,
             facebook_page_id=destination.page_id,
@@ -247,8 +206,18 @@ class AutomationQueueService:
                 payload,
                 workspace_id,
                 expected_affiliate_url=item.affiliate_url,
+                timezone_name=timezone_name,
+                preferred_time_local=policy.preferred_time_local,
+                daily_limit=policy.posts_per_day,
             )
             await self.session.commit()
+        except SchedulingError:
+            await self.session.rollback()
+            return self._queue_result(
+                item,
+                status="skipped_no_available_slot",
+                error_category="no_available_slot",
+            )
         except ConflictError:
             await self.session.rollback()
             return self._queue_result(
@@ -283,13 +252,6 @@ class AutomationQueueService:
             queue_item_id=queue_item.id,
             scheduled_at=queue_item.scheduled_at,
         )
-
-    @staticmethod
-    def _destination_id(destination: AutomationDestinationRead) -> UUID:
-        destination_id = destination.channel_id or destination.page_id
-        if destination_id is None:
-            raise ValidationError("Automation destination is missing an identifier")
-        return destination_id
 
     @staticmethod
     def _map_non_generated(

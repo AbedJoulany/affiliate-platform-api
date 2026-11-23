@@ -606,15 +606,26 @@ publishing adapter is added. Queue writes are committed per product so one
 failure does not erase an earlier successful item.
 
 The saved workspace timezone and `posts_per_day` limit determine future UTC
-slots. Existing scheduled and published items for the selected destination
-count against the local-day limit. DST gaps are moved to the first valid wall
-clock minute and ambiguous fall-back times choose the earlier occurrence.
-Invalid timezone, stale policy, missing destination readiness, missing affiliate
-URL, duplicate/history conflict, or no available slot fails closed with a
-typed per-product result. The response always keeps `execution_available: false`
-and warns that due scheduled items may later be published by the existing Queue
-scheduler. The short-lived Redis guard reduces repeated preparation requests;
-it is not a durable exactly-once claim.
+slots. The limit is scoped to the workspace, provider, and selected destination.
+During final Queue allocation, PostgreSQL takes a transaction-scoped advisory
+lock for that scope, re-reads scheduled and published occupancy, allocates a
+slot, and inserts the Queue row before the transaction commits. This prevents
+concurrent automation requests in separate application processes from
+committing conflicting reservations. SQLite development tests do not provide
+this cross-process guarantee. Scheduled rows count by `scheduled_at`; published
+rows count by authoritative `published_at`, even when both timestamps exist.
+Delayed publication is therefore counted in the local day in which it actually
+published. DST gaps are moved to the first valid wall clock minute and
+ambiguous fall-back times choose the earlier occurrence. Invalid timezone, stale
+policy, missing destination readiness, missing affiliate URL, duplicate/history
+conflict, or no available slot fails closed with a typed per-product result. The
+response always keeps `execution_available: false` and warns that due scheduled
+items may later be published by the existing Queue scheduler. The short-lived
+Redis guard reduces repeated preparation requests; it is not a durable
+exactly-once claim. Manual Queue creation does not consume this automation
+capacity lock or claim the same daily-limit policy, so a manual operator action
+can still exceed the automation quota; this remains an explicit scope
+limitation.
 
 ---
 

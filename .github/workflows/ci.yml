@@ -68,7 +68,7 @@ jobs:
       - name: Verify PostgreSQL migration, policy, discovery, and automation Queue
         run: python -m pytest -q tests/test_automation_policy_postgres.py tests/test_automation_discovery_postgres.py tests/test_automation_queue_postgres.py
       - name: Lint PostgreSQL verification
-        run: python -m ruff check tests/test_automation_policy_postgres.py tests/test_automation_discovery_postgres.py
+        run: python -m ruff check tests/test_automation_policy_postgres.py tests/test_automation_discovery_postgres.py tests/test_automation_queue_postgres.py
 
   frontend:
     runs-on: ubuntu-latest

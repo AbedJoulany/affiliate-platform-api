@@ -857,22 +857,30 @@ Queue items through the existing QueueService.
 
 Scheduling uses the saved workspace timezone and daily policy limit, persists
 UTC timestamps, handles DST gaps/folds deterministically, counts existing
-scheduled and published items for the selected destination, and rejects stale
-policy or unavailable destination state. Each product has an independent
-result; a duplicate/history conflict or unavailable slot does not roll back
-previously committed successful items.
+scheduled and published items for the selected workspace/provider/destination,
+and rejects stale policy or unavailable destination state. Final allocation uses
+a PostgreSQL transaction-scoped advisory lock, re-reads occupancy, and inserts
+the Queue row before commit, so concurrent automation requests cannot commit
+conflicting reservations for the same destination scope. Scheduled rows count
+by `scheduled_at`; published rows count by authoritative `published_at`, even
+when both timestamps exist. Each product has an independent result; a
+duplicate/history conflict or unavailable slot does not roll back previously
+committed successful items.
 
 Scheduled items may later be published by the existing Queue scheduler when
 due. This is an explicit side effect of the approved operation, not proof that
 unattended automation is enabled. No automation Celery task, parallel Queue,
-run table, or publishing adapter is introduced. The short-lived Phase 7B
-Redis guard remains bounded protection rather than durable exactly-once Queue
-creation.
+run table, or publishing adapter is introduced. The short-lived Phase 7B Redis
+guard remains bounded protection rather than durable exactly-once Queue
+creation. Manual Queue creation does not participate in the automation
+daily-limit lock, so the automation quota is not claimed as a system-wide
+manual-plus-automation quota.
 
-**Acceptance evidence so far:** Linux backend verification passed (483 tests
-passed, 13 skipped), focused Phase 8B tests passed, PostgreSQL migration and
-Queue tests passed, real Redis guard tests passed, and Ruff passed. CI and the
-pull request remain the release gate.
+**Acceptance evidence so far:** Linux backend verification after the scheduling
+hardening passed (484 tests passed, 20 skipped), focused PostgreSQL migration,
+timestamp, workspace, destination, and concurrency tests passed (16 tests), the
+real Redis guard tests passed (4 tests), and Ruff passed. CI and the pull request
+remain the release gate.
 
 ```text
 Automation
