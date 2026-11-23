@@ -1,7 +1,7 @@
 import httpx
 
 from app.ai.base import AIProvider
-from app.ai.retry import execute_with_retries
+from app.ai.retry import AI_MAX_ATTEMPTS, execute_with_retries
 from app.core.config import get_settings
 from app.services.exceptions import AIProviderError
 
@@ -27,7 +27,7 @@ class GeminiProvider(AIProvider):
     def is_configured(self) -> bool:
         return bool(self.api_key)
 
-    async def generate_content(self, prompt: str) -> str:
+    async def generate_content(self, prompt: str, *, allow_retries: bool = True) -> str:
         if not self.is_configured:
             raise AIProviderError("Gemini API key is not configured")
 
@@ -62,7 +62,11 @@ class GeminiProvider(AIProvider):
                 return response.json()
 
         try:
-            data = await execute_with_retries(_request_once, provider=self.name)
+            data = await execute_with_retries(
+                _request_once,
+                provider=self.name,
+                max_attempts=AI_MAX_ATTEMPTS if allow_retries else 1,
+            )
         except httpx.HTTPStatusError as exc:
             status_code = exc.response.status_code
             if status_code in {401, 403}:

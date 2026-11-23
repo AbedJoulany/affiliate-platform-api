@@ -282,6 +282,11 @@ class AutomationContentGenerationService:
                             tone=preferences.tone,
                             language=preferences.language,
                             length=preferences.length,
+                            # Durable orchestration treats every provider error as
+                            # potentially billable; it must not resubmit an
+                            # uncertain request. Explicit preview requests retain
+                            # the existing retry behavior.
+                            allow_retries=run_id is None,
                         ),
                         timeout=remaining,
                     )

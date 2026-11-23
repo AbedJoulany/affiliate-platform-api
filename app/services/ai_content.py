@@ -61,6 +61,7 @@ class AIContentService:
         tone: ToneProfile,
         language: ContentLanguage,
         length: ContentLength,
+        allow_retries: bool = True,
     ) -> GenerateContentResponse:
         """Generate from a server-validated catalog product without URL fetching."""
         return await self._generate_from_context(
@@ -71,6 +72,7 @@ class AIContentService:
             language=language,
             length=length,
             instruction_modifiers=[],
+            allow_retries=allow_retries,
         )
 
     async def _generate_from_context(
@@ -83,6 +85,7 @@ class AIContentService:
         language: ContentLanguage,
         length: ContentLength,
         instruction_modifiers: list[str] | None,
+        allow_retries: bool = True,
     ) -> GenerateContentResponse:
 
         ai_provider = get_ai_provider(provider)
@@ -94,7 +97,10 @@ class AIContentService:
             length=length,
             instruction_modifiers=instruction_modifiers or [],
         )
-        content = await ai_provider.generate_content(prompt)
+        if allow_retries:
+            content = await ai_provider.generate_content(prompt)
+        else:
+            content = await ai_provider.generate_content(prompt, allow_retries=False)
 
         return GenerateContentResponse(
             product_id=context.product_id,
