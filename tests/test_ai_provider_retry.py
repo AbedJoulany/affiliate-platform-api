@@ -191,6 +191,41 @@ def _total_posts() -> int:
     return sum(client.post_calls for client in _FakeAsyncClient.instances)
 
 
+@pytest.mark.parametrize(
+    ("provider_factory", "success_payload"),
+    [
+        pytest.param(_openai_provider, _openai_success_payload(), id="openai"),
+        pytest.param(_gemini_provider, _gemini_success_payload(), id="gemini"),
+    ],
+)
+@pytest.mark.parametrize(
+    "failure_factory",
+    [
+        pytest.param(lambda: httpx.ReadTimeout("response timed out"), id="timeout"),
+        pytest.param(lambda: httpx.ReadError("connection reset after submission"), id="reset"),
+        pytest.param(lambda: _http_status_error(429), id="http-429"),
+        pytest.param(lambda: _http_status_error(500), id="http-500"),
+        pytest.param(lambda: _http_status_error(503), id="http-503"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_single_attempt_policy_never_resubmits_automation_request(
+    monkeypatch,
+    provider_factory,
+    success_payload,
+    failure_factory,
+):
+    _install_post_queue(
+        monkeypatch,
+        [failure_factory(), _json_response(success_payload)],
+    )
+
+    with pytest.raises(AIProviderError):
+        await provider_factory().generate_content("prompt", allow_retries=False)
+
+    assert _total_posts() == 1
+
+
 # ---------------------------------------------------------------------------
 # OpenAI provider behavior
 # ---------------------------------------------------------------------------

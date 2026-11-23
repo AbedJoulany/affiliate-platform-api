@@ -8,7 +8,7 @@ class AIProvider(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def generate_content(self, prompt: str) -> str:
+    async def generate_content(self, prompt: str, *, allow_retries: bool = True) -> str:
         raise NotImplementedError
 
     @property

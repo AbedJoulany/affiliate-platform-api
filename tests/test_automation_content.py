@@ -546,10 +546,6 @@ async def test_internal_preview_checkpoints_success_before_next_provider_call(cl
         "app.services.automation_content.get_automation_generation_redis",
         get_redis,
     )
-    monkeypatch.setattr(
-        "app.services.automation_content.get_ai_provider",
-        lambda _provider: SimpleNamespace(is_configured=True),
-    )
     _, token = await register_and_login(client, role="user")
     headers = await workspace_auth_headers(token)
     workspace_id = headers[WORKSPACE_ID_HEADER]
@@ -559,6 +555,24 @@ async def test_internal_preview_checkpoints_success_before_next_provider_call(cl
 
     checkpoints: list[tuple[UUID, str]] = []
     provider_calls = 0
+    retry_policies: list[bool] = []
+
+    class Provider:
+        name = "openai"
+        is_configured = True
+
+        async def generate_content(self, prompt: str, *, allow_retries: bool = True) -> str:
+            nonlocal provider_calls
+            del prompt
+            provider_calls += 1
+            retry_policies.append(allow_retries)
+            if provider_calls == 2:
+                assert len(checkpoints) == 1
+            return "محتوى تسويقي آمن"
+
+    provider = Provider()
+    monkeypatch.setattr("app.services.automation_content.get_ai_provider", lambda _: provider)
+    monkeypatch.setattr("app.services.ai_content.get_ai_provider", lambda _: provider)
 
     async def on_selected(_selected) -> None:
         return None
@@ -571,15 +585,6 @@ async def test_internal_preview_checkpoints_success_before_next_provider_call(cl
 
     async with SessionLocal() as session:
         service = AutomationContentGenerationService(session)
-
-        async def generate_for_product(_product, **_kwargs):
-            nonlocal provider_calls
-            provider_calls += 1
-            if provider_calls == 2:
-                assert len(checkpoints) == 1
-            return SimpleNamespace(content="محتوى تسويقي آمن")
-
-        monkeypatch.setattr(service.ai, "generate_for_product", generate_for_product)
         response = await service.preview_for_run(
             UUID(workspace_id),
             AutomationContentPreviewRequest(
@@ -595,6 +600,7 @@ async def test_internal_preview_checkpoints_success_before_next_provider_call(cl
         )
 
     assert provider_calls == 2
+    assert retry_policies == [False, False]
     assert len(checkpoints) == 2
     assert response.generated_count == 2
 
