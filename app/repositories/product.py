@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 from decimal import Decimal
+from uuid import UUID
 
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -54,6 +55,14 @@ class ProductRepository(BaseRepository[Product]):
     async def get_by_product_url(self, product_url: str) -> Product | None:
         result = await self.session.execute(
             select(Product).where(Product.product_url == product_url)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_by_id_for_update(self, product_id: UUID) -> Product | None:
+        result = await self.session.execute(
+            select(Product)
+            .where(Product.id == product_id)
+            .with_for_update()
         )
         return result.scalar_one_or_none()
 

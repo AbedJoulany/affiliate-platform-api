@@ -1,3 +1,4 @@
+import hashlib
 from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
@@ -27,6 +28,32 @@ class QueueRepository(BaseRepository[QueueItem]):
         if status is not None:
             filters.append(QueueItem.status == status)
         return filters
+
+    async def acquire_destination_capacity_lock(
+        self,
+        *,
+        workspace_id: UUID,
+        provider: str,
+        destination_id: UUID,
+    ) -> None:
+        """Serialize automation capacity allocation for one destination.
+
+        PostgreSQL advisory transaction locks work across API processes and are
+        released automatically on commit or rollback. SQLite has no equivalent
+        primitive, so local SQLite tests continue without the cross-process
+        guarantee that is verified by the PostgreSQL integration suite.
+        """
+        bind = self.session.get_bind()
+        if bind.dialect.name != "postgresql":
+            return
+
+        scope = f"{workspace_id}:{provider}:{destination_id}".encode()
+        lock_key = int.from_bytes(
+            hashlib.blake2b(scope, digest_size=8).digest(),
+            byteorder="big",
+            signed=True,
+        )
+        await self.session.execute(select(func.pg_advisory_xact_lock(lock_key)))
 
     async def get_with_relations(self, queue_id: UUID) -> QueueItem | None:
         result = await self.session.execute(
@@ -235,6 +262,52 @@ class QueueRepository(BaseRepository[QueueItem]):
             recently_published=frozenset(published_result.scalars().all()),
             unresolved_ambiguous=frozenset(ambiguous_result.scalars().all()),
         )
+
+    async def list_destination_publishing_timestamps(
+        self,
+        *,
+        workspace_id: UUID,
+        provider: str,
+        destination_id: UUID,
+        start_utc: datetime,
+        end_utc: datetime,
+    ) -> list[datetime]:
+        """Return bounded scheduled/published timestamps for one destination."""
+        destination_filter = (
+            QueueItem.channel_id == destination_id
+            if provider == "telegram"
+            else QueueItem.facebook_page_id == destination_id
+        )
+        result = await self.session.execute(
+            select(QueueItem.status, QueueItem.scheduled_at, QueueItem.published_at)
+            .where(
+                QueueItem.workspace_id == workspace_id,
+                QueueItem.provider == provider,
+                destination_filter,
+                or_(
+                    and_(
+                        QueueItem.status == QueueStatus.SCHEDULED,
+                        QueueItem.scheduled_at >= start_utc,
+                        QueueItem.scheduled_at < end_utc,
+                    ),
+                    and_(
+                        QueueItem.status == QueueStatus.PUBLISHED,
+                        QueueItem.published_at >= start_utc,
+                        QueueItem.published_at < end_utc,
+                    ),
+                ),
+            )
+        )
+        timestamps: list[datetime] = []
+        for status, scheduled_at, published_at in result.all():
+            timestamp = (
+                scheduled_at
+                if status == QueueStatus.SCHEDULED
+                else published_at
+            )
+            if timestamp is not None:
+                timestamps.append(timestamp)
+        return timestamps
 
 
 class QueuePublishAttemptRepository(BaseRepository[QueuePublishAttempt]):

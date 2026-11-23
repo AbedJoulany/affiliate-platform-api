@@ -128,8 +128,34 @@ Provider errors are sanitized; raw provider response bodies and credentials are
 not returned. Redis duplicate protection is short-lived and does not claim
 exactly-once generation or billing. The endpoint does not create Queue items,
 schedule or publish posts, register Celery automation, persist generated drafts,
-or change `execution_available: false`. Phase 8 Queue integration and later
-automation execution remain deferred.
+or change `execution_available: false`. Phase 8B adds a separate explicit
+Queue-preparation operation; it does not alter this preview contract.
+
+### Phase 8B explicit scheduled Queue preparation
+
+`POST /api/v1/automation/queue/prepare` is the first write-capable automation
+operation. It requires explicit AI-cost and future-scheduling confirmation and
+uses the saved policy revision. It is workspace-member authorized, processes at
+most two server-selected products sequentially, and revalidates product status,
+history, destination readiness, and the canonical affiliate URL before each
+transactional Queue insert. It creates only `SCHEDULED` Queue items through the
+existing QueueService; the existing Beat/worker/publisher path remains the only
+publishing path.
+
+Scheduling is workspace-timezone aware, persists UTC timestamps, handles DST
+gaps/folds deterministically, and counts scheduled/published destination items
+against the daily limit. Final allocation uses a PostgreSQL transaction-scoped
+advisory lock keyed by workspace/provider/destination, re-reads occupancy, and
+inserts the scheduled Queue row before commit. Scheduled rows use
+`scheduled_at`; published rows use authoritative `published_at`, including
+delayed publications crossing a local midnight. The response keeps
+`execution_available: false` and warns that the existing Queue scheduler may
+publish due items. There is no automation Celery task, durable automation-run
+table, or exactly-once guarantee; the bounded Redis guard and product-row/history
+checks provide conservative duplicate protection. Manual Queue creation does
+not participate in the automation daily-limit lock and may therefore exceed the
+automation quota. CI verification remains the release gate for this feature,
+and no live provider calls are part of the automated tests.
 
 ---
 

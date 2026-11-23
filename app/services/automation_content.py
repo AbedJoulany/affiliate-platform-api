@@ -119,9 +119,12 @@ class AutomationContentGenerationService:
         user: User,
         workspace_id: UUID,
         payload: AutomationContentPreviewRequest,
+        *,
+        authorize_policy: bool = True,
     ) -> AutomationContentPreviewResponse:
         policy_service = AutomationPolicyService(self.session)
-        await policy_service.get(user, workspace_id)
+        if authorize_policy:
+            await policy_service.get(user, workspace_id)
         policy = await self.policies.get_by_workspace_id(workspace_id)
         if policy is None:
             raise NotFoundError(
