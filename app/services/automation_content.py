@@ -5,6 +5,7 @@ import hashlib
 import json
 import logging
 import secrets
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -42,6 +43,7 @@ from app.services.automation_policy import AutomationPolicyService
 from app.services.exceptions import (
     AIProviderError,
     ConflictError,
+    ForbiddenError,
     NotFoundError,
     ServiceUnavailableError,
     ValidationError,
@@ -122,9 +124,56 @@ class AutomationContentGenerationService:
         *,
         authorize_policy: bool = True,
     ) -> AutomationContentPreviewResponse:
+        return await self._preview(
+            user,
+            workspace_id,
+            payload,
+            authorize_policy=authorize_policy,
+        )
+
+    async def preview_for_run(
+        self,
+        workspace_id: UUID,
+        payload: AutomationContentPreviewRequest,
+        run_id: UUID,
+        *,
+        on_selected: Callable[[list[Any]], Awaitable[None]],
+        on_generation_started: Callable[[UUID], Awaitable[None]],
+        on_generation_succeeded: Callable[[AutomationContentProductResult], Awaitable[None]],
+    ) -> AutomationContentPreviewResponse:
+        """Internal path for a validated durable run; no synthetic user is used."""
+        return await self._preview(
+            None,
+            workspace_id,
+            payload,
+            authorize_policy=False,
+            run_id=run_id,
+            on_selected=on_selected,
+            on_generation_started=on_generation_started,
+            on_generation_succeeded=on_generation_succeeded,
+        )
+
+    async def _preview(
+        self,
+        user: User | None,
+        workspace_id: UUID,
+        payload: AutomationContentPreviewRequest,
+        *,
+        authorize_policy: bool,
+        run_id: UUID | None = None,
+        on_selected: Callable[[list[Any]], Awaitable[None]] | None = None,
+        on_generation_started: Callable[[UUID], Awaitable[None]] | None = None,
+        on_generation_succeeded: (
+            Callable[[AutomationContentProductResult], Awaitable[None]] | None
+        ) = None,
+    ) -> AutomationContentPreviewResponse:
         policy_service = AutomationPolicyService(self.session)
         if authorize_policy:
+            if user is None:
+                raise ForbiddenError()
             await policy_service.get(user, workspace_id)
+        elif user is None and run_id is None:
+            raise ForbiddenError()
         policy = await self.policies.get_by_workspace_id(workspace_id)
         if policy is None:
             raise NotFoundError(
@@ -133,12 +182,17 @@ class AutomationContentGenerationService:
         if policy.revision != payload.expected_policy_revision:
             raise ConflictError("Automation policy changed; reload before generating")
 
-        settings = await WorkspaceSettingsService(self.session).get(user, str(workspace_id))
+        settings_service = WorkspaceSettingsService(self.session)
+        settings = (
+            await settings_service.get(user, str(workspace_id))
+            if user is not None
+            else await settings_service.get_for_internal_workspace(workspace_id)
+        )
         preferences = self._resolve_preferences(policy, settings)
         self._validate_provider_configuration(preferences.provider)
 
         claim = await self._claim_duplicate_guard(
-            user_id=user.id,
+            user_id=str(user.id) if user is not None else f"automation-run:{run_id}",
             workspace_id=workspace_id,
             policy=policy,
             payload=payload,
@@ -146,10 +200,13 @@ class AutomationContentGenerationService:
         )
         provider_call_started = False
         try:
-            discovery = await self._await_with_deadline(
-                AutomationDiscoveryService(self.session).preview(user, workspace_id),
-                claim,
+            discovery_service = AutomationDiscoveryService(self.session)
+            discovery_operation = (
+                discovery_service.preview(user, workspace_id)
+                if user is not None
+                else discovery_service.preview_for_orchestration(workspace_id)
             )
+            discovery = await self._await_with_deadline(discovery_operation, claim)
             current_policy = await self._await_with_deadline(
                 self.policies.get_by_workspace_id(workspace_id),
                 claim,
@@ -161,6 +218,8 @@ class AutomationContentGenerationService:
                 raise ConflictError("Automation policy changed; reload before generating")
 
             selected = discovery.selected_products[: min(payload.max_products, MAX_PRODUCTS)]
+            if on_selected is not None:
+                await self._await_with_deadline(on_selected(selected), claim)
             results: list[AutomationContentProductResult] = []
             warnings = [
                 "This preview may incur AI provider charges.",
@@ -204,6 +263,12 @@ class AutomationContentGenerationService:
 
                 try:
                     remaining = self._remaining_seconds(claim)
+                    if on_generation_started is not None:
+                        await self._await_with_deadline(
+                            on_generation_started(product.id),
+                            claim,
+                        )
+                        remaining = self._remaining_seconds(claim)
                     # From this point onward the provider may have received a
                     # billable request even if the caller later times out or
                     # loses the connection.  Keep the bounded guard in that
@@ -292,18 +357,25 @@ class AutomationContentGenerationService:
                     )
                     continue
 
-                results.append(
-                    self._result(
-                        product.id,
-                        selection.rank,
-                        selection.recommendation_score,
-                        status="generated",
-                        content=generated.content.strip(),
-                        affiliate_url=product.affiliate_url,
-                        requires_human_review=True,
-                        warnings=["Product claims have not been independently verified"],
-                    )
+                generated_result = self._result(
+                    product.id,
+                    selection.rank,
+                    selection.recommendation_score,
+                    status="generated",
+                    content=generated.content.strip(),
+                    affiliate_url=product.affiliate_url,
+                    requires_human_review=True,
+                    warnings=["Product claims have not been independently verified"],
                 )
+                results.append(generated_result)
+                if on_generation_succeeded is not None:
+                    # Persist this product before beginning another potentially
+                    # billable provider call, so a later worker crash preserves
+                    # already completed work for Queue-only recovery.
+                    await self._await_with_deadline(
+                        on_generation_succeeded(generated_result),
+                        claim,
+                    )
 
             generated_count = sum(item.status == "generated" for item in results)
             response = AutomationContentPreviewResponse(
@@ -439,7 +511,7 @@ class AutomationContentGenerationService:
     async def _claim_duplicate_guard(
         self,
         *,
-        user_id: UUID,
+        user_id: str,
         workspace_id: UUID,
         policy: AutomationPolicy,
         payload: AutomationContentPreviewRequest,

@@ -71,6 +71,11 @@ class Settings(BaseSettings):
     celery_result_backend: str | None = None
     celery_publish_interval_seconds: int = 60
     celery_publish_batch_size: int = 50
+    # Phase 8C foundation only: the workspace activation gate is not implemented,
+    # so these settings cannot enable unattended work in this release.
+    automation_execution_enabled: bool = False
+    automation_emergency_stop: bool = True
+    celery_automation_dispatch_interval_seconds: int = 60
 
     aliexpress_app_key: str | None = None
     aliexpress_app_secret: str | None = None

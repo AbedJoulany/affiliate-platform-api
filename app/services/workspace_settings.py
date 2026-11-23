@@ -80,6 +80,15 @@ class WorkspaceSettingsService:
         row = await self.settings_rows.get_by_workspace_id(workspace_id)
         return self._to_read(workspace_id, can_edit, row)
 
+    async def get_for_internal_workspace(self, workspace_id: UUID) -> WorkspaceSettingsRead:
+        """Read settings for an already-authorized internal automation run.
+
+        This method is not an HTTP authorization bypass: callers must first
+        resolve and validate a persisted run and its Workspace ownership.
+        """
+        row = await self.settings_rows.get_by_workspace_id(workspace_id)
+        return self._to_read(workspace_id, False, row)
+
     async def patch(
         self,
         user: User,

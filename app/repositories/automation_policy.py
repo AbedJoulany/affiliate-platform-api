@@ -33,3 +33,12 @@ class AutomationPolicyRepository(BaseRepository[AutomationPolicy]):
             .with_for_update()
         )
         return result.scalar_one_or_none()
+
+    async def list_enabled(self, *, limit: int = 100) -> list[AutomationPolicy]:
+        result = await self.session.execute(
+            select(AutomationPolicy)
+            .where(AutomationPolicy.enabled.is_(True))
+            .order_by(AutomationPolicy.workspace_id, AutomationPolicy.id)
+            .limit(limit)
+        )
+        return list(result.scalars().all())

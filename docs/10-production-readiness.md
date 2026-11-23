@@ -1,9 +1,9 @@
 # Production Readiness and Release Runbook
 
-**Document Version:** 3.4
-**Last Updated:** 2026-11-21
+**Document Version:** 3.5
+**Last Updated:** 2026-11-23
 
-> **Current baseline:** PRs through #23 are merged. The Product A MVP includes the provider-aware Telegram/Facebook Queue, operational Dashboard phases 4.2–4.5, migration 020, the Phase 5C automation configuration UI, and the merged Phase 6B bounded read-only catalog preview. Phase 7B adds an explicit stateless content-generation preview implemented and CI verified in PR #24 (merge pending); it does not add unattended execution. Controlled live Facebook text/photo/scheduled publishing was operator-verified separately. Telegram failure/retry and PostgreSQL concurrent row-lock verification remain pending. Use [product-a-mvp-roadmap.md](./product-a-mvp-roadmap.md) for canonical phase status.
+> **Current baseline:** PR #25 is merged at `e53fd5c0dbc9452b968736d861c5c3248ef88408`. Phase 8B explicitly prepares scheduled Queue items; Phase 8C.3 adds a disabled orchestration foundation on its feature branch. Unattended execution remains unavailable. Controlled live Facebook text/photo/scheduled publishing was operator-verified separately. Telegram failure/retry remains pending. Use [product-a-mvp-roadmap.md](./product-a-mvp-roadmap.md) for canonical phase status.
 
 **2026-11-16 revision (Phase 3C.3 closeout):** PR #15 merged the publishing safety
 hardening and regression coverage. Already-published Queue items are rejected inside
@@ -150,12 +150,35 @@ inserts the scheduled Queue row before commit. Scheduled rows use
 `scheduled_at`; published rows use authoritative `published_at`, including
 delayed publications crossing a local midnight. The response keeps
 `execution_available: false` and warns that the existing Queue scheduler may
-publish due items. There is no automation Celery task, durable automation-run
-table, or exactly-once guarantee; the bounded Redis guard and product-row/history
-checks provide conservative duplicate protection. Manual Queue creation does
+publish due items. At the PR #25 baseline there was no automation Celery task or
+durable run table; the Phase 8C.3 branch adds both run tables and a periodic task
+that is fail-closed and exits before database access while activation is
+unavailable. There is no exactly-once guarantee; the bounded Redis guard and
+product-row/history checks provide conservative duplicate protection. Manual Queue creation does
 not participate in the automation daily-limit lock and may therefore exceed the
 automation quota. CI verification remains the release gate for this feature,
 and no live provider calls are part of the automated tests.
+
+### Phase 8C.3 disabled orchestration foundation
+
+The feature branch adds migration `021` with one durable daily run identity per
+workspace, policy, and local date, plus per-product processing checkpoints.
+Generation checkpoints are committed before an AI request. Each successful
+product's generated content is committed before the next AI request. If a lease
+expires while generation may be in flight, the run requires operator review and
+is not automatically regenerated. Persisted generated content can resume
+through the existing QueueService without another AI call.
+
+Other expired runs receive a five-minute recovery window after lease expiry;
+older incomplete runs are marked missed, preventing an automatic backlog.
+
+Beat registers one global dispatcher. Its global execution flag defaults off;
+the emergency stop defaults on, and workspace activation and budget enforcement
+remain unavailable. The task returns before database access while those gates
+are closed, and the policy API continues to report `execution_available: false`.
+No AI, Queue, or provider action is triggered by this disabled dispatcher.
+Migration and PostgreSQL concurrency verification are pending GitHub CI; no
+live AI or publishing calls were performed.
 
 ---
 
