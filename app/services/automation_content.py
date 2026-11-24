@@ -13,6 +13,7 @@ from uuid import UUID
 
 from redis import asyncio as redis
 from redis.exceptions import RedisError
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.content_validation import validate_generated_content
@@ -28,6 +29,7 @@ from app.core.enums import (
     ToneProfile,
 )
 from app.models.automation_policy import AutomationPolicy
+from app.models.automation_run import AutomationRunItem
 from app.models.product import Product
 from app.repositories.automation_policy import AutomationPolicyRepository
 from app.repositories.product import ProductRepository
@@ -38,6 +40,10 @@ from app.schemas.automation_content import (
     AutomationContentProductResult,
 )
 from app.services.ai_content import AIContentService
+from app.services.automation_ai_budget import (
+    AutomationAIBudgetError,
+    AutomationAIBudgetService,
+)
 from app.services.automation_discovery import AutomationDiscoveryService
 from app.services.automation_execution_gate import (
     AutomationExecutionStopped,
@@ -143,6 +149,7 @@ class AutomationContentGenerationService:
         *,
         on_selected: Callable[[list[Any]], Awaitable[None]],
         on_generation_started: Callable[[UUID], Awaitable[None]],
+        on_before_provider_submission: Callable[[UUID], Awaitable[None]],
         on_generation_succeeded: Callable[[AutomationContentProductResult], Awaitable[None]],
     ) -> AutomationContentPreviewResponse:
         """Internal path for a validated durable run; no synthetic user is used."""
@@ -154,6 +161,7 @@ class AutomationContentGenerationService:
             run_id=run_id,
             on_selected=on_selected,
             on_generation_started=on_generation_started,
+            on_before_provider_submission=on_before_provider_submission,
             on_generation_succeeded=on_generation_succeeded,
         )
 
@@ -167,6 +175,7 @@ class AutomationContentGenerationService:
         run_id: UUID | None = None,
         on_selected: Callable[[list[Any]], Awaitable[None]] | None = None,
         on_generation_started: Callable[[UUID], Awaitable[None]] | None = None,
+        on_before_provider_submission: Callable[[UUID], Awaitable[None]] | None = None,
         on_generation_succeeded: (
             Callable[[AutomationContentProductResult], Awaitable[None]] | None
         ) = None,
@@ -231,6 +240,7 @@ class AutomationContentGenerationService:
             ]
             warnings.extend(discovery.warnings)
             provider_failure = False
+            global_skip_category = "provider_unavailable"
 
             for selection in selected:
                 if provider_failure:
@@ -240,7 +250,7 @@ class AutomationContentGenerationService:
                             selection.rank,
                             selection.recommendation_score,
                             status="skipped_after_global_failure",
-                            error_category="provider_unavailable",
+                            error_category=global_skip_category,
                         )
                     )
                     continue
@@ -267,34 +277,154 @@ class AutomationContentGenerationService:
 
                 try:
                     remaining = self._remaining_seconds(claim)
+                    budget_service = None
+                    budget_plan = None
+                    reservation_id = None
+                    provider_submitted = False
+                    if run_id is not None:
+                        provider_instance = get_ai_provider(preferences.provider)
+                        model_name = getattr(provider_instance, "model", None)
+                        try:
+                            if not isinstance(model_name, str) or not model_name:
+                                raise AutomationAIBudgetError(
+                                    "ai_model_has_no_verified_token_bound"
+                                )
+                            budget_service = AutomationAIBudgetService(self.session)
+                            budget_plan = budget_service.plan(
+                                preferences.provider.value,
+                                model_name,
+                            )
+                        except AutomationAIBudgetError as exc:
+                            results.append(
+                                self._result(
+                                    selection.product_id,
+                                    selection.rank,
+                                    selection.recommendation_score,
+                                    status="failed_budget",
+                                    error_category=exc.category,
+                                )
+                            )
+                            provider_failure = True
+                            global_skip_category = exc.category
+                            continue
                     if on_generation_started is not None:
                         await self._await_with_deadline(
                             on_generation_started(product.id),
                             claim,
                         )
                         remaining = self._remaining_seconds(claim)
-                    # From this point onward the provider may have received a
-                    # billable request even if the caller later times out or
-                    # loses the connection.  Keep the bounded guard in that
-                    # case rather than permitting an immediate duplicate.
-                    provider_call_started = True
-                    generated = await asyncio.wait_for(
-                        self.ai.generate_for_product(
-                            product,
-                            provider=preferences.provider,
-                            content_type=preferences.content_type,
-                            tone=preferences.tone,
-                            language=preferences.language,
-                            length=preferences.length,
-                            # Durable orchestration treats every provider error as
-                            # potentially billable; it must not resubmit an
-                            # uncertain request. Explicit preview requests retain
-                            # the existing retry behavior.
-                            allow_retries=run_id is None,
-                        ),
-                        timeout=remaining,
-                    )
+                    if run_id is not None:
+                        run_item_id = await self._await_with_deadline(
+                            self.session.scalar(
+                                select(AutomationRunItem.id).where(
+                                    AutomationRunItem.run_id == run_id,
+                                    AutomationRunItem.product_id == product.id,
+                                )
+                            ),
+                            claim,
+                        )
+                        if run_item_id is None or budget_service is None or budget_plan is None:
+                            raise AutomationAIBudgetError("ai_run_item_checkpoint_missing")
+                        try:
+                            reservation_id = await self._await_with_deadline(
+                                budget_service.reserve(
+                                    workspace_id=workspace_id,
+                                    run_id=run_id,
+                                    run_item_id=run_item_id,
+                                    timezone_name=getattr(settings, "timezone", "UTC"),
+                                    plan=budget_plan,
+                                ),
+                                claim,
+                            )
+                        except AutomationAIBudgetError as exc:
+                            results.append(
+                                self._result(
+                                    selection.product_id,
+                                    selection.rank,
+                                    selection.recommendation_score,
+                                    status="failed_budget",
+                                    error_category=exc.category,
+                                )
+                            )
+                            provider_failure = True
+                            global_skip_category = exc.category
+                            continue
+                        try:
+                            if on_before_provider_submission is not None:
+                                await self._await_with_deadline(
+                                    on_before_provider_submission(product.id),
+                                    claim,
+                                )
+                            remaining = self._remaining_seconds(claim)
+                            if not await self._await_with_deadline(
+                                budget_service.mark_submitted(reservation_id),
+                                claim,
+                            ):
+                                await budget_service.release_before_submission(reservation_id)
+                                results.append(
+                                    self._result(
+                                        product.id,
+                                        selection.rank,
+                                        selection.recommendation_score,
+                                        status="failed_budget",
+                                        error_category="ai_reservation_not_submittable",
+                                    )
+                                )
+                                provider_failure = True
+                                global_skip_category = "ai_reservation_not_submittable"
+                                continue
+                        except BaseException:
+                            await asyncio.shield(
+                                budget_service.release_before_submission(reservation_id)
+                            )
+                            raise
+                        provider_submitted = True
+                        provider_call_started = True
+                        generated, usage = await asyncio.wait_for(
+                            self.ai.generate_for_product_with_usage(
+                                product,
+                                provider=preferences.provider,
+                                content_type=preferences.content_type,
+                                tone=preferences.tone,
+                                language=preferences.language,
+                                length=preferences.length,
+                                max_output_tokens=budget_plan.output_token_limit,
+                            ),
+                            timeout=remaining,
+                        )
+                        try:
+                            accounting_status = await budget_service.settle(reservation_id, usage)
+                        except Exception:
+                            accounting_status = "uncertain"
+                            await asyncio.shield(budget_service.mark_uncertain(reservation_id))
+                        if accounting_status != "settled":
+                            # The full conservative reservation remains charged;
+                            # do not make another paid call in this batch.
+                            provider_failure = True
+                            global_skip_category = "ai_usage_accounting_uncertain"
+                    else:
+                        # Explicit previews retain their existing manual retry
+                        # semantics and public response contract.
+                        provider_call_started = True
+                        generated = await asyncio.wait_for(
+                            self.ai.generate_for_product(
+                                product,
+                                provider=preferences.provider,
+                                content_type=preferences.content_type,
+                                tone=preferences.tone,
+                                language=preferences.language,
+                                length=preferences.length,
+                                allow_retries=True,
+                            ),
+                            timeout=remaining,
+                        )
+                except asyncio.CancelledError:
+                    if provider_submitted and budget_service is not None and reservation_id:
+                        await asyncio.shield(budget_service.mark_uncertain(reservation_id))
+                    raise
                 except TimeoutError:
+                    if provider_submitted and budget_service is not None and reservation_id:
+                        await asyncio.shield(budget_service.mark_uncertain(reservation_id))
                     results.append(
                         self._result(
                             product.id,
@@ -307,6 +437,8 @@ class AutomationContentGenerationService:
                     provider_failure = True
                     continue
                 except AIProviderError as exc:
+                    if provider_submitted and budget_service is not None and reservation_id:
+                        await asyncio.shield(budget_service.mark_uncertain(reservation_id))
                     category = getattr(exc, "category", "provider_error")
                     results.append(
                         self._result(
@@ -325,7 +457,24 @@ class AutomationContentGenerationService:
                     continue
                 except (AutomationExecutionStopped, AutomationRunOwnershipLost):
                     raise
+                except AutomationAIBudgetError as exc:
+                    if provider_submitted and budget_service is not None and reservation_id:
+                        await asyncio.shield(budget_service.mark_uncertain(reservation_id))
+                    results.append(
+                        self._result(
+                            product.id,
+                            selection.rank,
+                            selection.recommendation_score,
+                            status="failed_budget",
+                            error_category=exc.category,
+                        )
+                    )
+                    provider_failure = True
+                    global_skip_category = exc.category
+                    continue
                 except ValidationError:
+                    if provider_submitted and budget_service is not None and reservation_id:
+                        await asyncio.shield(budget_service.mark_uncertain(reservation_id))
                     results.append(
                         self._result(
                             product.id,
@@ -338,6 +487,8 @@ class AutomationContentGenerationService:
                     provider_failure = True
                     continue
                 except Exception:
+                    if provider_submitted and budget_service is not None and reservation_id:
+                        await asyncio.shield(budget_service.mark_uncertain(reservation_id))
                     logger.exception(
                         "Automation content generation failed product_id=%s provider=%s",
                         product.id,
@@ -352,6 +503,8 @@ class AutomationContentGenerationService:
                             error_category="unexpected_generation_error",
                         )
                     )
+                    provider_failure = True
+                    global_skip_category = "provider_outcome_uncertain"
                     continue
 
                 failures = validate_generated_content(generated.content, preferences.content_type)

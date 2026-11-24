@@ -77,6 +77,15 @@ class Settings(BaseSettings):
     automation_emergency_stop: bool = True
     celery_automation_dispatch_interval_seconds: int = 60
 
+    # Internal automation AI admission remains disabled until every explicit
+    # limit is configured. These are limits, not default spending thresholds.
+    automation_ai_budget_enabled: bool = False
+    automation_ai_workspace_daily_request_limit: int | None = None
+    automation_ai_global_daily_request_limit: int | None = None
+    automation_ai_workspace_daily_token_limit: int | None = None
+    automation_ai_global_daily_token_limit: int | None = None
+    automation_ai_max_output_tokens: int | None = None
+
     aliexpress_app_key: str | None = None
     aliexpress_app_secret: str | None = None
     aliexpress_tracking_id: str | None = None

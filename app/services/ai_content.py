@@ -6,6 +6,7 @@ from app.ai.factory import get_ai_provider
 from app.ai.product_context import ProductContext
 from app.ai.prompts import build_marketing_prompt
 from app.ai.url_fetcher import ProductURLFetcher
+from app.ai.usage import ProviderUsage
 from app.core.enums import (
     AIProviderType,
     ContentLanguage,
@@ -74,6 +75,44 @@ class AIContentService:
             instruction_modifiers=[],
             allow_retries=allow_retries,
         )
+
+    async def generate_for_product_with_usage(
+        self,
+        product: Product,
+        *,
+        provider: AIProviderType,
+        content_type: ContentType,
+        tone: ToneProfile,
+        language: ContentLanguage,
+        length: ContentLength,
+        max_output_tokens: int,
+    ) -> tuple[GenerateContentResponse, ProviderUsage]:
+        """Internal automation-only path; public/manual schemas remain unchanged."""
+        context = ProductContext.from_product(product)
+        ai_provider = get_ai_provider(provider)
+        prompt = build_marketing_prompt(
+            context,
+            content_type=content_type,
+            tone=tone,
+            language=language,
+            length=length,
+            instruction_modifiers=[],
+        )
+        generated = await ai_provider.generate_content_with_usage(
+            prompt,
+            max_output_tokens=max_output_tokens,
+        )
+        response = GenerateContentResponse(
+            product_id=context.product_id,
+            source_url=None,
+            provider=AIProviderType(ai_provider.name),
+            content=generated.content,
+            content_type=content_type,
+            tone=tone,
+            language=language,
+            length=length,
+        )
+        return response, generated.usage
 
     async def _generate_from_context(
         self,

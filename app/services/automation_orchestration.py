@@ -13,6 +13,7 @@ from app.repositories.automation_run import AutomationRunRepository
 from app.repositories.workspace_settings import WorkspaceSettingsRepository
 from app.schemas.automation_content import AutomationContentPreviewRequest
 from app.schemas.automation_policy import AutomationDestinationRead
+from app.services.automation_ai_budget import AutomationAIBudgetService
 from app.services.automation_content import AutomationContentGenerationService
 from app.services.automation_execution_gate import (
     AutomationExecutionStopped,
@@ -23,10 +24,10 @@ from app.services.automation_queue import AutomationQueueService
 from app.services.automation_scheduling import SchedulingError, resolve_local_time, resolve_timezone
 from app.services.exceptions import ServiceError
 
-# These implementation gates intentionally remain closed in Phase 8C.3. A later
-# approved phase must add workspace owner/admin activation and budget enforcement.
+# Budget admission is implemented, but workspace activation remains closed until
+# a separately approved phase provides its owner/admin activation controls.
 WORKSPACE_ACTIVATION_IMPLEMENTED = False
-AI_BUDGET_ENFORCEMENT_IMPLEMENTED = False
+AI_BUDGET_ENFORCEMENT_IMPLEMENTED = True
 MAX_PRODUCTS_PER_RUN = 2
 MAX_DISPATCH_LATENESS = timedelta(minutes=5)
 RUN_LEASE = timedelta(minutes=10)
@@ -302,6 +303,16 @@ class AutomationOrchestrationService:
             owned_run.heartbeat_at = datetime.now(UTC)
             await self.session.commit()
 
+        async def record_before_provider_submission(product_id: UUID) -> None:
+            owned_run = await self._require_owned_run(run.id, lease_owner)
+            await self._preflight_for_run(owned_run, for_update=True)
+            await self._assert_execution_permitted()
+            item = await self.runs.get_item(run.id, product_id)
+            if item is None or item.generation_state != "started":
+                raise RuntimeError("Generation checkpoint is no longer eligible")
+            owned_run.heartbeat_at = datetime.now(UTC)
+            await self.session.commit()
+
         async def record_generation_succeeded(generated) -> None:
             owned_run = await self._require_owned_run(run.id, lease_owner)
             item = await self.runs.get_item(run.id, generated.product_id)
@@ -317,6 +328,8 @@ class AutomationOrchestrationService:
 
         existing_items = await self.runs.items_for_run(run.id)
         if any(item.generation_state in {"started", "uncertain"} for item in existing_items):
+            run = await self._require_owned_run(run.id, lease_owner)
+            await AutomationAIBudgetService(self.session).recover_interrupted_run(run.id)
             run = await self._require_owned_run(run.id, lease_owner)
             run.status = "needs_operator_review"
             run.completed_at = datetime.now(UTC)
@@ -347,6 +360,7 @@ class AutomationOrchestrationService:
                 run.id,
                 on_selected=record_selection,
                 on_generation_started=record_generation_started,
+                on_before_provider_submission=record_before_provider_submission,
                 on_generation_succeeded=record_generation_succeeded,
             )
             run = await self._require_owned_run(run.id, lease_owner)
@@ -493,6 +507,10 @@ class AutomationOrchestrationService:
                 item for item in items if item.generation_state in {"started", "uncertain"}
             ]
             if uncertain:
+                await AutomationAIBudgetService(self.session).recover_interrupted_run(
+                    run.id,
+                    commit=False,
+                )
                 for item in uncertain:
                     item.status = "uncertain"
                     item.generation_state = "uncertain"

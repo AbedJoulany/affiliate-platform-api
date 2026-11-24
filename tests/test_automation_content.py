@@ -1,15 +1,18 @@
 import asyncio
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 import pytest
 from redis.exceptions import RedisError
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from app.ai.content_validation import validate_generated_content
 from app.ai.product_context import ProductContext
 from app.ai.prompts import build_marketing_prompt
+from app.ai.usage import ProviderGeneration, ProviderUsage
 from app.core.enums import (
     AIProviderType,
     ContentLanguage,
@@ -20,6 +23,7 @@ from app.core.enums import (
 )
 from app.core.workspace import WORKSPACE_ID_HEADER
 from app.models.automation_policy import AutomationPolicy
+from app.models.automation_run import AutomationRun, AutomationRunItem
 from app.models.product import Product
 from app.schemas.automation_content import AutomationContentPreviewRequest
 from app.services.automation_content import (
@@ -550,25 +554,100 @@ async def test_internal_preview_checkpoints_success_before_next_provider_call(cl
     headers = await workspace_auth_headers(token)
     workspace_id = headers[WORKSPACE_ID_HEADER]
     await _create_policy(workspace_id, products_per_run=2)
-    await _create_product(title="checkpoint product one")
-    await _create_product(title="checkpoint product two")
+    product_ids = [
+        await _create_product(title="checkpoint product one"),
+        await _create_product(title="checkpoint product two"),
+    ]
+
+    run_now = datetime.now(UTC)
+    async with SessionLocal() as session:
+        policy = await session.scalar(
+            select(AutomationPolicy).where(
+                AutomationPolicy.workspace_id == UUID(workspace_id)
+            )
+        )
+        run = AutomationRun(
+            workspace_id=UUID(workspace_id),
+            policy_id=policy.id,
+            policy_revision=policy.revision,
+            local_date=run_now.date(),
+            scheduled_for=run_now,
+            status="running",
+            lease_owner="test-owner",
+            lease_expires_at=run_now + timedelta(minutes=5),
+        )
+        session.add(run)
+        await session.flush()
+        session.add_all(
+            [
+                AutomationRunItem(run_id=run.id, product_id=product_id, selection_rank=index)
+                for index, product_id in enumerate(product_ids, start=1)
+            ]
+        )
+        await session.commit()
+        run_id = run.id
 
     checkpoints: list[tuple[UUID, str]] = []
+    accounting_events: list[str] = []
     provider_calls = 0
-    retry_policies: list[bool] = []
 
     class Provider:
         name = "openai"
         is_configured = True
+        model = "gpt-4o-mini-2024-07-18"
 
-        async def generate_content(self, prompt: str, *, allow_retries: bool = True) -> str:
+        async def generate_content_with_usage(
+            self, prompt: str, *, max_output_tokens: int
+        ) -> ProviderGeneration:
             nonlocal provider_calls
-            del prompt
+            del prompt, max_output_tokens
             provider_calls += 1
-            retry_policies.append(allow_retries)
+            accounting_events.append("provider")
             if provider_calls == 2:
                 assert len(checkpoints) == 1
-            return "محتوى تسويقي آمن"
+            return ProviderGeneration(
+                content="محتوى تسويقي آمن",
+                usage=ProviderUsage(
+                    provider="openai",
+                    requested_model=self.model,
+                    actual_model=self.model,
+                    input_tokens=10,
+                    output_tokens=5,
+                    total_tokens=15,
+                    complete=True,
+                ),
+            )
+
+    class Budget:
+        def __init__(self, _session):
+            pass
+
+        def plan(self, provider, model):
+            assert provider == "openai"
+            assert model == "gpt-4o-mini-2024-07-18"
+            return SimpleNamespace(output_token_limit=2048)
+
+        async def reserve(self, **_kwargs):
+            accounting_events.append("reserved")
+            return uuid4()
+
+        async def mark_submitted(self, _reservation_id):
+            accounting_events.append("submitted")
+            return True
+
+        async def settle(self, _reservation_id, _usage):
+            accounting_events.append("settled")
+            return "settled"
+
+        async def mark_uncertain(self, _reservation_id):
+            return None
+
+        async def release_before_submission(self, _reservation_id):
+            return True
+
+    monkeypatch.setattr(
+        "app.services.automation_content.AutomationAIBudgetService", Budget
+    )
 
     provider = Provider()
     monkeypatch.setattr("app.services.automation_content.get_ai_provider", lambda _: provider)
@@ -593,16 +672,153 @@ async def test_internal_preview_checkpoints_success_before_next_provider_call(cl
                 acknowledge_ai_cost=True,
                 idempotency_key="run-checkpoint-test",
             ),
-            uuid4(),
+            run_id,
             on_selected=on_selected,
             on_generation_started=on_generation_started,
+            on_before_provider_submission=on_generation_started,
             on_generation_succeeded=on_generation_succeeded,
         )
 
     assert provider_calls == 2
-    assert retry_policies == [False, False]
+    assert accounting_events == ["reserved", "submitted", "provider", "settled"] * 2
     assert len(checkpoints) == 2
     assert response.generated_count == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure_point", ["configuration", "admission"])
+async def test_unconfigured_or_exhausted_budget_prevents_provider_submission(
+    monkeypatch, failure_point
+):
+    workspace_id = uuid4()
+    product_id = uuid4()
+    provider_calls = 0
+
+    class FakeSession:
+        rolled_back = False
+
+        async def scalar(self, _query):
+            return uuid4()
+
+        async def rollback(self):
+            self.rolled_back = True
+
+    class FakeBudget:
+        def __init__(self, session):
+            self.session = session
+
+        def plan(self, _provider, _model):
+            if failure_point == "configuration":
+                from app.services.automation_ai_budget import AutomationAIBudgetUnavailable
+
+                raise AutomationAIBudgetUnavailable("ai_budget_not_configured")
+            return SimpleNamespace(output_token_limit=512)
+
+        async def reserve(self, **_kwargs):
+            from app.services.automation_ai_budget import AutomationAIBudgetExhausted
+
+            await self.session.rollback()
+            raise AutomationAIBudgetExhausted("ai_daily_budget_exhausted")
+
+    class Provider:
+        name = "openai"
+        model = "gpt-4o-mini-2024-07-18"
+        is_configured = True
+
+    class AIService:
+        async def generate_for_product_with_usage(self, *_args, **_kwargs):
+            nonlocal provider_calls
+            provider_calls += 1
+            raise AssertionError("budget rejection must precede provider submission")
+
+    class Discovery:
+        def __init__(self, _session):
+            pass
+
+        async def preview_for_orchestration(self, _workspace_id):
+            return SimpleNamespace(
+                selected_products=[
+                    SimpleNamespace(
+                        product_id=product_id,
+                        rank=1,
+                        recommendation_score=75,
+                    )
+                ],
+                warnings=[],
+            )
+
+    policy = SimpleNamespace(
+        id=uuid4(),
+        revision=1,
+        ai_provider="openai",
+        content_language="ar",
+        tone="persuasive",
+        content_type="telegram",
+        content_length="medium",
+    )
+    workspace_settings = SimpleNamespace(
+        timezone="UTC",
+        default_ai_provider=AIProviderType.OPENAI,
+        default_content_language=ContentLanguage.AR,
+        default_tone=ToneProfile.PERSUASIVE,
+        default_content_type=ContentType.TELEGRAM,
+        default_content_length=ContentLength.MEDIUM,
+    )
+
+    class SettingsService:
+        def __init__(self, _session):
+            pass
+
+        async def get_for_internal_workspace(self, _workspace_id):
+            return workspace_settings
+
+    claim = SimpleNamespace(started_at=asyncio.get_running_loop().time())
+    monkeypatch.setattr(
+        "app.services.automation_content.get_ai_provider", lambda _provider: Provider()
+    )
+    monkeypatch.setattr(
+        "app.services.automation_content.AutomationAIBudgetService", FakeBudget
+    )
+    monkeypatch.setattr(
+        "app.services.automation_content.AutomationDiscoveryService", Discovery
+    )
+    monkeypatch.setattr(
+        "app.services.automation_content.WorkspaceSettingsService", SettingsService
+    )
+    fake_session = FakeSession()
+    service = AutomationContentGenerationService(fake_session)
+    service.policies.get_by_workspace_id = AsyncMock(return_value=policy)
+    class ProductAfterRollback:
+        status = ProductStatus.ACTIVE
+        affiliate_url = "https://affiliate.example/item"
+
+        @property
+        def id(self):
+            if fake_session.rolled_back:
+                raise AssertionError("budget result must not read an expired Product")
+            return product_id
+
+    service.products.get_by_id = AsyncMock(return_value=ProductAfterRollback())
+    service._revalidate_product = AsyncMock(return_value=None)
+    service._claim_duplicate_guard = AsyncMock(return_value=claim)
+    service._release_guard = AsyncMock(return_value=None)
+    service.ai = AIService()
+
+    response = await service._preview(
+        None,
+        workspace_id,
+        AutomationContentPreviewRequest(
+            expected_policy_revision=1,
+            max_products=1,
+            acknowledge_ai_cost=True,
+            idempotency_key="budget-rejection-test",
+        ),
+        authorize_policy=False,
+        run_id=uuid4(),
+    )
+    assert provider_calls == 0
+    assert response.results[0].status == "failed_budget"
+    assert response.results[0].product_id == product_id
 
 
 @pytest.mark.asyncio

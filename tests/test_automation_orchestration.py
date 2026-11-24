@@ -485,6 +485,7 @@ async def test_policy_disable_between_ai_requests_stops_before_second_call(
         *,
         on_selected,
         on_generation_started,
+        on_before_provider_submission,
         on_generation_succeeded,
     ):
         nonlocal provider_calls
@@ -495,6 +496,7 @@ async def test_policy_disable_between_ai_requests_stops_before_second_call(
         await on_selected(selections)
         for index, product in enumerate(products, start=1):
             await on_generation_started(product.id)
+            await on_before_provider_submission(product.id)
             provider_calls += 1  # Mock provider submission happens after the guard callback.
             generated = SimpleNamespace(
                 product_id=product.id,
@@ -582,11 +584,13 @@ async def test_destination_change_before_queue_insert_creates_no_queue_item(
         *,
         on_selected,
         on_generation_started,
+        on_before_provider_submission,
         on_generation_succeeded,
     ):
         nonlocal destination_ready
         await on_selected([SimpleNamespace(product_id=product.id, rank=1)])
         await on_generation_started(product.id)
+        await on_before_provider_submission(product.id)
         await on_generation_succeeded(
             SimpleNamespace(
                 product_id=product.id,
@@ -666,10 +670,12 @@ async def test_ownership_loss_after_generation_prevents_queue_creation(session, 
         *,
         on_selected,
         on_generation_started,
+        on_before_provider_submission,
         on_generation_succeeded,
     ):
         await on_selected([SimpleNamespace(product_id=product.id, rank=1)])
         await on_generation_started(product.id)
+        await on_before_provider_submission(product.id)
         await on_generation_succeeded(
             SimpleNamespace(
                 product_id=product.id,
