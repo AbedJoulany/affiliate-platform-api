@@ -121,6 +121,9 @@ async def test_automation_provider_calls_enforce_output_limit_and_parse_usage(mo
     response_body = openai_body
 
     class Client:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
         async def __aenter__(self):
             return self
 
@@ -156,6 +159,9 @@ async def test_gemini_automation_key_stays_out_of_url_and_provider_errors(monkey
     observed: dict[str, Any] = {}
 
     class Client:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
         async def __aenter__(self):
             return self
 
@@ -193,6 +199,9 @@ async def test_accounted_provider_submission_is_single_attempt(
     calls = 0
 
     class Client:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
         async def __aenter__(self):
             return self
 
