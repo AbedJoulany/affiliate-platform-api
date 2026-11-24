@@ -132,6 +132,123 @@ async def test_concurrent_daily_claims_create_exactly_one_run(pg_session_factory
     assert sum(result is not None for result in results) == 1
 
 
+async def test_concurrent_recovery_claims_have_exactly_one_lease_owner(pg_session_factory):
+    workspace_id, policy_id, revision = await _workspace_policy(pg_session_factory, "recovery")
+    now = datetime.now(UTC)
+    async with pg_session_factory() as session:
+        run = AutomationRun(
+            workspace_id=workspace_id,
+            policy_id=policy_id,
+            policy_revision=revision,
+            local_date=now.date(),
+            scheduled_for=now - timedelta(minutes=1),
+            status="claimed",
+            lease_owner="",
+            lease_expires_at=now - timedelta(seconds=1),
+        )
+        session.add(run)
+        await session.commit()
+        run_id = run.id
+
+    async def _resume(owner: str) -> bool:
+        async with pg_session_factory() as session:
+            claimed = await AutomationRunRepository(session).resume_expired_claim(
+                run_id,
+                now=now,
+                expected_lease_owner="",
+                lease_owner=owner,
+                lease_expires_at=now + timedelta(minutes=10),
+            )
+            await session.commit()
+            return claimed
+
+    owners = ["recovery-a", "recovery-b"]
+    results = await asyncio.gather(*(_resume(owner) for owner in owners))
+    assert sum(results) == 1
+
+    async with pg_session_factory() as session:
+        run = await AutomationRunRepository(session).get(run_id)
+        assert run is not None
+        assert run.lease_owner in owners
+        assert run.lease_expires_at > datetime.now(UTC)
+
+
+async def test_superseded_postgres_worker_cannot_lock_or_renew_run(pg_session_factory):
+    workspace_id, policy_id, revision = await _workspace_policy(pg_session_factory, "fencing")
+    now = datetime.now(UTC)
+    async with pg_session_factory() as session:
+        run = AutomationRun(
+            workspace_id=workspace_id,
+            policy_id=policy_id,
+            policy_revision=revision,
+            local_date=now.date(),
+            scheduled_for=now,
+            status="running",
+            lease_owner="new-owner",
+            lease_expires_at=now + timedelta(minutes=5),
+        )
+        session.add(run)
+        await session.commit()
+        run_id = run.id
+
+    async with pg_session_factory() as session:
+        repository = AutomationRunRepository(session)
+        stale = await repository.lock_and_renew_owned_run(
+            run_id,
+            lease_owner="stale-owner",
+            now=now,
+            lease_duration=timedelta(minutes=10),
+        )
+        assert stale is None
+        current = await repository.lock_and_renew_owned_run(
+            run_id,
+            lease_owner="new-owner",
+            now=now,
+            lease_duration=timedelta(minutes=10),
+        )
+        assert current is not None
+        assert current.lease_owner == "new-owner"
+        await session.commit()
+
+
+async def test_concurrent_executor_starts_allow_only_one_owner_invocation(pg_session_factory):
+    workspace_id, policy_id, revision = await _workspace_policy(pg_session_factory, "start")
+    now = datetime.now(UTC)
+    async with pg_session_factory() as session:
+        run = AutomationRun(
+            workspace_id=workspace_id,
+            policy_id=policy_id,
+            policy_revision=revision,
+            local_date=now.date(),
+            scheduled_for=now,
+            status="claimed",
+            lease_owner="same-owner",
+            lease_expires_at=now + timedelta(minutes=5),
+        )
+        session.add(run)
+        await session.commit()
+        run_id = run.id
+
+    async def _start():
+        async with pg_session_factory() as session:
+            started = await AutomationRunRepository(session).start_owned_run(
+                run_id,
+                lease_owner="same-owner",
+                now=now,
+                lease_duration=timedelta(minutes=10),
+            )
+            await session.commit()
+            return started is not None
+
+    results = await asyncio.gather(_start(), _start())
+    assert sum(results) == 1
+
+    async with pg_session_factory() as session:
+        run = await AutomationRunRepository(session).get(run_id)
+        assert run is not None
+        assert run.status == "running"
+
+
 async def test_run_items_persist_partial_results_and_uncertain_state(pg_session_factory):
     workspace_id, policy_id, revision = await _workspace_policy(pg_session_factory, "items")
     now = datetime.now(UTC).replace(microsecond=0)

@@ -232,6 +232,8 @@ class AutomationPolicyService:
         self,
         policy: AutomationPolicy,
         workspace_id: UUID,
+        *,
+        for_update: bool = False,
     ) -> DestinationEvaluation:
         provider = AutomationProvider(policy.provider)
         if provider == AutomationProvider.TELEGRAM:
@@ -244,6 +246,7 @@ class AutomationPolicyService:
             channel = await self.channels.get_by_id_in_workspace(
                 policy.telegram_channel_id,
                 workspace_id,
+                for_update=for_update,
             )
             if channel is None:
                 return DestinationEvaluation(
@@ -283,7 +286,11 @@ class AutomationPolicyService:
                 ready=False,
                 warning="Select an active, validated Facebook Page",
             )
-        page = await self.pages.get_in_workspace(policy.facebook_page_id, workspace_id)
+        page = await self.pages.get_in_workspace(
+            policy.facebook_page_id,
+            workspace_id,
+            for_update=for_update,
+        )
         if page is None:
             return DestinationEvaluation(
                 response=None,

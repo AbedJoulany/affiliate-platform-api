@@ -26,6 +26,10 @@ from app.schemas.automation_queue import (
 )
 from app.schemas.queue import QueueCreate
 from app.services.automation_content import AutomationContentGenerationService
+from app.services.automation_execution_gate import (
+    AutomationExecutionStopped,
+    AutomationRunOwnershipLost,
+)
 from app.services.automation_policy import AutomationPolicyService
 from app.services.automation_scheduling import (
     SchedulingError,
@@ -106,8 +110,12 @@ class AutomationQueueService:
         expected_revision: int,
         *,
         require_enabled: bool = False,
+        for_update: bool = False,
     ) -> tuple[AutomationPolicy, AutomationDestinationRead, str]:
-        policy = await self.policies.get_by_workspace_id(workspace_id)
+        policy = await self.policies.get_by_workspace_id(
+            workspace_id,
+            for_update=for_update,
+        )
         if policy is None:
             raise NotFoundError("Automation policy not found; save an automation policy first")
         if policy.revision != expected_revision:
@@ -120,6 +128,7 @@ class AutomationQueueService:
         evaluation = await AutomationPolicyService(self.session)._evaluate_destination(
             policy,
             workspace_id,
+            for_update=for_update,
         )
         if not evaluation.ready or evaluation.response is None:
             raise ValidationError(evaluation.warning or "Automation destination is not ready")
@@ -248,6 +257,9 @@ class AutomationQueueService:
                 status="failed_queue",
                 error_category="queue_validation_failed",
             )
+        except (AutomationExecutionStopped, AutomationRunOwnershipLost):
+            await self.session.rollback()
+            raise
         except Exception:
             await self.session.rollback()
             return self._queue_result(
