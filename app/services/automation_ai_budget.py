@@ -199,8 +199,9 @@ class AutomationAIBudgetService:
             await self.session.rollback()
             raise AutomationAIBudgetUnavailable("ai_reservation_not_found")
         if reservation.status in {"settled", "uncertain", "released"}:
+            status = reservation.status
             await self.session.rollback()
-            return reservation.status
+            return status
 
         reservation.actual_model = usage.actual_model
         reservation.actual_input_tokens = usage.input_tokens
