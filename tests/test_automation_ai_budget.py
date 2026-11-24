@@ -132,7 +132,8 @@ async def test_automation_provider_calls_enforce_output_limit_and_parse_usage(mo
 
         async def post(self, url, *, json, **kwargs):
             calls.append((str(url), json, kwargs))
-            return httpx.Response(200, json=response_body)
+            request = httpx.Request("POST", str(url))
+            return httpx.Response(200, json=response_body, request=request)
 
     monkeypatch.setattr("app.ai.openai_provider.httpx.AsyncClient", Client)
     monkeypatch.setattr("app.ai.gemini_provider.httpx.AsyncClient", Client)
