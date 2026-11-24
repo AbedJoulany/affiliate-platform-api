@@ -135,6 +135,31 @@ def local_date_for(timestamp: datetime, timezone_name: str | None) -> date:
     return _as_utc(timestamp).astimezone(resolve_timezone(timezone_name)).date()
 
 
+def local_date_range_utc_bounds(
+    start_local_date: date,
+    end_local_date: date,
+    timezone_name: str | None,
+) -> tuple[datetime, datetime]:
+    """Return UTC bounds covering complete inclusive local calendar dates.
+
+    Each midnight is resolved independently, so a range crossing a daylight
+    saving transition is not assumed to contain fixed 24-hour days.
+    """
+    if end_local_date < start_local_date:
+        raise SchedulingError("Local date range end precedes its start")
+
+    timezone = resolve_timezone(timezone_name)
+    start_local = resolve_local_time(
+        datetime.combine(start_local_date, time.min),
+        timezone,
+    )
+    end_local = resolve_local_time(
+        datetime.combine(end_local_date + timedelta(days=1), time.min),
+        timezone,
+    )
+    return start_local.astimezone(UTC), end_local.astimezone(UTC)
+
+
 def _as_utc(timestamp: datetime) -> datetime:
     """Treat naive database timestamps as UTC for SQLite/test compatibility."""
     if timestamp.tzinfo is None:

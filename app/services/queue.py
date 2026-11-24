@@ -54,6 +54,8 @@ from app.schemas.queue import (
 from app.services.automation_scheduling import (
     SchedulingError,
     candidate_schedule_slots,
+    local_date_range_utc_bounds,
+    resolve_timezone,
     select_schedule_slots,
 )
 from app.services.exceptions import (
@@ -786,6 +788,31 @@ class QueueService:
 
     async def create(self, payload: QueueCreate, workspace_id: UUID) -> QueueItem:
         self._validate_status_scheduling(payload.status, payload.scheduled_at)
+        if payload.status in PUBLISHABLE_STATUSES:
+            # Manual publishable items share the same reservation boundary as
+            # automation. This serializes occupancy/product checks without
+            # applying the automation daily limit to manual actions.
+            await self.queue_repo.acquire_workspace_queue_reservation_lock(
+                workspace_id=workspace_id,
+            )
+            if payload.provider == "telegram":
+                destination_id = await self._resolve_create_channel_id(
+                    payload.channel_id,
+                    workspace_id,
+                    payload.status,
+                )
+            else:
+                destination_id = await self._resolve_create_facebook_page_id(
+                    payload.facebook_page_id,
+                    workspace_id,
+                    payload.status,
+                )
+            if destination_id is not None:
+                await self.queue_repo.acquire_destination_capacity_lock(
+                    workspace_id=workspace_id,
+                    provider=payload.provider,
+                    destination_id=destination_id,
+                )
         product = await self._load_product(payload.product_id)
         return await self._create_with_product(payload, workspace_id, product)
 
@@ -814,6 +841,13 @@ class QueueService:
         destination_id = payload.channel_id or payload.facebook_page_id
         if destination_id is None:
             raise ValidationError("Automation Queue items require a destination")
+
+        # Shared lock order: workspace reservation, destination capacity, then
+        # product row. Manual publishable Queue mutations use the same workspace
+        # boundary, including changes that move an existing item into a reserve.
+        await self.queue_repo.acquire_workspace_queue_reservation_lock(
+            workspace_id=workspace_id,
+        )
 
         # Hold the destination-capacity lock only for the final revalidation,
         # slot allocation, Queue insert, and the caller's transaction commit.
@@ -853,17 +887,21 @@ class QueueService:
             preferred_time_local=preferred_time_local,
             posts_per_day=daily_limit,
         )
-        existing = (
-            await self.queue_repo.list_destination_publishing_timestamps(
+        existing = []
+        if candidates:
+            local_today = now.astimezone(resolve_timezone(timezone_name)).date()
+            start_utc, end_utc = local_date_range_utc_bounds(
+                local_today,
+                max(slot.local_date for slot in candidates),
+                timezone_name,
+            )
+            existing = await self.queue_repo.list_destination_publishing_timestamps(
                 workspace_id=workspace_id,
                 provider=payload.provider,
                 destination_id=destination_id,
-                start_utc=now,
-                end_utc=candidates[-1].scheduled_at + timedelta(seconds=1),
+                start_utc=start_utc,
+                end_utc=end_utc,
             )
-            if candidates
-            else []
-        )
         try:
             slot = select_schedule_slots(
                 candidates=candidates,
@@ -994,9 +1032,31 @@ class QueueService:
         payload: QueueUpdate,
         workspace_id: UUID,
     ) -> QueueItem:
-        item = await self.get(queue_id, workspace_id)
-        previous_status = item.status
         update_data = payload.model_dump(exclude_unset=True)
+        reservation_fields = {
+            "status",
+            "scheduled_at",
+            "provider",
+            "channel_id",
+            "facebook_page_id",
+            "product_id",
+        }
+        if reservation_fields.intersection(update_data):
+            # Take the common workspace lock before reading/locking the Queue row
+            # so automation cannot observe stale reservation state. Manual
+            # edits remain unrestricted by automation's posts_per_day policy.
+            await self.queue_repo.acquire_workspace_queue_reservation_lock(
+                workspace_id=workspace_id,
+            )
+            item = await self.queue_repo.get_by_id_in_workspace_for_update(
+                queue_id,
+                workspace_id,
+            )
+            if item is None:
+                raise NotFoundError("Queue item not found")
+        else:
+            item = await self.get(queue_id, workspace_id)
+        previous_status = item.status
 
         if "status" in update_data and update_data["status"] == QueueStatus.FAILED:
             raise ValidationError("failed status can only be set by the publisher")

@@ -29,6 +29,30 @@ class QueueRepository(BaseRepository[QueueItem]):
             filters.append(QueueItem.status == status)
         return filters
 
+    async def acquire_workspace_queue_reservation_lock(
+        self,
+        *,
+        workspace_id: UUID,
+    ) -> None:
+        """Serialize publishable Queue reservations within a workspace.
+
+        This lock is shared by manual creation/update and automation. Workspace
+        scope intentionally covers product checks across different destinations;
+        it is held only during the short database transaction, never AI/provider
+        work. PostgreSQL releases it automatically on commit or rollback.
+        """
+        bind = self.session.get_bind()
+        if bind.dialect.name != "postgresql":
+            return
+
+        scope = f"queue-workspace-reservation:{workspace_id}".encode()
+        lock_key = int.from_bytes(
+            hashlib.blake2b(scope, digest_size=8).digest(),
+            byteorder="big",
+            signed=True,
+        )
+        await self.session.execute(select(func.pg_advisory_xact_lock(lock_key)))
+
     async def acquire_destination_capacity_lock(
         self,
         *,
@@ -77,6 +101,23 @@ class QueueRepository(BaseRepository[QueueItem]):
                 QueueItem.id == queue_id,
                 QueueItem.workspace_id == workspace_id,
             )
+        )
+        return result.scalar_one_or_none()
+
+    async def get_by_id_in_workspace_for_update(
+        self,
+        queue_id: UUID,
+        workspace_id: UUID,
+    ) -> QueueItem | None:
+        """Lock a workspace-owned Queue row before a reservation-sensitive edit."""
+        result = await self.session.execute(
+            select(QueueItem)
+            .where(
+                QueueItem.id == queue_id,
+                QueueItem.workspace_id == workspace_id,
+            )
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
         return result.scalar_one_or_none()
 
