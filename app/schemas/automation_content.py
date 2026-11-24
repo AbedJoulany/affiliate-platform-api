@@ -32,6 +32,7 @@ AutomationContentStatus = Literal[
     "failed_provider",
     "failed_timeout",
     "failed_configuration",
+    "failed_budget",
     "skipped_after_global_failure",
 ]
 

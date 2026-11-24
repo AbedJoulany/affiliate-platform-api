@@ -65,10 +65,10 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -e ".[dev]"
-      - name: Verify PostgreSQL migration, policy, discovery, Queue, and automation runs
-        run: python -m pytest -q tests/test_automation_policy_postgres.py tests/test_automation_discovery_postgres.py tests/test_automation_queue_postgres.py tests/test_automation_runs_postgres.py
+      - name: Verify PostgreSQL migration, policy, discovery, Queue, run, and AI budget safety
+        run: python -m pytest -q tests/test_automation_policy_postgres.py tests/test_automation_discovery_postgres.py tests/test_automation_queue_postgres.py tests/test_automation_runs_postgres.py tests/test_automation_ai_budget_postgres.py
       - name: Lint PostgreSQL verification
-        run: python -m ruff check tests/test_automation_policy_postgres.py tests/test_automation_discovery_postgres.py tests/test_automation_queue_postgres.py tests/test_automation_runs_postgres.py
+        run: python -m ruff check tests/test_automation_policy_postgres.py tests/test_automation_discovery_postgres.py tests/test_automation_queue_postgres.py tests/test_automation_runs_postgres.py tests/test_automation_ai_budget_postgres.py
 
   frontend:
     runs-on: ubuntu-latest
