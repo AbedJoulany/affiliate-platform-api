@@ -1,13 +1,12 @@
 # API Integration Guide
 
-**Document Version:** 2.16
-**Last Updated:** 2026-11-23
+**Document Version:** 2.17
+**Last Updated:** 2026-11-24
 
-**2026-11-23 revision (Phase 8C.3):** Documented migration `021`, durable
-workspace/policy/local-day run claims, per-product checkpoints, and the disabled
-global Celery dispatcher. Workspace activation and budget enforcement are not
-implemented; `execution_available` remains false and the dispatcher exits before
-database access. See §4.16.
+**2026-11-24 revision (Phase 9B.4):** Documented migration `022`, durable AI
+usage reservations, request/token budget admission, trusted-usage settlement,
+and retention of uncertain reservations. `execution_available` remains false;
+operator reservation APIs and audit history are not implemented. See §4.17.
 
 **2026-11-21 revision (Phase 6B):** Added the authenticated, read-only
 catalog-first automation discovery preview. It reuses the Recommendation
@@ -49,7 +48,7 @@ never creates Queue items or publishes. See §4.14.
 
 OpenAPI: `/docs` · ReDoc: `/redoc` · Health: `GET /health` · Readiness: `GET /ready` · Worker health: `GET /worker/health`
 
-> **Current Product A contract:** The current implementation is a single-operator MVP. PRs through #23 are merged into `main`; Phase 5B automation configuration and Phase 5C frontend configuration are merged, and Phase 6B catalog discovery is a bounded read-only preview. Phase 7B adds an explicit, paid, stateless content preview; unattended execution, Queue integration, Celery automation, and provider execution remain unavailable. The route and schema tables below are authoritative for the implemented API; older Product B sections are retained only as historical notes and are not available endpoints. Current publish providers are `telegram` and `facebook`; Facebook Page credentials are managed server-side and are never returned.
+> **Current Product A contract:** The implementation is a single-operator MVP. PR #30 is merged and Alembic head is `022`. Phase 6B discovery and Phase 7B content preview are explicit operations; Phase 8B Queue preparation, Phase 8C.3 durable runs, and Phase 9B.4 AI request/token accounting are implemented. Unattended execution remains disabled: `WORKSPACE_ACTIVATION_IMPLEMENTED` is false and the runtime Redis latch is required. Phase 9B.5 operator reservation APIs are planned, not implemented. Older Product B sections are historical notes, not available endpoints. Publish providers are `telegram` and `facebook`; Facebook Page credentials are managed server-side and never returned.
 
 ### Current provider-aware routes
 
@@ -657,9 +656,27 @@ publisher. A non-uncertain expired run can recover for at most five minutes
 after lease expiry; an older incomplete run is marked missed instead of caught
 up. Expired work with a durably started AI request becomes
 `needs_operator_review`; uncertain generation is not automatically retried.
-Activation, reliable AI budget enforcement, operator run-history controls, and
-live unattended validation remain future work. The existing manual
+Operator run-history controls and live unattended validation remain future work.
+AI budget enforcement is now provided by Phase 9B.4, while the execution gate
+remains closed. The existing manual
 `POST /automation/queue/prepare` path remains available and unchanged.
+
+### 4.17 AI usage accounting (Phase 9B.4)
+
+Migration `022` adds durable PostgreSQL AI usage reservations. Automation
+admission checks workspace-local and global UTC daily request/token limits,
+reserves a conservative supported-model token bound before provider submission,
+and settles only when provider usage is trusted. OpenAI Chat Completions and
+Gemini GenerateContent usage metadata are parsed, including applicable visible
+and non-visible generation token categories. Unsupported model bounds or
+missing/disabled budget configuration fail closed.
+
+These are request/token limits, not monetary or USD spending limits. If provider
+usage is incomplete or the outcome may be uncertain, the reservation remains
+held as uncertain; it is not released, automatically retried, or automatically
+reconciled. There is currently no operator run/reservation history API, release
+action, review action, or audit-log API. Those capabilities are planned for
+Phase 9B.5. Workspace policy preferences do not authorize unattended execution.
 
 ---
 
