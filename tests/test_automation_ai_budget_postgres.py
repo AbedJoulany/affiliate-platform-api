@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
@@ -18,6 +19,7 @@ from app.core.config import Settings
 from app.models.automation_ai_usage import AutomationAIUsageReservation
 from app.models.automation_policy import AutomationPolicy
 from app.models.automation_run import AutomationRun, AutomationRunItem
+from app.models.product import Product
 from app.models.workspace import Workspace
 from app.services.automation_ai_budget import (
     AutomationAIBudgetExhausted,
@@ -103,6 +105,14 @@ async def _run_item(session_factory, label: str):
         workspace = Workspace(name=f"ai-budget-{label}-{uuid4().hex}")
         session.add(workspace)
         await session.flush()
+        product = Product(
+            title=f"AI budget test product {label}",
+            price=Decimal("1.00"),
+            image_url="https://example.test/product.jpg",
+            product_url="https://example.test/product",
+        )
+        session.add(product)
+        await session.flush()
         policy = AutomationPolicy(workspace_id=workspace.id)
         session.add(policy)
         await session.flush()
@@ -118,7 +128,7 @@ async def _run_item(session_factory, label: str):
         )
         session.add(run)
         await session.flush()
-        item = AutomationRunItem(run_id=run.id, product_id=uuid4(), selection_rank=1)
+        item = AutomationRunItem(run_id=run.id, product_id=product.id, selection_rank=1)
         session.add(item)
         await session.commit()
         return workspace.id, run.id, item.id
@@ -126,7 +136,15 @@ async def _run_item(session_factory, label: str):
 
 async def _additional_item(session_factory, ids):
     async with session_factory() as session:
-        item = AutomationRunItem(run_id=ids[1], product_id=uuid4(), selection_rank=2)
+        product = Product(
+            title=f"AI budget test product {uuid4().hex}",
+            price=Decimal("1.00"),
+            image_url="https://example.test/product.jpg",
+            product_url="https://example.test/product",
+        )
+        session.add(product)
+        await session.flush()
+        item = AutomationRunItem(run_id=ids[1], product_id=product.id, selection_rank=2)
         session.add(item)
         await session.commit()
         return ids[0], ids[1], item.id
