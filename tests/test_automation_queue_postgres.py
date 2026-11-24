@@ -21,7 +21,8 @@ from app.models.product import Product
 from app.models.queue import QueueItem
 from app.models.workspace import Workspace
 from app.repositories.queue import QueueRepository
-from app.schemas.queue import QueueCreate
+from app.schemas.queue import QueueCreate, QueueUpdate
+from app.services.exceptions import ConflictError
 from app.services.queue import QueueService
 
 POSTGRES_URL = os.environ.get("TEST_POSTGRES_URL", "")
@@ -56,6 +57,38 @@ async def _workspace(session_factory, name: str) -> Workspace:
         await session.commit()
         await session.refresh(workspace)
         return workspace
+
+
+def _telegram_channel(workspace_id, channel_id, *, title: str) -> TelegramChannel:
+    return TelegramChannel(
+        id=channel_id,
+        workspace_id=workspace_id,
+        telegram_channel_id=f"pg-9b3-{uuid4().hex}",
+        title=title,
+        bot_permission_status=BotPermissionStatus.GRANTED,
+        can_post_messages=True,
+        can_edit_messages=True,
+        can_delete_messages=True,
+        is_active=True,
+    )
+
+
+def _active_product(product_id, affiliate_url: str) -> Product:
+    return Product(
+        id=product_id,
+        aliexpress_product_id=f"pg-9b3-product-{uuid4().hex}",
+        title="Reservation test product",
+        price=Decimal("10.00"),
+        discount=Decimal("10.00"),
+        rating=Decimal("4.50"),
+        sales=100,
+        reviews=10,
+        image_url="https://example.com/image.jpg",
+        product_url="https://example.com/product",
+        affiliate_url=affiliate_url,
+        commission_rate=Decimal("5.00"),
+        status=ProductStatus.ACTIVE,
+    )
 
 
 async def test_destination_history_is_workspace_and_provider_scoped(pg_session_factory):
@@ -545,3 +578,419 @@ async def test_different_destinations_have_independent_daily_capacity(
     )
     assert len(items) == 2
     assert items[0].scheduled_at.date() == items[1].scheduled_at.date()
+
+
+async def test_automation_capacity_counts_publication_earlier_on_local_day(
+    pg_session_factory,
+    monkeypatch,
+):
+    workspace = await _workspace(pg_session_factory, f"Phase 9B.3 published {uuid4().hex}")
+    channel_id = uuid4()
+    product_id = uuid4()
+    affiliate_url = f"https://affiliate.example/{product_id}"
+    frozen_now = datetime(2026, 11, 21, 16, 0, tzinfo=UTC)
+    timezone_name = "America/New_York"
+    timezone = ZoneInfo(timezone_name)
+    local_today = frozen_now.astimezone(timezone).date()
+    published_at = datetime(2026, 11, 21, 13, 0, tzinfo=UTC)
+
+    async with pg_session_factory() as session:
+        session.add(_telegram_channel(workspace.id, channel_id, title="Capacity"))
+        session.add(_active_product(product_id, affiliate_url))
+        session.add(
+            QueueItem(
+                workspace_id=workspace.id,
+                provider="telegram",
+                channel_id=channel_id,
+                content="Published earlier today",
+                status=QueueStatus.PUBLISHED,
+                scheduled_at=published_at - timedelta(days=1),
+                published_at=published_at,
+            )
+        )
+        await session.commit()
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return frozen_now if tz is None else frozen_now.astimezone(tz)
+
+    monkeypatch.setattr("app.services.queue.datetime", FrozenDateTime)
+    async with pg_session_factory() as session:
+        item = await QueueService(session).create_automation_scheduled(
+            QueueCreate(
+                content="Automation content",
+                status=QueueStatus.SCHEDULED,
+                scheduled_at=frozen_now + timedelta(days=1),
+                provider="telegram",
+                channel_id=channel_id,
+                product_id=product_id,
+                button_text="Buy",
+                button_url=affiliate_url,
+            ),
+            workspace.id,
+            expected_affiliate_url=affiliate_url,
+            timezone_name=timezone_name,
+            preferred_time_local=time(18, 0),
+            daily_limit=1,
+        )
+        await session.commit()
+
+    assert item.scheduled_at.astimezone(timezone).date() > local_today
+
+
+async def test_manual_queue_creation_reserves_capacity_before_automation(
+    pg_session_factory,
+    monkeypatch,
+):
+    workspace = await _workspace(pg_session_factory, f"Phase 9B.3 manual create {uuid4().hex}")
+    channel_id = uuid4()
+    manual_product_id = uuid4()
+    automation_product_id = uuid4()
+    manual_affiliate = f"https://affiliate.example/{manual_product_id}"
+    automation_affiliate = f"https://affiliate.example/{automation_product_id}"
+    frozen_now = datetime(2026, 11, 21, 16, 0, tzinfo=UTC)
+    timezone_name = "America/New_York"
+    timezone = ZoneInfo(timezone_name)
+    local_today = frozen_now.astimezone(timezone).date()
+    manual_slot = datetime.combine(
+        local_today,
+        time(18, 0),
+        tzinfo=timezone,
+    ).astimezone(UTC)
+
+    async with pg_session_factory() as session:
+        session.add(_telegram_channel(workspace.id, channel_id, title="Shared capacity"))
+        session.add_all(
+            [
+                _active_product(manual_product_id, manual_affiliate),
+                _active_product(automation_product_id, automation_affiliate),
+            ]
+        )
+        await session.commit()
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return frozen_now if tz is None else frozen_now.astimezone(tz)
+
+    monkeypatch.setattr("app.services.queue.datetime", FrozenDateTime)
+    manual_created = asyncio.Event()
+    allow_manual_commit = asyncio.Event()
+
+    async def create_manual_item():
+        async with pg_session_factory() as session:
+            item = await QueueService(session).create(
+                QueueCreate(
+                    content="Manual scheduled content",
+                    status=QueueStatus.SCHEDULED,
+                    scheduled_at=manual_slot,
+                    provider="telegram",
+                    channel_id=channel_id,
+                    product_id=manual_product_id,
+                    button_text="Buy",
+                    button_url=manual_affiliate,
+                ),
+                workspace.id,
+            )
+            manual_created.set()
+            await allow_manual_commit.wait()
+            await session.commit()
+            return item
+
+    async def create_automation_item():
+        async with pg_session_factory() as session:
+            item = await QueueService(session).create_automation_scheduled(
+                QueueCreate(
+                    content="Automated scheduled content",
+                    status=QueueStatus.SCHEDULED,
+                    scheduled_at=frozen_now + timedelta(days=1),
+                    provider="telegram",
+                    channel_id=channel_id,
+                    product_id=automation_product_id,
+                    button_text="Buy",
+                    button_url=automation_affiliate,
+                ),
+                workspace.id,
+                expected_affiliate_url=automation_affiliate,
+                timezone_name=timezone_name,
+                preferred_time_local=time(18, 0),
+                daily_limit=1,
+            )
+            await session.commit()
+            return item
+
+    manual_task = asyncio.create_task(create_manual_item())
+    await asyncio.wait_for(manual_created.wait(), timeout=5)
+    automation_task = asyncio.create_task(create_automation_item())
+    try:
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(asyncio.shield(automation_task), timeout=0.1)
+    finally:
+        allow_manual_commit.set()
+    manual_item, automation_item = await asyncio.gather(manual_task, automation_task)
+
+    assert manual_item.scheduled_at == manual_slot
+    assert automation_item.scheduled_at.astimezone(timezone).date() > local_today
+
+
+async def test_concurrent_manual_creation_blocks_automation_product_across_destinations(
+    pg_session_factory,
+):
+    workspace = await _workspace(pg_session_factory, f"Phase 9B.3 manual product {uuid4().hex}")
+    channel_ids = [uuid4(), uuid4()]
+    product_id = uuid4()
+    affiliate_url = f"https://affiliate.example/{product_id}"
+    async with pg_session_factory() as session:
+        session.add_all(
+            [
+                _telegram_channel(workspace.id, channel_ids[0], title="Manual destination"),
+                _telegram_channel(workspace.id, channel_ids[1], title="Automation destination"),
+                _active_product(product_id, affiliate_url),
+            ]
+        )
+        await session.commit()
+
+    manual_created = asyncio.Event()
+    allow_manual_commit = asyncio.Event()
+
+    async def create_manual_item():
+        async with pg_session_factory() as session:
+            item = await QueueService(session).create(
+                QueueCreate(
+                    content="Manual product post",
+                    status=QueueStatus.SCHEDULED,
+                    scheduled_at=datetime.now(UTC) + timedelta(days=1),
+                    provider="telegram",
+                    channel_id=channel_ids[0],
+                    product_id=product_id,
+                    button_text="Buy",
+                    button_url=affiliate_url,
+                ),
+                workspace.id,
+            )
+            manual_created.set()
+            await allow_manual_commit.wait()
+            await session.commit()
+            return item
+
+    async def create_automation_item():
+        async with pg_session_factory() as session:
+            try:
+                await QueueService(session).create_automation_scheduled(
+                    QueueCreate(
+                        content="Automation product post",
+                        status=QueueStatus.SCHEDULED,
+                        scheduled_at=datetime.now(UTC) + timedelta(days=1),
+                        provider="telegram",
+                        channel_id=channel_ids[1],
+                        product_id=product_id,
+                        button_text="Buy",
+                        button_url=affiliate_url,
+                    ),
+                    workspace.id,
+                    expected_affiliate_url=affiliate_url,
+                    timezone_name="UTC",
+                    preferred_time_local=time(23, 30),
+                    daily_limit=1,
+                )
+                await session.commit()
+                return False
+            except ConflictError:
+                await session.rollback()
+                return True
+
+    manual_task = asyncio.create_task(create_manual_item())
+    await asyncio.wait_for(manual_created.wait(), timeout=5)
+    automation_task = asyncio.create_task(create_automation_item())
+    try:
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(asyncio.shield(automation_task), timeout=0.1)
+    finally:
+        allow_manual_commit.set()
+    manual_item, automation_rejected = await asyncio.gather(manual_task, automation_task)
+
+    assert manual_item.status == QueueStatus.SCHEDULED
+    assert automation_rejected is True
+
+
+async def test_concurrent_automation_product_reservation_spans_destinations(
+    pg_session_factory,
+):
+    workspace = await _workspace(pg_session_factory, f"Phase 9B.3 destinations {uuid4().hex}")
+    channel_ids = [uuid4(), uuid4()]
+    product_id = uuid4()
+    affiliate_url = f"https://affiliate.example/{product_id}"
+    async with pg_session_factory() as session:
+        session.add_all(
+            [
+                _telegram_channel(workspace.id, channel_ids[0], title="Destination one"),
+                _telegram_channel(workspace.id, channel_ids[1], title="Destination two"),
+                _active_product(product_id, affiliate_url),
+            ]
+        )
+        await session.commit()
+
+    async def schedule(channel_id):
+        async with pg_session_factory() as session:
+            try:
+                item = await QueueService(session).create_automation_scheduled(
+                    QueueCreate(
+                        content="Concurrent automation content",
+                        status=QueueStatus.SCHEDULED,
+                        scheduled_at=datetime.now(UTC) + timedelta(days=1),
+                        provider="telegram",
+                        channel_id=channel_id,
+                        product_id=product_id,
+                        button_text="Buy",
+                        button_url=affiliate_url,
+                    ),
+                    workspace.id,
+                    expected_affiliate_url=affiliate_url,
+                    timezone_name="UTC",
+                    preferred_time_local=time(23, 30),
+                    daily_limit=1,
+                )
+                await session.commit()
+                return item
+            except ConflictError:
+                await session.rollback()
+                return None
+
+    results = await asyncio.gather(*(schedule(channel_id) for channel_id in channel_ids))
+    assert sum(item is not None for item in results) == 1
+
+
+async def test_manual_reschedule_serializes_with_automation_across_destinations(
+    pg_session_factory,
+    monkeypatch,
+):
+    workspace = await _workspace(pg_session_factory, f"Phase 9B.3 reschedule {uuid4().hex}")
+    channel_ids = [uuid4(), uuid4()]
+    product_id = uuid4()
+    affiliate_url = f"https://affiliate.example/{product_id}"
+    queue_id = uuid4()
+    async with pg_session_factory() as session:
+        session.add_all(
+            [
+                _telegram_channel(workspace.id, channel_ids[0], title="Manual destination"),
+                _telegram_channel(workspace.id, channel_ids[1], title="Automation destination"),
+                _active_product(product_id, affiliate_url),
+                QueueItem(
+                    id=queue_id,
+                    workspace_id=workspace.id,
+                    provider="telegram",
+                    channel_id=channel_ids[0],
+                    product_id=product_id,
+                    content="Draft to reschedule",
+                    status=QueueStatus.DRAFT,
+                ),
+            ]
+        )
+        await session.commit()
+
+    update_reached = asyncio.Event()
+    allow_update_commit = asyncio.Event()
+    original_update = QueueRepository.update
+
+    async def pause_before_update(repository, item):
+        update_reached.set()
+        await allow_update_commit.wait()
+        return await original_update(repository, item)
+
+    monkeypatch.setattr(QueueRepository, "update", pause_before_update)
+
+    async def reschedule_manually():
+        async with pg_session_factory() as session:
+            return await QueueService(session).update(
+                queue_id,
+                QueueUpdate(
+                    status=QueueStatus.SCHEDULED,
+                    scheduled_at=datetime.now(UTC) + timedelta(days=1),
+                ),
+                workspace.id,
+            )
+
+    async def schedule_automatically():
+        async with pg_session_factory() as session:
+            try:
+                await QueueService(session).create_automation_scheduled(
+                    QueueCreate(
+                        content="Automation content",
+                        status=QueueStatus.SCHEDULED,
+                        scheduled_at=datetime.now(UTC) + timedelta(days=1),
+                        provider="telegram",
+                        channel_id=channel_ids[1],
+                        product_id=product_id,
+                        button_text="Buy",
+                        button_url=affiliate_url,
+                    ),
+                    workspace.id,
+                    expected_affiliate_url=affiliate_url,
+                    timezone_name="UTC",
+                    preferred_time_local=time(23, 30),
+                    daily_limit=1,
+                )
+                await session.commit()
+                return True
+            except ConflictError:
+                await session.rollback()
+                return False
+
+    manual_task = asyncio.create_task(reschedule_manually())
+    await asyncio.wait_for(update_reached.wait(), timeout=5)
+    automation_task = asyncio.create_task(schedule_automatically())
+    try:
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(asyncio.shield(automation_task), timeout=0.1)
+    finally:
+        allow_update_commit.set()
+    manual_item, automation_created = await asyncio.gather(manual_task, automation_task)
+
+    assert manual_item.status == QueueStatus.SCHEDULED
+    assert automation_created is False
+
+
+async def test_manual_reposts_remain_allowed_without_automation_daily_cap(
+    pg_session_factory,
+):
+    workspace = await _workspace(pg_session_factory, f"Phase 9B.3 repost {uuid4().hex}")
+    channel_id = uuid4()
+    product_id = uuid4()
+    affiliate_url = f"https://affiliate.example/{product_id}"
+    now = datetime.now(UTC)
+    async with pg_session_factory() as session:
+        session.add(_telegram_channel(workspace.id, channel_id, title="Manual reposts"))
+        session.add(_active_product(product_id, affiliate_url))
+        await session.commit()
+
+    async with pg_session_factory() as session:
+        service = QueueService(session)
+        items = [
+            await service.create(
+                QueueCreate(
+                    content=f"Intentional manual post {index}",
+                    status=QueueStatus.SCHEDULED,
+                    scheduled_at=now + timedelta(days=1, hours=index),
+                    provider="telegram",
+                    channel_id=channel_id,
+                    product_id=product_id,
+                    button_text="Buy",
+                    button_url=affiliate_url,
+                ),
+                workspace.id,
+            )
+            for index in range(2)
+        ]
+        await session.commit()
+
+    assert len({item.id for item in items}) == 2
+    async with pg_session_factory() as session:
+        result = await session.execute(
+            select(QueueItem.id).where(
+                QueueItem.workspace_id == workspace.id,
+                QueueItem.product_id == product_id,
+                QueueItem.status == QueueStatus.SCHEDULED,
+            )
+        )
+        assert len(result.scalars().all()) == 2

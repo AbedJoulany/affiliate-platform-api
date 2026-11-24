@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from uuid import UUID, uuid4
 
@@ -17,12 +17,30 @@ from app.schemas.automation_content import (
 )
 from app.services.automation_scheduling import (
     candidate_schedule_slots,
+    local_date_range_utc_bounds,
     select_schedule_slots,
 )
 from tests.conftest import SessionLocal
 from tests.test_api_endpoints import API_PREFIX, register_and_login, workspace_auth_headers
 
 PREPARE = f"{API_PREFIX}/automation/queue/prepare"
+
+
+@pytest.mark.parametrize(
+    ("local_day", "expected_hours"),
+    [
+        (date(2026, 3, 8), 23),
+        (date(2026, 11, 1), 25),
+    ],
+)
+def test_local_day_utc_bounds_follow_dst_length(local_day, expected_hours):
+    start_utc, end_utc = local_date_range_utc_bounds(
+        local_day,
+        local_day,
+        "America/New_York",
+    )
+
+    assert (end_utc - start_utc) == timedelta(hours=expected_hours)
 
 
 @pytest.fixture(autouse=True)
