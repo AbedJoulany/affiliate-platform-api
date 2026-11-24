@@ -1,9 +1,9 @@
 # Production Readiness and Release Runbook
 
-**Document Version:** 3.5
-**Last Updated:** 2026-11-23
+**Document Version:** 3.6
+**Last Updated:** 2026-11-24
 
-> **Current baseline:** PR #25 is merged at `e53fd5c0dbc9452b968736d861c5c3248ef88408`. Phase 8B explicitly prepares scheduled Queue items; Phase 8C.3 adds a disabled orchestration foundation on its feature branch. Unattended execution remains unavailable. Controlled live Facebook text/photo/scheduled publishing was operator-verified separately. Telegram failure/retry remains pending. Use [product-a-mvp-roadmap.md](./product-a-mvp-roadmap.md) for canonical phase status.
+> **Current baseline:** PR #30 is merged at `39343022fb848117eafec722b4b9c0237e242e69`; migration head is `022`. Phase 8B Queue preparation, Phase 8C.3 durable runs, and Phase 9B.4 AI usage reservations are implemented. Unattended execution remains unavailable. Phase 9B.5 operator reservation operations and Phase 10 observability have not started. Controlled live Facebook publishing was operator-verified separately; Telegram failure/retry remains pending. Use [product-a-mvp-roadmap.md](./product-a-mvp-roadmap.md) for canonical phase status.
 
 **2026-11-16 revision (Phase 3C.3 closeout):** PR #15 merged the publishing safety
 hardening and regression coverage. Already-published Queue items are rejected inside
@@ -56,7 +56,7 @@ Release gate supplement to documents 01–09. Defines security boundaries, envir
 
 ### Migrations
 
-Run `alembic upgrade head` once before API/worker promotion. Current head is migration **020** and includes Facebook Page connection (`018_add_facebook_pages`), provider-aware Queue destinations (`019_add_facebook_queue_destinations`), and configuration-only automation policies (`020_add_automation_policies`). Migrations `001`–`020` are protected history; no tokens are stored in plaintext database columns.
+Run `alembic upgrade head` once before API/worker promotion. Current head is migration **022** and includes the Phase 9B.4 AI usage reservation tables. Migrations `001`–`022` are protected history; no provider tokens are stored in plaintext database columns.
 
 See `.env.example` for the baseline variable list. The Facebook encryption key is
 documented above and must be supplied separately in the server-only environment;
@@ -161,7 +161,7 @@ and no live provider calls are part of the automated tests.
 
 ### Phase 8C.3 disabled orchestration foundation
 
-The feature branch adds migration `021` with one durable daily run identity per
+PR #26 added migration `021` with one durable daily run identity per
 workspace, policy, and local date, plus per-product processing checkpoints.
 Generation checkpoints are committed before an AI request. Each successful
 product's generated content is committed before the next AI request. If a lease
@@ -173,12 +173,30 @@ Other expired runs receive a five-minute recovery window after lease expiry;
 older incomplete runs are marked missed, preventing an automatic backlog.
 
 Beat registers one global dispatcher. Its global execution flag defaults off;
-the emergency stop defaults on, and workspace activation and budget enforcement
-remain unavailable. The task returns before database access while those gates
-are closed, and the policy API continues to report `execution_available: false`.
-No AI, Queue, or provider action is triggered by this disabled dispatcher.
-Migration and PostgreSQL concurrency verification are pending GitHub CI; no
-live AI or publishing calls were performed.
+the emergency stop defaults on, and workspace activation remains unavailable.
+The task returns before database access while the execution gates are closed,
+and the policy API continues to report `execution_available: false`. No AI,
+Queue, or provider action is triggered by this disabled dispatcher.
+Migration and PostgreSQL concurrency verification for Phase 8C.3 were completed
+through merged CI evidence. No live AI or publishing calls were performed by
+Phase 9B.4 automated verification.
+
+### Phase 9B.4 AI usage accounting
+
+Phase 9B.4 adds provider usage parsing and durable PostgreSQL reservations for
+internal automation. Admission reserves a conservative supported-model token
+bound before a provider call, enforces configured workspace/global request and
+token limits, and settles only trusted provider usage. Incomplete usage or an
+uncertain outcome retains the reservation as uncertain. The system does not
+provide a monetary spending cap, automatic uncertain-outcome reconciliation,
+automatic uncertain-request retries, or operator-facing reservation controls.
+
+Budget configuration is disabled or incomplete by default and fails closed.
+`WORKSPACE_ACTIVATION_IMPLEMENTED` remains false, the runtime Redis latch is
+still required, and the execution gate remains closed. Phase 9B.5 is planned
+for workspace-scoped operational visibility, safe review, pre-submission-only
+release, append-only operator audit records, and an operator UI. It has not
+started.
 
 ---
 

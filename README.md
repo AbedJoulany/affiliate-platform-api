@@ -224,8 +224,9 @@ alembic revision --autogenerate -m "description"
 alembic upgrade head
 ```
 
-The current migration head is `020`. Historical migrations `001–020` must not be edited;
-new schema changes require a later additive migration and verified downgrade path.
+The current migration head is `022` (Phase 9B.4 AI usage reservations). Historical
+migrations `001–022` must not be edited; new schema changes require a later additive
+migration and verified downgrade path.
 
 ## Tests
 

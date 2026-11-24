@@ -1,10 +1,10 @@
 # Product A MVP — Implementation Roadmap
 
-> **Document status:** Canonical active roadmap. Updated through the Phase 8C.3 disabled orchestration foundation on its feature branch; CI and PR verification remain pending.
+> **Document status:** Canonical active roadmap, reconciled through merged Phase 9B.4 (PR #30).
 > **Repository:** `AbedJoulany/affiliate-platform-api`
-> **Development baseline:** `main` at the Phase 8B merge commit `e53fd5c0dbc9452b968736d861c5c3248ef88408`.
+> **Development baseline:** `main` at `39343022fb848117eafec722b4b9c0237e242e69` (PR #30 merge).
 > **Verification source:** merged PRs and CI are implementation evidence; Phase 4.5 adds a traceable validation record. Controlled live provider checks remain separate from mocked tests and CI.
-> **Current development phase:** Phase 8C.3 — Disabled Automation Orchestration Foundation, implemented locally; PR/CI verification remains pending. Unattended execution remains unavailable.
+> **Current development phase:** Phase 9B.5 — AI usage and reservation operations is planned, not started. Unattended execution remains disabled.
 
 ### Naming convention
 
@@ -18,7 +18,10 @@
 - **Roadmap Phase 6B:** catalog-first, bounded, read-only discovery preview is implemented and merged via PR #23; no execution or persistence is enabled.
 - **Roadmap Phase 7B:** safe, explicitly triggered content-generation preview is implemented and merged via PR #24; no unattended execution or persistence is enabled.
 - **Roadmap Phase 8B:** explicit, member-authorized preparation of up to two `SCHEDULED` Queue items is merged via PR #25; `execution_available` remains false.
-- **Roadmap Phase 8C.3:** durable run foundation and a disabled periodic dispatcher are implemented on the current feature branch; CI/PR verification is pending and unattended execution remains unavailable.
+- **Roadmap Phase 8C.3:** durable run foundation and disabled periodic dispatcher merged in PR #26; execution remains gated off.
+- **Roadmap Phase 9B.4:** durable AI usage reservations and fail-closed request/token budget enforcement merged in PR #30, migration `022`; no monetary cap, operator reservation UI/API, uncertain-outcome reconciliation, or execution activation.
+- **Roadmap Phase 9B.5:** planned only; workspace-scoped run/reservation visibility, safe review, pre-submission-only release, audit records, and operator UI.
+- **Roadmap Phase 10:** not started; observability remains future work.
 - **Roadmap Phases 6C, 7C, remaining activation hardening, and 9–11:** planned as described below.
 - A merged PR and green mocked CI do **not** substitute for a live provider test.
 
@@ -44,7 +47,10 @@
 | Phase 6B Catalog-First Automation Discovery | Implemented & merged | PR #23, merge commit `8a83e951060a37a3cb10d891eb99d95ee3c1962e`; bounded, workspace-scoped, read-only preview |
 | Phase 7B Safe Automated Content Generation Preview | Implemented & CI Verified | PR #24, merge commit `b06657d91b83fe9ad003a8cb407d1508d6e59bcd`; explicit paid preview for at most two server-selected products; sequential, stateless, validated, no Queue or publishing |
 | Phase 8B Automation → Scheduled Queue | Implemented & merged | PR #25, merge commit `e53fd5c0dbc9452b968736d861c5c3248ef88408`; explicit preparation uses the existing Queue/Scheduler; execution remains disabled |
-| Phase 8C.3 Disabled Orchestration Foundation | Implemented locally; CI/PR pending | Migration `021`; durable daily run identity and product checkpoints; periodic dispatcher safely exits while execution gates remain closed |
+| Phase 8C.3 Disabled Orchestration Foundation | Implemented & merged | PR #26; migration `021`; dispatcher remains disabled by the closed execution gate |
+| Phase 9B.4 AI Usage Accounting & Budget Enforcement | Implemented & CI verified | PR #30; migration `022`; durable request/token reservations, trusted-usage settlement, uncertain reservation retention; not a monetary cap |
+| Phase 9B.5 AI Usage & Reservation Operations | Planned; not started | Operator APIs/UI and audited safe review; no uncertain release or retry |
+| Phase 10 Automation Observability | Not started | Future roadmap work |
 | Phase 0 live Telegram verification | Partially verified | Manual publish, image/link delivery, and scheduling verified; failure/retry pending |
 | PR #11 CI | Passed | Backend, frontend, and E2E checks completed successfully |
 | PR #12 documentation synchronization | Completed | Documentation-only roadmap synchronization |
@@ -929,10 +935,10 @@ only the current workspace-local daily slot, use the existing DST resolver, and
 record an overdue slot as missed instead of catching up a backlog. Existing
 manual Phase 8B preparation and the shared Queue publisher remain unchanged.
 
-**Phase 8C.3 status:** implemented locally; focused local pytest is blocked by
+**Phase 8C.3 status:** merged in PR #26; focused local pytest was blocked by
 the Windows Python 3.13 async runtime. The PostgreSQL migration/concurrency and
-backend regression suites are assigned to GitHub CI. Activation, cost limits,
-operator run-history UI, observability, and controlled live validation remain
+backend regression suites are assigned to GitHub CI. Activation, operator
+run-history UI, observability, and controlled live validation remain
 pending. No live AI or publishing calls were made.
 
 وبعد Queue يصبح المسار واحداً.
